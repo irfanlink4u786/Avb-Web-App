@@ -76,6 +76,9 @@ const CITIES = [
   { name: "Kasur", lat: 31.1156, lon: 74.4489 },
 ];
 
+const getWindyEmbedUrl = (lat: number, lon: number) =>
+  `https://embed.windy.com/embed2.html?lat=${lat}&lon=${lon}&zoom=8&level=surface&overlay=radar&product=ecmwf&menu=&message=&marker=&calendar=now&pressure=&type=map&detail=&detailLat=${lat}&detailLon=${lon}`;
+
 // WMO weather code mapping
 function weatherInfo(code: number, isDay: boolean = true): { label: string; icon: React.ReactNode; color: string } {
   const day = isDay;
@@ -109,9 +112,9 @@ function generateAlerts(data: {
   // Check next 24 hours for rain
   const next24Prob = data.hourly.precipitationProb.slice(Math.max(0, nowIdx), Math.max(0, nowIdx) + 24);
   const maxProb = Math.max(...next24Prob, 0);
-  const rainHours = next24Prob.filter((p) => p >= 40).length;
+  const rainHours = next24Prob.filter((p) => p >= 60).length;
 
-  if (maxProb >= 70) {
+  if (maxProb >= 80) {
     const idx = next24Prob.indexOf(maxProb);
     const alertTime = data.hourly.time[Math.max(0, nowIdx) + idx];
     alerts.push({
@@ -121,7 +124,7 @@ function generateAlerts(data: {
       message: `${maxProb}% chance of rain in the next 24 hours. ${rainHours} hours of significant precipitation expected. Prepare sites for potential power outages and water ingress.`,
       time: alertTime ? new Date(alertTime).toLocaleString("en-PK", { hour: "2-digit", minute: "2-digit", day: "numeric", month: "short" }) : "Soon",
     });
-  } else if (maxProb >= 40) {
+  } else if (maxProb >= 60) {
     const idx = next24Prob.indexOf(maxProb);
     const alertTime = data.hourly.time[Math.max(0, nowIdx) + idx];
     alerts.push({
@@ -353,6 +356,7 @@ export default function WeatherRadar() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
+  const [selectedCity, setSelectedCity] = useState(CITIES[0]);
 
   const fetchWeather = useCallback(async () => {
     setLoading(true);
@@ -463,8 +467,8 @@ export default function WeatherRadar() {
         <div className="flex items-center justify-between flex-wrap gap-4">
           <div>
             <h2 className="text-2xl font-bold text-white mb-1">Live Weather Radar</h2>
-            <p className="text-slate-400 text-sm">
-              Real-time conditions and alerts for Lahore, Sheikhupura & Kasur
+            <p className="text-slate-400 text-sm max-w-2xl">
+              Real-time conditions and alerts for Lahore, Sheikhupura & Kasur, now enhanced with Windy.com live radar for regional storm tracking.
               {lastUpdate && (
                 <span className="ml-2 text-slate-600">· Updated {lastUpdate.toLocaleTimeString("en-PK")}</span>
               )}
@@ -477,6 +481,56 @@ export default function WeatherRadar() {
           >
             <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} /> Refresh
           </button>
+        </div>
+      </div>
+
+      <div className="grid gap-5">
+        <div className="bg-slate-900 border border-slate-700 rounded-3xl overflow-hidden shadow-xl">
+          <div className="flex flex-col gap-4 px-5 py-4 border-b border-slate-700 bg-slate-950/70">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h3 className="text-lg font-semibold text-white">Windy.com Live Radar</h3>
+                <p className="text-slate-400 text-sm max-w-2xl">
+                  Live regional radar overlay from Windy. Use the city selector to center the radar on Lahore, Sheikhupura, or Kasur.
+                </p>
+              </div>
+              <a
+                href="https://www.windy.com/"
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-cyan-500/15 text-cyan-300 text-sm font-medium hover:bg-cyan-500/20"
+              >
+                Open Windy.com
+              </a>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {CITIES.map((city) => {
+                const active = city.name === selectedCity.name;
+                return (
+                  <button
+                    key={city.name}
+                    onClick={() => setSelectedCity(city)}
+                    className={`rounded-full px-4 py-2 text-sm font-medium transition-all ${
+                      active
+                        ? "bg-cyan-500 text-slate-950 shadow-lg shadow-cyan-500/20"
+                        : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+                    }`}
+                  >
+                    {city.name}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          <div className="relative aspect-[16/9] bg-black">
+            <iframe
+              src={getWindyEmbedUrl(selectedCity.lat, selectedCity.lon)}
+              title="Windy Live Radar"
+              loading="lazy"
+              allowFullScreen
+              className="absolute inset-0 w-full h-full border-0"
+            />
+          </div>
         </div>
       </div>
 

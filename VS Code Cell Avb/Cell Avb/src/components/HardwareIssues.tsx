@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import React, { useState, useMemo } from "react";
 import { motion } from "framer-motion";
 import {
   AlertTriangle,
@@ -9,6 +9,11 @@ import {
   Battery,
   MapPin,
   TrendingDown,
+  ChevronUp,
+  ChevronDown,
+  Users,
+  X,
+  Filter,
 } from "lucide-react";
 import { type SheetPayload } from "../services/googleSheets";
 import ExportButton from "./ExportButton";
@@ -110,7 +115,6 @@ function BarChart({ data }: { data: Record<string, number> }) {
 
 /* ============ Map Placeholder ============ */
 function SitesMap({ rows }: { rows: Row[] }) {
-  // Group by grid for a simple visual representation
   const gridCounts = useMemo(() => countBy(rows, "Grid"), [rows]);
   const grids = Object.entries(gridCounts).sort((a, b) => b[1] - a[1]);
   const maxCount = Math.max(...grids.map((g) => g[1]), 1);
@@ -156,17 +160,65 @@ function SitesMap({ rows }: { rows: Row[] }) {
 export default function HardwareIssues({ data }: HardwareIssuesProps) {
   const rows = data.rows;
   const headers = data.headers;
+  const [expandedGrid, setExpandedGrid] = useState<string | null>(null);
+  const [selectedEmployee, setSelectedEmployee] = useState<string>("all");
+  const [selectedLevel, setSelectedLevel] = useState<"zongLead" | "msGtl" | "clusterOwner">("zongLead");
+
+  // Map level to column name in the sheet
+  const getEmployeeColumn = (level: string): string => {
+    switch (level) {
+      case "zongLead":
+        return "Zone Lead";
+      case "msGtl":
+        return "MS GTL";
+      case "clusterOwner":
+        return "Cluster Owner";
+      default:
+        return "Cluster Owner";
+    }
+  };
+
+  // Get unique employees for the filter - using the correct column names
+  const employeeNames = useMemo(() => {
+    const names = new Set<string>();
+    const columnName = getEmployeeColumn(selectedLevel);
+    
+    rows.forEach((row) => {
+      // Try different possible column names
+      let name = row[columnName] || row["Cluster Owner"] || row["MS GTL"] || row["Zone Lead"] || "";
+      name = name.trim();
+      if (name && name !== "Unassigned" && name !== "") {
+        names.add(name);
+      }
+    });
+    return Array.from(names).sort();
+  }, [rows, selectedLevel]);
+
+  // Filter rows by selected employee
+  const filteredRows = useMemo(() => {
+    if (selectedEmployee === "all") {
+      return rows;
+    }
+    const columnName = getEmployeeColumn(selectedLevel);
+    
+    return rows.filter((row) => {
+      let name = row[columnName] || row["Cluster Owner"] || row["MS GTL"] || row["Zone Lead"] || "";
+      name = name.trim();
+      return name === selectedEmployee;
+    });
+  }, [rows, selectedEmployee, selectedLevel]);
 
   const stats = useMemo(() => {
-    const total = rows.length;
-    const c1 = rows.filter((r) => r["Sub-Region"] === "C-1").length;
-    const c6 = rows.filter((r) => r["Sub-Region"] === "C-6").length;
-    const dgOps = rows.filter((r) => (r["DG Status"] ?? "").toLowerCase() === "operational").length;
-    const liIon = rows.filter((r) => (r["Li-ion Installed (Yes / No)"] ?? "").toUpperCase() === "YES").length;
-    const agm = rows.filter((r) => /agm/i.test(r["AGM/LION"] ?? "")).length;
+    const total = filteredRows.length;
+    const c1Rows = filteredRows.filter((r) => r["Sub-Region"] === "C-1");
+    const c6Rows = filteredRows.filter((r) => r["Sub-Region"] === "C-6");
+    const c1 = c1Rows.length;
+    const c6 = c6Rows.length;
+    const dgOps = filteredRows.filter((r) => (r["DG Status"] ?? "").toLowerCase() === "operational").length;
+    const liIon = filteredRows.filter((r) => (r["Li-ion Installed (Yes / No)"] ?? "").toUpperCase() === "YES").length;
+    const agm = filteredRows.filter((r) => /agm/i.test(r["AGM/LION"] ?? "")).length;
 
-    // Technology mismatch: sites with large differences between 2G/3G/4G
-    const mismatch = rows.filter((r) => {
+    const mismatch = filteredRows.filter((r) => {
       const g2 = num(r["2G"]);
       const g3 = num(r["3G"]);
       const g4 = num(r["4G"]);
@@ -176,16 +228,34 @@ export default function HardwareIssues({ data }: HardwareIssuesProps) {
       return diff23 > 10 || diff24 > 10 || diff34 > 10;
     }).length;
 
-    // Worst CA: average of 2G, 3G, 4G
-    const withCa = rows.filter((r) => num(r["2G"]) > 0 || num(r["3G"]) > 0 || num(r["4G"]) > 0);
+    const c1Diff23 = c1Rows.filter((r) => num(r["2G-3G"]) > 10).length;
+    const c1Diff24 = c1Rows.filter((r) => num(r["2G-4G"]) > 10).length;
+    const c1Diff34 = c1Rows.filter((r) => num(r["3G-4G"]) > 10).length;
 
-    return { total, c1, c6, dgOps, liIon, agm, mismatch, withCa };
-  }, [rows]);
+    const c6Diff23 = c6Rows.filter((r) => num(r["2G-3G"]) > 10).length;
+    const c6Diff24 = c6Rows.filter((r) => num(r["2G-4G"]) > 10).length;
+    const c6Diff34 = c6Rows.filter((r) => num(r["3G-4G"]) > 10).length;
+
+    const withCa = filteredRows.filter((r) => num(r["2G"]) > 0 || num(r["3G"]) > 0 || num(r["4G"]) > 0);
+    const nonDg = total - dgOps;
+
+    const c1TotalDiff = c1Diff23 + c1Diff24 + c1Diff34;
+    const c6TotalDiff = c6Diff23 + c6Diff24 + c6Diff34;
+    const c1Has2G3GMore = c1Diff23 > c1Diff34;
+    const c6Has2G4GMore = c6Diff24 > c6Diff23;
+
+    return { 
+      total, c1, c6, dgOps, nonDg, liIon, agm, mismatch, withCa, 
+      c1Diff23, c1Diff24, c1Diff34, c6Diff23, c6Diff24, c6Diff34, 
+      c1TotalDiff, c6TotalDiff, c1Has2G3GMore, c6Has2G4GMore,
+      totalRows: filteredRows.length,
+    };
+  }, [filteredRows]);
 
   // Grid performance
   const gridStats = useMemo(() => {
     const gridMap = new Map<string, Row[]>();
-    rows.forEach((r) => {
+    filteredRows.forEach((r) => {
       const g = (r["Grid"] || "Unknown").trim();
       if (!gridMap.has(g)) gridMap.set(g, []);
       gridMap.get(g)!.push(r);
@@ -208,11 +278,11 @@ export default function HardwareIssues({ data }: HardwareIssuesProps) {
         return { grid, count: gs.length, avgCa: parseFloat(avgCa.toFixed(2)), critical };
       })
       .sort((a, b) => a.avgCa - b.avgCa);
-  }, [rows]);
+  }, [filteredRows]);
 
   // Worst 10 sites by average CA
   const worst10 = useMemo(() => {
-    return rows
+    return filteredRows
       .map((r) => {
         const vals = [num(r["2G"]), num(r["3G"]), num(r["4G"])].filter((v) => v > 0);
         const avgCa = vals.length > 0 ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
@@ -221,7 +291,7 @@ export default function HardwareIssues({ data }: HardwareIssuesProps) {
       .filter((s) => s.avgCa > 0)
       .sort((a, b) => a.avgCa - b.avgCa)
       .slice(0, 10);
-  }, [rows]);
+  }, [filteredRows]);
 
   const gridExport = gridStats.map((g) => ({
     Grid: g.grid,
@@ -244,7 +314,11 @@ export default function HardwareIssues({ data }: HardwareIssuesProps) {
     Technology: s.row["Technology"],
   }));
 
-  const techData = useMemo(() => countBy(rows, "Technology"), [rows]);
+  const techData = useMemo(() => countBy(filteredRows, "Technology"), [filteredRows]);
+
+  // Log the headers to debug
+  console.log("Hardware Issues Headers:", headers);
+  console.log("Sample row:", rows[0]);
 
   return (
     <motion.div
@@ -257,99 +331,275 @@ export default function HardwareIssues({ data }: HardwareIssuesProps) {
         <div className="flex items-center gap-3">
           <Cpu className="w-6 h-6 text-red-400" />
           <div>
-            <h2 className="text-2xl font-bold text-white">Sites with Hardware Issues</h2>
+            <h2 className="text-2xl font-bold text-white">Hardware Issues</h2>
             <p className="text-slate-400 text-sm">
-              {stats.total} sites with hardware issues · {stats.mismatch} with technology mismatch ·
+              {stats.total} total cases found · {stats.dgOps} DG operational, {stats.nonDg} Non-DG · {stats.c1} in C-1, {stats.c6} in C-6 ·
               Data from "Hardware issues" sheet
+              {selectedEmployee !== "all" && (
+                <span className="text-cyan-400 ml-2">· Filtered: {selectedEmployee}</span>
+              )}
             </p>
           </div>
         </div>
       </div>
 
+      {/* Employee Filter Section */}
+      <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-4">
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="flex items-center gap-2">
+              <Users className="w-4 h-4 text-slate-400" />
+              <span className="text-xs text-slate-400 font-medium">Filter by Employee:</span>
+            </div>
+            
+            {/* Level Selector */}
+            <div className="flex gap-1 bg-slate-900 rounded-lg p-1 border border-slate-700">
+              {[
+                { id: "zongLead" as const, label: "Zone Lead" },
+                { id: "msGtl" as const, label: "MS GTL" },
+                { id: "clusterOwner" as const, label: "Cluster Owner" },
+              ].map((lvl) => (
+                <button
+                  key={lvl.id}
+                  onClick={() => setSelectedLevel(lvl.id)}
+                  className={`px-2 py-1 rounded-md text-[10px] font-medium transition-colors ${
+                    selectedLevel === lvl.id
+                      ? "bg-cyan-500/20 text-cyan-400"
+                      : "text-slate-400 hover:text-slate-200"
+                  }`}
+                >
+                  {lvl.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Employee Dropdown */}
+            <select
+              value={selectedEmployee}
+              onChange={(e) => setSelectedEmployee(e.target.value)}
+              className="px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-sm text-slate-200 focus:border-cyan-500 outline-none min-w-[180px]"
+            >
+              <option value="all">All Employees ({employeeNames.length})</option>
+              {employeeNames.map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+            </select>
+            
+            {selectedEmployee !== "all" && (
+              <button
+                onClick={() => setSelectedEmployee("all")}
+                className="flex items-center gap-1 px-2 py-1 rounded text-xs bg-red-500/10 hover:bg-red-500/20 text-red-400 transition-colors"
+              >
+                <X className="w-3 h-3" /> Clear
+              </button>
+            )}
+          </div>
+          
+          <div className="text-xs text-slate-500">
+            Showing {stats.totalRows} sites
+            {selectedEmployee !== "all" && (
+              <span className="text-cyan-400 ml-1">· Filtered: {selectedEmployee}</span>
+            )}
+          </div>
+        </div>
+      </div>
+
       {/* Summary KPI Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <KpiCard
           icon={<AlertTriangle className="w-5 h-5" />}
           iconBg="bg-red-500/20"
           iconColor="text-red-400"
           value={stats.total}
           label="Total Issue Sites"
-          sub={`${stats.c1} in C-1, ${stats.c6} in C-6`}
+          sub="All regions combined"
           delay={0}
         />
-        <KpiCard
-          icon={<TrendingDown className="w-5 h-5" />}
-          iconBg="bg-amber-500/20"
-          iconColor="text-amber-400"
-          value={stats.mismatch}
-          label="Tech Mismatch"
-          sub=">10% CA difference"
-          delay={0.08}
-        />
-        <KpiCard
-          icon={<Fuel className="w-5 h-5" />}
-          iconBg="bg-orange-500/20"
-          iconColor="text-orange-400"
-          value={stats.dgOps}
-          label="DG Operational"
-          sub="Diesel generator sites"
-          delay={0.16}
-        />
-        <KpiCard
-          icon={<Battery className="w-5 h-5" />}
-          iconBg="bg-emerald-500/20"
-          iconColor="text-emerald-400"
-          value={stats.liIon}
-          label="Li-ion Installed"
-          sub={`${stats.agm} AGM sites`}
-          delay={0.24}
-        />
-        <KpiCard
-          icon={<Activity className="w-5 h-5" />}
-          iconBg="bg-cyan-500/20"
-          iconColor="text-cyan-400"
-          value={stats.withCa.length}
-          label="Sites with CA Data"
-          sub="2G/3G/4G availability"
-          delay={0.32}
-        />
+        <div className="bg-slate-800 border border-slate-700 rounded-xl p-5">
+          <div className="flex flex-col gap-2">
+            <div className="text-xs text-slate-400 font-semibold">C-1 Tech Differences</div>
+            <div className="space-y-1">
+              <div className="flex justify-between items-center">
+                <span className="text-xs text-slate-500">2G-3G</span>
+                <span className="text-sm font-bold text-amber-400">{stats.c1Diff23}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-xs text-slate-500">2G-4G</span>
+                <span className="text-sm font-bold text-orange-400">{stats.c1Diff24}</span>
+              </div>
+              <div className="flex justify-between items-center border-t border-slate-700 pt-1">
+                <span className="text-xs text-slate-500">3G-4G</span>
+                <span className="text-sm font-bold text-red-400">{stats.c1Diff34}</span>
+              </div>
+            </div>
+            {stats.c1Has2G3GMore && <div className="text-[10px] text-amber-400 mt-1">⚠️ More 2G-3G issues</div>}
+          </div>
+        </div>
+        <div className="bg-slate-800 border border-slate-700 rounded-xl p-5">
+          <div className="flex flex-col gap-2">
+            <div className="text-xs text-slate-400 font-semibold">C-6 Tech Differences</div>
+            <div className="space-y-1">
+              <div className="flex justify-between items-center">
+                <span className="text-xs text-slate-500">2G-3G</span>
+                <span className="text-sm font-bold text-amber-400">{stats.c6Diff23}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-xs text-slate-500">2G-4G</span>
+                <span className="text-sm font-bold text-orange-400">{stats.c6Diff24}</span>
+              </div>
+              <div className="flex justify-between items-center border-t border-slate-700 pt-1">
+                <span className="text-xs text-slate-500">3G-4G</span>
+                <span className="text-sm font-bold text-red-400">{stats.c6Diff34}</span>
+              </div>
+            </div>
+            {stats.c6Has2G4GMore && <div className="text-[10px] text-orange-400 mt-1">⚠️ More 2G-4G issues</div>}
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
+            <div className="flex flex-col gap-1.5">
+              <div className="text-xs text-slate-400 font-semibold">DG Status</div>
+              <div className="flex justify-between items-center">
+                <span className="text-xs text-slate-500">Operational</span>
+                <span className="text-lg font-bold text-orange-400">{stats.dgOps}</span>
+              </div>
+              <div className="flex justify-between items-center border-t border-slate-700 pt-1">
+                <span className="text-xs text-slate-500">Non-DG</span>
+                <span className="text-lg font-bold text-blue-400">{stats.nonDg}</span>
+              </div>
+            </div>
+          </div>
+          <KpiCard
+            icon={<TrendingDown className="w-5 h-5" />}
+            iconBg="bg-amber-500/20"
+            iconColor="text-amber-400"
+            value={stats.mismatch}
+            label="Tech Mismatch"
+            sub=">10% difference"
+            delay={0.08}
+          />
+        </div>
       </div>
 
       {/* Grid Performance */}
       <div className="bg-slate-800 border border-slate-700 rounded-xl p-6">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold text-white">Grid Performance</h3>
+          <h3 className="text-lg font-semibold text-white">Grid Performance with Hardware Issues</h3>
           <ExportButton data={gridExport} filename="hardware_grid_performance" sheetName="Grid Performance" label="Export" />
         </div>
+        {gridStats.length > 0 && (
+          <div className="mb-4 p-3 bg-red-500/10 border border-red-500/30 rounded-lg">
+            <div className="flex items-start gap-2">
+              <span className="text-red-400 font-bold">⚠️</span>
+              <div className="text-sm text-red-300">
+                <span className="font-semibold">{gridStats[0].grid}</span> has the most hardware issues with 
+                <span className="font-semibold"> {gridStats[0].count} sites</span> and lowest average CA of 
+                <span className="font-semibold"> {gridStats[0].avgCa.toFixed(2)}%</span>
+              </div>
+            </div>
+          </div>
+        )}
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-700">
                 <th className="text-left py-3 px-3 text-slate-400 font-medium">Grid</th>
-                <th className="text-center py-3 px-3 text-slate-400 font-medium">Sites</th>
+                <th className="text-center py-3 px-3 text-slate-400 font-medium">Issue Sites</th>
                 <th className="text-center py-3 px-3 text-slate-400 font-medium">Avg CA %</th>
                 <th className="text-center py-3 px-3 text-slate-400 font-medium">Critical</th>
                 <th className="text-center py-3 px-3 text-slate-400 font-medium">Status</th>
+                <th className="text-center py-3 px-3 text-slate-400 font-medium">Actions</th>
               </tr>
             </thead>
             <tbody>
-              {gridStats.map((g) => (
-                <tr key={g.grid} className="border-b border-slate-700/50 hover:bg-slate-700/30">
-                  <td className="py-3 px-3 text-slate-200 font-medium">{g.grid}</td>
-                  <td className="py-3 px-3 text-center text-slate-300">{g.count}</td>
-                  <td className={`py-3 px-3 text-center font-semibold ${g.avgCa >= 95 ? "text-emerald-400" : "text-red-400"}`}>
-                    {g.avgCa.toFixed(2)}%
-                  </td>
-                  <td className="py-3 px-3 text-center">
-                    {g.critical > 0 ? <span className="text-red-400">{g.critical}</span> : <span className="text-slate-600">0</span>}
-                  </td>
-                  <td className="py-3 px-3 text-center">
-                    <span className={`text-xs px-2 py-0.5 rounded ${g.avgCa >= 95 ? "bg-emerald-500/15 text-emerald-400" : "bg-red-500/15 text-red-400"}`}>
-                      {g.avgCa >= 95 ? "Healthy" : "Critical"}
-                    </span>
-                  </td>
-                </tr>
-              ))}
+              {gridStats.map((g) => {
+                const isWorstGrid = g.grid === gridStats[0]?.grid;
+                const isExpanded = expandedGrid === g.grid;
+                const gridSites = filteredRows.filter((r) => r["Grid"] === g.grid);
+                return (
+                  <React.Fragment key={g.grid}>
+                    <tr className={`border-b border-slate-700/50 hover:bg-slate-700/30 ${isWorstGrid ? "bg-red-500/10" : ""}`}>
+                      <td className={`py-3 px-3 font-medium ${isWorstGrid ? "text-red-400" : "text-slate-200"}`}>
+                        {g.grid}
+                        {isWorstGrid && <span className="ml-2 text-xs text-red-400">🔴 Worst</span>}
+                      </td>
+                      <td className="py-3 px-3 text-center text-slate-300">{g.count}</td>
+                      <td className={`py-3 px-3 text-center font-semibold ${g.avgCa >= 95 ? "text-emerald-400" : "text-red-400"}`}>
+                        {g.avgCa.toFixed(2)}%
+                      </td>
+                      <td className="py-3 px-3 text-center">
+                        {g.critical > 0 ? <span className="text-red-400">{g.critical}</span> : <span className="text-slate-600">0</span>}
+                      </td>
+                      <td className="py-3 px-3 text-center">
+                        <span className={`text-xs px-2 py-0.5 rounded ${g.avgCa >= 95 ? "bg-emerald-500/15 text-emerald-400" : "bg-red-500/15 text-red-400"}`}>
+                          {g.avgCa >= 95 ? "Healthy" : "Critical"}
+                        </span>
+                      </td>
+                      <td className="py-3 px-3 text-center flex items-center justify-center gap-2">
+                        <ExportButton
+                          data={gridSites.map((r) => ({ 
+                            "Site ID": r["Site ID"], 
+                            Grid: r["Grid"], 
+                            Region: r["Sub-Region"], 
+                            "2G": r["2G"], 
+                            "3G": r["3G"], 
+                            "4G": r["4G"], 
+                            "2G-3G": r["2G-3G"], 
+                            "2G-4G": r["2G-4G"], 
+                            "3G-4G": r["3G-4G"],
+                            "Cluster Owner": r["Cluster Owner"] || r["clusterOwner"] || "",
+                            "MS GTL": r["MS GTL"] || r["msGtl"] || "",
+                            "Zone Lead": r["Zone Lead"] || r["zongLead"] || "",
+                          }))}
+                          filename={`hardware_${g.grid.replace(/\s+/g, "_")}`}
+                          sheetName={g.grid}
+                          label="Export"
+                          variant="compact"
+                        />
+                        <button onClick={() => setExpandedGrid(isExpanded ? null : g.grid)} className="text-slate-400 hover:text-white">
+                          {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                        </button>
+                      </td>
+                    </tr>
+                    {isExpanded && (
+                      <tr className="bg-slate-900/40">
+                        <td colSpan={6} className="px-6 py-4">
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-xs">
+                              <thead>
+                                <tr className="border-b border-slate-700">
+                                  {["Site ID", "Region", "2G", "3G", "4G", "2G-3G", "2G-4G", "3G-4G", "Cluster Owner", "MS GTL", "Zone Lead"].map((h) => (
+                                    <th key={h} className="text-left py-2 px-2 text-slate-500">{h}</th>
+                                  ))}
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {gridSites.map((s) => (
+                                  <tr key={s["Site ID"]} className="border-b border-slate-800">
+                                    <td className="py-1.5 px-2 text-cyan-300 font-mono">{s["Site ID"]}</td>
+                                    <td className="py-1.5 px-2 text-slate-300">{s["Sub-Region"]}</td>
+                                    <td className="py-1.5 px-2 text-center text-slate-400">{s["2G"] || "-"}</td>
+                                    <td className="py-1.5 px-2 text-center text-slate-400">{s["3G"] || "-"}</td>
+                                    <td className="py-1.5 px-2 text-center text-slate-400">{s["4G"] || "-"}</td>
+                                    <td className="py-1.5 px-2 text-center text-amber-400">{s["2G-3G"] || "-"}</td>
+                                    <td className="py-1.5 px-2 text-center text-orange-400">{s["2G-4G"] || "-"}</td>
+                                    <td className="py-1.5 px-2 text-center text-red-400">{s["3G-4G"] || "-"}</td>
+                                    <td className="py-1.5 px-2 text-slate-300">{s["Cluster Owner"] || s["clusterOwner"] || "-"}</td>
+                                    <td className="py-1.5 px-2 text-slate-300">{s["MS GTL"] || s["msGtl"] || "-"}</td>
+                                    <td className="py-1.5 px-2 text-slate-300">{s["Zone Lead"] || s["zongLead"] || "-"}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -413,30 +663,30 @@ export default function HardwareIssues({ data }: HardwareIssuesProps) {
       </div>
 
       {/* Map */}
-      <SitesMap rows={rows} />
+      <SitesMap rows={filteredRows} />
 
       {/* Full Data Table */}
       <div className="bg-slate-800 border border-slate-700 rounded-xl p-6">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-semibold text-white">All Hardware Issue Sites</h3>
           <ExportButton
-            data={rows}
+            data={filteredRows}
             filename="hardware_issues_all"
             sheetName="Hardware Issues"
-            label={`Export ${rows.length} Sites`}
+            label={`Export ${filteredRows.length} Sites`}
           />
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-700">
-                {["Site ID", "Category", "Region", "Grid", "2G", "3G", "4G", "DG", "Li-ion", "Owner"].map((h) => (
+                {["Site ID", "Category", "Region", "Grid", "2G", "3G", "4G", "DG", "Li-ion", "Cluster Owner", "MS GTL", "Zone Lead"].map((h) => (
                   <th key={h} className="text-left py-3 px-3 text-slate-400 font-medium whitespace-nowrap">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {rows.slice(0, 50).map((row, i) => (
+              {filteredRows.slice(0, 50).map((row, i) => (
                 <tr key={row["Site ID"] + i} className="border-b border-slate-700/50 hover:bg-slate-700/30">
                   <td className="py-2.5 px-3 text-cyan-300 font-mono whitespace-nowrap">{row["Site ID"]}</td>
                   <td className="py-2.5 px-3 text-slate-300 whitespace-nowrap">{row["Revenue Category"]}</td>
@@ -447,15 +697,17 @@ export default function HardwareIssues({ data }: HardwareIssuesProps) {
                   <td className="py-2.5 px-3 text-center text-slate-400">{row["4G"] || "-"}</td>
                   <td className="py-2.5 px-3 text-slate-400 whitespace-nowrap">{row["DG Status"]}</td>
                   <td className="py-2.5 px-3 text-slate-400 whitespace-nowrap">{row["Li-ion Installed (Yes / No)"]}</td>
-                  <td className="py-2.5 px-3 text-slate-400 whitespace-nowrap">{row["Cluster Owner"]}</td>
+                  <td className="py-2.5 px-3 text-slate-400 whitespace-nowrap">{row["Cluster Owner"] || row["clusterOwner"] || "-"}</td>
+                  <td className="py-2.5 px-3 text-slate-400 whitespace-nowrap">{row["MS GTL"] || row["msGtl"] || "-"}</td>
+                  <td className="py-2.5 px-3 text-slate-400 whitespace-nowrap">{row["Zone Lead"] || row["zongLead"] || "-"}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
-        {rows.length > 50 && (
+        {filteredRows.length > 50 && (
           <p className="text-center text-xs text-slate-500 mt-3">
-            Showing first 50 of {rows.length} sites. Export for full data.
+            Showing first 50 of {filteredRows.length} sites. Export for full data.
           </p>
         )}
       </div>

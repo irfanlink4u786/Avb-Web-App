@@ -12,7 +12,7 @@ interface RainInfo {
 /**
  * Blinking flip-in/flip-out rain alert widget.
  * Fetches live weather from Open-Meteo for Lahore, Sheikhupura, Kasur.
- * If any city has >=40% rain probability in the next 12 hours,
+ * If any city has >=60% rain probability in the next 12 hours,
  * the widget blinks in (flip-in) and blinks out (flip-out) on a loop.
  */
 export default function RainAlertWidget() {
@@ -57,7 +57,7 @@ export default function RainAlertWidget() {
 
             const maxProb = Math.max(...next12Prob, 0);
             const rainHours = next12Prob.filter(
-              (p: number, i: number) => p >= 40 || next12Codes[i] >= 51
+              (p: number, i: number) => p >= 60 || next12Codes[i] >= 51
             ).length;
 
             // Find first rain time
@@ -85,7 +85,7 @@ export default function RainAlertWidget() {
 
         if (!cancelled) {
           // Only show cities with rain probability >= 40%
-          setRainCities(results.filter((r) => r.maxProb >= 40));
+          setRainCities(results.filter((r) => r.maxProb >= 60));
           setLoading(false);
         }
       } catch (err) {
