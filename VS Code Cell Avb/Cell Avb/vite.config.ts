@@ -12,14 +12,28 @@ export default defineConfig(async ({ mode }) => {
   } catch {}
 
   const env = loadEnv(mode, process.cwd(), ['VITE_', 'NEXT_PUBLIC_']);
+  
+  // FIX: Only define environment variables that are actually used
+  // and ensure they are properly stringified
   const processEnvDefines: Record<string, string> = {};
   for (const [key, value] of Object.entries(env)) {
-    processEnvDefines[`process.env.${key}`] = JSON.stringify(value);
+    // Only include VITE_ and NEXT_PUBLIC_ prefixed variables
+    if (key.startsWith('VITE_') || key.startsWith('NEXT_PUBLIC_')) {
+      processEnvDefines[`process.env.${key}`] = JSON.stringify(value);
+    }
   }
 
   return {
     plugins,
     envPrefix: ['VITE_', 'NEXT_PUBLIC_'],
     define: processEnvDefines,
+    server: {
+      host: '0.0.0.0',
+      allowedHosts: ['.app.github.dev'],
+    },
+    // Add this to help with debugging
+    optimizeDeps: {
+      include: ['react', 'react-dom', 'framer-motion', 'lucide-react'],
+    },
   };
 })
