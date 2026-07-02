@@ -8,13 +8,10 @@ export default defineConfig(async ({ mode }) => {
     react(),
     tailwindcss(),
     nodePolyfills({
-      // List the core modules that need polyfills
       include: ['buffer', 'stream', 'path', 'util', 'process', 'events', 'os', 'crypto'],
-      // No 'glob' option – it's not valid for this plugin
     }),
   ];
 
-  // Optional custom plugin
   try {
     // @ts-ignore
     const m = await import('./.vite-source-tags.js');
@@ -34,7 +31,6 @@ export default defineConfig(async ({ mode }) => {
     envPrefix: ['VITE_', 'NEXT_PUBLIC_'],
     define: {
       ...processEnvDefines,
-      // Provide a global `global` object for libraries that expect it
       global: 'globalThis',
     },
     server: {
@@ -42,12 +38,16 @@ export default defineConfig(async ({ mode }) => {
       allowedHosts: ['.app.github.dev'],
     },
     optimizeDeps: {
-      include: ['react', 'react-dom', 'framer-motion', 'lucide-react'],
+      include: [
+        'react',
+        'react-dom',
+        'framer-motion',
+        'lucide-react',
+        'react-is', // added
+      ],
     },
     build: {
       rollupOptions: {
-        // Force Rollup to never externalize any dependency – this ensures
-        // polyfills are bundled instead of being left as external.
         external: [],
       },
     },
