@@ -9,5 +9,6 @@
     "VITE_GOOGLE_AUTH_PROXY": "https://designarena.ai/auth/google/callback",
     "FULLSTACK_PROJECT_REF": "cvkuogymtijgcfnethil",
     "FULLSTACK_RESTORE_API_URL": "https://designarena.ai/api/fullstack-restore"
-  }
+  },
+  "outputDirectory": "dist"
 }
