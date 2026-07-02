@@ -1,3 +1,6 @@
+// Re-export SheetPayload so other files can import it from this module
+export type { SheetPayload } from "../types";
+
 import { SheetPayload } from "../types";
 
 const DEFAULT_SHEET_ID = '1Bu4lneVsXvoHdiiJtJvzKSVq0MrTHQOqvH38w7MlNPk';

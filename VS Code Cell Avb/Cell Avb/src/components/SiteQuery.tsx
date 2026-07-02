@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useEffect, useCallback } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Search,
@@ -21,6 +21,16 @@ import {
 } from "lucide-react";
 import { type SiteData, CATEGORY_COLORS, PGS_GROUP } from "../types";
 import ExportButton from "./ExportButton";
+
+// ============================================================
+// Type declarations for Google Maps
+// ============================================================
+declare global {
+  interface Window {
+    google: any;
+  }
+}
+declare const google: any; // for direct use, but we'll use window.google
 
 // Google Maps API Key - Replace with your key
 const GOOGLE_MAPS_API_KEY = "YOUR_GOOGLE_MAPS_API_KEY";
@@ -68,8 +78,8 @@ function SiteInfoCard({ site }: { site: SiteData }) {
     { label: "Li-ion Chronic", value: site.liIonChronic || "—" },
     { label: "Target", value: site.target ? `${site.target}%` : "—" },
     { label: "City", value: site.city || "—" },
-    { label: "Latitude", value: site.lat || "—" },
-    { label: "Longitude", value: site.lng || "—" },
+    { label: "Latitude", value: (site as any).lat || "—" },
+    { label: "Longitude", value: (site as any).lng || "—" },
   ];
 
   const isHealthy = site.currentAvb >= 95;
@@ -435,17 +445,17 @@ function GoogleMap({
   mapSearch: string;
 }) {
   const mapRef = useRef<HTMLDivElement>(null);
-  const mapInstanceRef = useRef<google.maps.Map | null>(null);
-  const markersRef = useRef<google.maps.Marker[]>([]);
-  const infoWindowRef = useRef<google.maps.InfoWindow | null>(null);
+  const mapInstanceRef = useRef<any>(null);
+  const markersRef = useRef<any[]>([]);
+  const infoWindowRef = useRef<any>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
   const [loading, setLoading] = useState(true);
 
   // Filter sites with valid location
   const sitesWithLocation = useMemo(() => {
     return sites.filter(site => {
-      const lat = parseFloat(site.lat || '');
-      const lng = parseFloat(site.lng || '');
+      const lat = parseFloat((site as any).lat || '');
+      const lng = parseFloat((site as any).lng || '');
       return !isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0;
     });
   }, [sites]);
@@ -483,14 +493,14 @@ function GoogleMap({
         // Center on selected site if available
         let center = defaultCenter;
         if (selectedSiteData) {
-          const lat = parseFloat(selectedSiteData.lat || '');
-          const lng = parseFloat(selectedSiteData.lng || '');
+          const lat = parseFloat((selectedSiteData as any).lat || '');
+          const lng = parseFloat((selectedSiteData as any).lng || '');
           if (!isNaN(lat) && !isNaN(lng)) {
             center = { lat, lng };
           }
         }
 
-        mapInstanceRef.current = new google.maps.Map(mapRef.current, {
+        mapInstanceRef.current = new window.google.maps.Map(mapRef.current, {
           center,
           zoom: selectedSiteData ? 12 : 6,
           styles: [
@@ -575,7 +585,7 @@ function GoogleMap({
           ],
         });
 
-        infoWindowRef.current = new google.maps.InfoWindow();
+        infoWindowRef.current = new window.google.maps.InfoWindow();
         setMapLoaded(true);
         setLoading(false);
       } catch (error) {
@@ -597,26 +607,26 @@ function GoogleMap({
 
     // Create new markers
     filteredSites.forEach(site => {
-      const lat = parseFloat(site.lat || '');
-      const lng = parseFloat(site.lng || '');
+      const lat = parseFloat((site as any).lat || '');
+      const lng = parseFloat((site as any).lng || '');
       if (isNaN(lat) || isNaN(lng)) return;
 
       const isHealthy = site.currentAvb >= 98;
       const isSelected = selectedSite === site.siteName;
 
-      const marker = new google.maps.Marker({
+      const marker = new window.google.maps.Marker({
         position: { lat, lng },
         map: mapInstanceRef.current,
         title: site.siteName,
         icon: {
-          path: google.maps.SymbolPath.CIRCLE,
+          path: window.google.maps.SymbolPath.CIRCLE,
           fillColor: isHealthy ? '#10b981' : '#ef4444',
           fillOpacity: isSelected ? 1 : 0.8,
           strokeColor: isSelected ? '#06b6d4' : '#ffffff',
           strokeWeight: isSelected ? 3 : 1,
           scale: isSelected ? 10 : 8,
         },
-        animation: isSelected ? google.maps.Animation.BOUNCE : undefined,
+        animation: isSelected ? window.google.maps.Animation.BOUNCE : undefined,
         zIndex: isSelected ? 100 : 1,
       });
 
@@ -648,10 +658,10 @@ function GoogleMap({
 
     // Fit bounds to show all markers
     if (filteredSites.length > 0) {
-      const bounds = new google.maps.LatLngBounds();
+      const bounds = new window.google.maps.LatLngBounds();
       filteredSites.forEach(site => {
-        const lat = parseFloat(site.lat || '');
-        const lng = parseFloat(site.lng || '');
+        const lat = parseFloat((site as any).lat || '');
+        const lng = parseFloat((site as any).lng || '');
         if (!isNaN(lat) && !isNaN(lng)) {
           bounds.extend({ lat, lng });
         }
@@ -673,8 +683,8 @@ function GoogleMap({
   useEffect(() => {
     if (!mapInstanceRef.current || !selectedSiteData || !mapLoaded) return;
 
-    const lat = parseFloat(selectedSiteData.lat || '');
-    const lng = parseFloat(selectedSiteData.lng || '');
+    const lat = parseFloat((selectedSiteData as any).lat || '');
+    const lng = parseFloat((selectedSiteData as any).lng || '');
     if (!isNaN(lat) && !isNaN(lng)) {
       mapInstanceRef.current.panTo({ lat, lng });
       mapInstanceRef.current.setZoom(14);

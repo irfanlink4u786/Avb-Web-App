@@ -686,7 +686,7 @@ export default function HardwareIssues({ data }: HardwareIssuesProps) {
               </tr>
             </thead>
             <tbody>
-              {filteredRows.slice(0, 50).map((row, i) => (
+              {filteredRows.slice(0, 50).map((row: Row, i: number) => (
                 <tr key={row["Site ID"] + i} className="border-b border-slate-700/50 hover:bg-slate-700/30">
                   <td className="py-2.5 px-3 text-cyan-300 font-mono whitespace-nowrap">{row["Site ID"]}</td>
                   <td className="py-2.5 px-3 text-slate-300 whitespace-nowrap">{row["Revenue Category"]}</td>
