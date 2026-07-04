@@ -2212,83 +2212,82 @@ export default function App() {
   if (appState === "error") return <ErrorScreen message={errorMsg} onRetry={() => loadMonthData(selectedMonth || "june")} />;
 
   // ============================================================
-  //  LANDING PAGE – ATTRACTIVE NETWORK TOWER BACKGROUND
-  // ============================================================
-  if (!selectedMonth) {
-    return (
-      <div className="min-h-screen relative flex items-center justify-center overflow-hidden">
-        {/* Background image – replace with your own */}
-        <div
-          className="absolute inset-0 z-0"
-          style={{
-            backgroundImage: `url('https://images.unsplash.com/photo-1579451861283-bc2f2ba7ab68?ixlib=rb-4.0.3&auto=format&fit=crop&w=1920&q=80')`,
-            backgroundSize: 'cover',
-            backgroundPosition: 'center',
-          }}
-        />
-        {/* Dark overlay with blur */}
-        <div className="absolute inset-0 z-1 bg-black/60 backdrop-blur-sm" />
+//  LANDING PAGE – WITH ZONG 5G BACKGROUND
+// ============================================================
+if (!selectedMonth) {
+  return (
+    <div className="min-h-screen relative flex items-center justify-center overflow-hidden">
+      {/* Background image – ZONG 5G */}
+      <div
+        className="absolute inset-0 z-0"
+        style={{
+          backgroundImage: `url('/zong 5G.png')`,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+        }}
+      />
+      {/* Dark overlay with blur – reduces opacity to let the image shine */}
+      <div className="absolute inset-0 z-1 bg-black/50 backdrop-blur-sm" />
 
-        <div className="relative z-10 max-w-4xl w-full px-6 text-center">
-          {/* 5G Badge */}
-          <div className="inline-block mb-6 px-6 py-2 rounded-full bg-cyan-500/20 border border-cyan-400/30 backdrop-blur-sm">
-            <span className="text-cyan-300 font-bold tracking-widest text-sm">📶 5G NETWORK</span>
-          </div>
+      <div className="relative z-10 max-w-4xl w-full px-6 text-center">
+        {/* 5G Badge – you can keep or remove */}
+        <div className="inline-block mb-6 px-6 py-2 rounded-full bg-cyan-500/20 border border-cyan-400/30 backdrop-blur-sm">
+          <span className="text-cyan-300 font-bold tracking-widest text-sm">📶 ZONG 5G</span>
+        </div>
 
-          <h1 className="text-5xl md:text-7xl font-extrabold text-white leading-tight mb-4 drop-shadow-lg">
-            C1 & C6 <br />
-            <span className="bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">
-              Cell Avb Analysis
-            </span>
-          </h1>
-          <p className="text-xl text-slate-300 max-w-2xl mx-auto mb-12 drop-shadow">
-            Monitor site availability, performance, and reliability across your telecom infrastructure.
-          </p>
+        <h1 className="text-5xl md:text-7xl font-extrabold text-white leading-tight mb-4 drop-shadow-lg">
+          C1 & C6 <br />
+          <span className="bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">
+            Cell Avb Analysis
+          </span>
+        </h1>
+        <p className="text-xl text-slate-300 max-w-2xl mx-auto mb-12 drop-shadow">
+          Monitor site availability, performance, and reliability across your telecom infrastructure.
+        </p>
 
-          <div className="flex flex-col sm:flex-row justify-center gap-6">
-            {/* June Button */}
-            <button
-              onClick={() => loadMonthData("june")}
-              className="group relative px-10 py-5 rounded-2xl bg-gradient-to-br from-slate-800/80 to-slate-900/80 border border-slate-600/50 hover:border-cyan-400 transition-all duration-300 shadow-xl hover:shadow-cyan-500/20 backdrop-blur-sm overflow-hidden"
-            >
-              <span className="absolute inset-0 bg-gradient-to-r from-cyan-500/10 to-blue-500/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-              <div className="relative flex items-center gap-4">
-                <span className="text-5xl group-hover:scale-110 transition-transform">📅</span>
-                <div className="text-left">
-                  <span className="block text-2xl font-bold text-white">June 2026</span>
-                  <span className="text-slate-400 text-sm">Final data · 30 days</span>
-                </div>
-                <span className="ml-4 text-cyan-400 group-hover:translate-x-2 transition-transform">→</span>
+        <div className="flex flex-col sm:flex-row justify-center gap-6">
+          {/* June Button */}
+          <button
+            onClick={() => loadMonthData("june")}
+            className="group relative px-10 py-5 rounded-2xl bg-gradient-to-br from-slate-800/80 to-slate-900/80 border border-slate-600/50 hover:border-cyan-400 transition-all duration-300 shadow-xl hover:shadow-cyan-500/20 backdrop-blur-sm overflow-hidden"
+          >
+            <span className="absolute inset-0 bg-gradient-to-r from-cyan-500/10 to-blue-500/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+            <div className="relative flex items-center gap-4">
+              <span className="text-5xl group-hover:scale-110 transition-transform">📅</span>
+              <div className="text-left">
+                <span className="block text-2xl font-bold text-white">June 2026</span>
+                <span className="text-slate-400 text-sm">Final data · 30 days</span>
               </div>
-            </button>
+              <span className="ml-4 text-cyan-400 group-hover:translate-x-2 transition-transform">→</span>
+            </div>
+          </button>
 
-            {/* July Button */}
-            <button
-              onClick={() => loadMonthData("july")}
-              className="group relative px-10 py-5 rounded-2xl bg-gradient-to-br from-cyan-500/20 to-blue-500/20 border border-cyan-400/30 hover:border-cyan-300 transition-all duration-300 shadow-xl hover:shadow-cyan-500/40 backdrop-blur-sm overflow-hidden"
-            >
-              <span className="absolute inset-0 bg-gradient-to-r from-cyan-400/20 to-blue-400/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-              <div className="relative flex items-center gap-4">
-                <span className="text-5xl group-hover:scale-110 transition-transform">📊</span>
-                <div className="text-left">
-                  <span className="block text-2xl font-bold text-white">July 2026</span>
-                  <span className="text-slate-300 text-sm">Live updates · Progressive</span>
-                </div>
-                <span className="ml-4 text-cyan-300 group-hover:translate-x-2 transition-transform">→</span>
+          {/* July Button */}
+          <button
+            onClick={() => loadMonthData("july")}
+            className="group relative px-10 py-5 rounded-2xl bg-gradient-to-br from-cyan-500/20 to-blue-500/20 border border-cyan-400/30 hover:border-cyan-300 transition-all duration-300 shadow-xl hover:shadow-cyan-500/40 backdrop-blur-sm overflow-hidden"
+          >
+            <span className="absolute inset-0 bg-gradient-to-r from-cyan-400/20 to-blue-400/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+            <div className="relative flex items-center gap-4">
+              <span className="text-5xl group-hover:scale-110 transition-transform">📊</span>
+              <div className="text-left">
+                <span className="block text-2xl font-bold text-white">July 2026</span>
+                <span className="text-slate-300 text-sm">Live updates · Progressive</span>
               </div>
-            </button>
-          </div>
+              <span className="ml-4 text-cyan-300 group-hover:translate-x-2 transition-transform">→</span>
+            </div>
+          </button>
+        </div>
 
-          {/* Footer note */}
-          <div className="mt-12 text-slate-500 text-sm flex items-center justify-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            <span>Real-time data from Google Sheets</span>
-          </div>
+        {/* Footer */}
+        <div className="mt-12 text-slate-500 text-sm flex items-center justify-center gap-2">
+          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+          <span>Real-time data from Google Sheets</span>
         </div>
       </div>
-    );
-  }
-
+    </div>
+  );
+}
   // ============================================================
   //  DASHBOARD (unchanged)
   // ============================================================
