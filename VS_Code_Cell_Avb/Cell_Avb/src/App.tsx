@@ -2227,7 +2227,7 @@ if (!selectedMonth) {
         }}
       />
       {/* Dark overlay with blur – reduces opacity to let the image shine */}
-      <div className="absolute inset-0 z-1 bg-black/50 backdrop-blur-sm" />
+      <div className="absolute inset-0 z-1 bg-black/40" />
 
       <div className="relative z-10 max-w-4xl w-full px-6 text-center">
         {/* 5G Badge – you can keep or remove */}
@@ -2241,9 +2241,7 @@ if (!selectedMonth) {
             Cell Avb Analysis
           </span>
         </h1>
-        <p className="text-xl text-slate-300 max-w-2xl mx-auto mb-12 drop-shadow">
-          Monitor site availability, performance, and reliability across your telecom infrastructure.
-        </p>
+      
 
         <div className="flex flex-col sm:flex-row justify-center gap-6">
           {/* June Button */}
