@@ -3,8 +3,13 @@ export type { SheetPayload } from "../types";
 
 import { SheetPayload } from "../types";
 
+// Default sheet ID – only used when no sheetId is passed.
+// In your App.tsx you always pass the specific month sheet IDs,
+// so this fallback is not used.
 const DEFAULT_SHEET_ID = '1Bu4lneVsXvoHdiiJtJvzKSVq0MrTHQOqvH38w7MlNPk';
-const API_KEY = 'AIzaSyAH64iXcHsZjj4WIQNvv2xqvpLS6JID5dE';
+
+// ✅ UPDATED API KEY
+const API_KEY = 'AIzaSyCmwalE0E1hsB-sxfLYB82ZuuSYYoTz1x8';
 
 function columnToLetter(n: number): string {
   let letter = '';

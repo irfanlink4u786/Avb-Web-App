@@ -17,7 +17,6 @@ import {
   AlertCircle,
   Menu,
   Activity,
-  Lightbulb,
   MapPin,
   ChevronDown,
   ChevronUp,
@@ -32,7 +31,6 @@ import {
   Building2,
   Fuel,
   ListChecks,
-  UserCheck,
   Clock,
   CheckCircle2,
 } from "lucide-react";
@@ -73,7 +71,38 @@ import {
 } from "./types";
 
 // ============================================================
-// EXPORT UTILITY FUNCTIONS (unchanged)
+//  CONSTANTS
+// ============================================================
+
+/** Google Sheet IDs for each month */
+const SHEET_IDS = {
+  june: "1Bu4lneVsXvoHdiiJtJvzKSVq0MrTHQOqvH38w7MlNPk",
+  july: "1aLTAisv5jjRuIkTVa6MjWZ-QFOSYn8FvMlJ09GWUpX0",
+} as const;
+
+/** Navigation items for the sidebar */
+const NAV_ITEMS = [
+  { id: "overall", label: "Overall Summary", icon: LayoutDashboard },
+  { id: "employees", label: "Employees", icon: Users },
+  { id: "platinum-plus", label: "Platinum+", icon: Crown },
+  { id: "pgs", label: "PGS Sites", icon: TrendingUp },
+  { id: "sb", label: "SB Sites", icon: TrendingDown },
+  { id: "nps", label: "NPS Sites", icon: Sparkles },
+  { id: "dg", label: "DG Sites", icon: Zap },
+  { id: "li-ion", label: "Li-ion BB", icon: Battery },
+  { id: "below-base", label: "Below Base", icon: AlertTriangle },
+  { id: "agm", label: "AGM BB", icon: BatteryWarning },
+  { id: "rca", label: "RCA of Plat+", icon: ListChecks },
+  { id: "hardware", label: "Hardware Issues", icon: Cpu },
+  { id: "query", label: "Site Query", icon: Search },
+  { id: "weather", label: "Weather Radar", icon: CloudRain },
+] as const;
+
+type Month = "june" | "july";
+type AppState = "loading" | "dashboard" | "error";
+
+// ============================================================
+//  UTILITY FUNCTIONS (Export)
 // ============================================================
 
 function exportToCSV(data: any[], filename: string) {
@@ -174,8 +203,144 @@ function exportToExcel(data: any[], filename: string) {
   URL.revokeObjectURL(url);
 }
 
+function indexToColumn(index: number): string {
+  let col = "";
+  let num = index;
+  while (num > 0) {
+    const rem = (num - 1) % 26;
+    col = String.fromCharCode(65 + rem) + col;
+    num = Math.floor((num - 1) / 26);
+  }
+  return col;
+}
+
 // ============================================================
-// EXPORT BUTTON COMPONENT (unchanged)
+//  MOCK DATA (for fallback)
+// ============================================================
+
+const MOCK_SITES: SiteData[] = [
+  {
+    siteName: "SITE-001",
+    subRegion: "C-1",
+    revenueCategory: "Platinum",
+    grid: "Grid-A",
+    currentAvb: 97.2,
+    monthlyAvb: 96.8,
+    latitude: "24.8607",
+    longitude: "67.0011",
+    dgStatus: "Operational",
+    dgInstalled: "Operational",
+    dgRating: "100kVA",
+    liIonInstalled: "YES",
+    liIonCapacity: 200,
+    agmBb: "No",
+    bbStatus: "Good",
+    belowBase: "No",
+    msGtl: "Jane Smith",
+    zongLead: "Mike Johnson",
+    clusterOwner: "John Doe",
+    npsSiteDomain: "",
+    technology: "4G",
+    terrain: "Urban",
+    sharingStatus: "Shared",
+    indoorOutdoor: "Outdoor",
+    hubSingle: "Hub",
+    dependentSites: 3,
+    chronic: "No",
+    dgChronic: "No",
+    liIonChronic: "No",
+    target: 98.5,
+    city: "Karachi",
+    ca2G: 98.1,
+    ca3G: 97.5,
+    ca4G: 96.8,
+    dailyData: {
+      "23-Jun-26": 97.2,
+      "24-Jun-26": 96.8,
+      "25-Jun-26": 97.0,
+    },
+    dailyLs: {
+      "23-Jun-26": 2.5,
+      "24-Jun-26": 1.8,
+      "25-Jun-26": 0.5,
+    },
+  },
+];
+
+// ============================================================
+//  SHARED UI COMPONENTS
+// ============================================================
+
+function CaBadge({ value, threshold }: { value: number; threshold: number }) {
+  const color = value >= threshold ? "bg-emerald-500/15 text-emerald-400" : "bg-red-500/15 text-red-400";
+  return <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${color}`}>{value.toFixed(2)}%</span>;
+}
+
+function CategoryBadge({ category }: { category: string }) {
+  const color = CATEGORY_COLORS[category] || "#475569";
+  return (
+    <span className="inline-block px-2 py-0.5 rounded text-[11px] font-medium" style={{ background: `${color}22`, color }}>
+      {category}
+    </span>
+  );
+}
+
+function FilterSelect({
+  label,
+  options,
+  value,
+  onChange,
+}: {
+  label: string;
+  options: string[];
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="flex items-center gap-2 px-3.5 py-2 rounded-lg bg-slate-900 border border-slate-700 hover:border-slate-600 text-sm text-slate-200 transition-colors w-full justify-between min-w-[150px]"
+      >
+        <span className="text-slate-500">{label}:</span>
+        <span className="font-medium truncate max-w-[120px]">{value === "__all" ? "All" : value}</span>
+        <ChevronDown className={`w-4 h-4 text-slate-500 transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+          <div className="absolute z-20 mt-1 w-full max-h-60 overflow-y-auto rounded-lg bg-slate-900 border border-slate-600 shadow-xl py-1">
+            <button
+              onClick={() => {
+                onChange("__all");
+                setOpen(false);
+              }}
+              className={`w-full text-left px-3 py-1.5 text-sm hover:bg-slate-800 ${value === "__all" ? "text-cyan-400" : "text-slate-300"}`}
+            >
+              All
+            </button>
+            {options.map((opt) => (
+              <button
+                key={opt}
+                onClick={() => {
+                  onChange(opt);
+                  setOpen(false);
+                }}
+                className={`w-full text-left px-3 py-1.5 text-sm hover:bg-slate-800 truncate ${value === opt ? "text-cyan-400" : "text-slate-300"}`}
+              >
+                {opt}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+//  EXPORT BUTTON COMPONENT
 // ============================================================
 
 function ExportButtonComponent({
@@ -244,218 +409,7 @@ function ExportButtonComponent({
 }
 
 // ============================================================
-// COLUMN HELPER (unchanged)
-// ============================================================
-
-function indexToColumn(index: number): string {
-  let col = "";
-  let num = index;
-  while (num > 0) {
-    const rem = (num - 1) % 26;
-    col = String.fromCharCode(65 + rem) + col;
-    num = Math.floor((num - 1) / 26);
-  }
-  return col;
-}
-
-// ============================================================
-// OVERALL SUMMARY WRAPPER WITH EXPORT (unchanged)
-// ============================================================
-
-function OverallSummaryWithExport({ sites, rawData }: { sites: SiteData[]; rawData?: SheetPayload | null }) {
-  const fullExportData = useMemo(() => {
-    if (rawData && rawData.rows && rawData.rows.length > 0) {
-      return rawData.rows.map((row: any) => {
-        const exportRow: Record<string, any> = {};
-        rawData.headers.forEach((header: string) => {
-          exportRow[header] = row[header] ?? "";
-        });
-        return exportRow;
-      });
-    }
-    return sites.map((site) => ({
-      "Site ID": site.siteName,
-      "Revenue Category": site.revenueCategory,
-      "Sub-Region": site.subRegion,
-      "Current CA%": site.currentAvb?.toFixed(2) || "-",
-      "Monthly AVB": site.monthlyAvb?.toFixed(2) || "-",
-      Grid: site.grid || "-",
-      Terrain: site.terrain || "-",
-      Technology: site.technology || "-",
-      "Sharing Status": site.sharingStatus || "-",
-      "Indoor/Outdoor": site.indoorOutdoor || "-",
-      "DG Status": site.dgInstalled || "-",
-      "DG Rating": site.dgRating || "-",
-      "Li-ion Installed": site.liIonInstalled || "-",
-      "Li-ion Capacity": site.liIonCapacity || "-",
-      "AGM/LION": site.agmBb || "-",
-      "BB Status": site.bbStatus || "-",
-      "Below Base": site.belowBase || "-",
-      "HUB/Single": site.hubSingle || "-",
-      "Dependent Sites": site.dependentSites || "-",
-      "Cluster Owner": site.clusterOwner || "-",
-      "MS GTL": site.msGtl || "-",
-      "Zone Lead": site.zongLead || "-",
-      Chronic: site.chronic || "-",
-      "DG Chronic": site.dgChronic || "-",
-      "Li-ion Chronic": site.liIonChronic || "-",
-      Target: site.target ? `${site.target}%` : "-",
-      City: site.city || "-",
-      "2G CA": site.ca2G?.toFixed(2) || "-",
-      "3G CA": site.ca3G?.toFixed(2) || "-",
-      "4G CA": site.ca4G?.toFixed(2) || "-",
-    }));
-  }, [sites, rawData]);
-
-  return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-4">
-        <div className="flex items-center gap-3">
-          <FileSpreadsheet className="w-5 h-5 text-cyan-400" />
-          <div>
-            <h3 className="text-white font-semibold">Export All Google Sheet Data</h3>
-            <p className="text-xs text-slate-400">{fullExportData.length} rows · All columns from A to GH</p>
-          </div>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <ExportButtonComponent data={fullExportData} filename="all_sites_full_data" label="Export Excel" format="excel" variant="primary" />
-          <ExportButtonComponent data={fullExportData} filename="all_sites_full_data" label="CSV" format="csv" variant="secondary" />
-        </div>
-      </div>
-      <OverallSummaryComponent sites={sites} />
-    </div>
-  );
-}
-
-// ============================================================
-// MOCK DATA (unchanged)
-// ============================================================
-
-const MOCK_SITES: SiteData[] = [
-  {
-    siteName: "SITE-001",
-    subRegion: "C-1",
-    revenueCategory: "Platinum",
-    grid: "Grid-A",
-    currentAvb: 97.2,
-    monthlyAvb: 96.8,
-    latitude: "24.8607",
-    longitude: "67.0011",
-    dgStatus: "Operational",
-    dgInstalled: "Operational",
-    dgRating: "100kVA",
-    liIonInstalled: "YES",
-    liIonCapacity: 200,
-    agmBb: "No",
-    bbStatus: "Good",
-    belowBase: "No",
-    msGtl: "Jane Smith",
-    zongLead: "Mike Johnson",
-    clusterOwner: "John Doe",
-    npsSiteDomain: "",
-    technology: "4G",
-    terrain: "Urban",
-    sharingStatus: "Shared",
-    indoorOutdoor: "Outdoor",
-    hubSingle: "Hub",
-    dependentSites: 3,
-    chronic: "No",
-    dgChronic: "No",
-    liIonChronic: "No",
-    target: 98.5,
-    city: "Karachi",
-    ca2G: 98.1,
-    ca3G: 97.5,
-    ca4G: 96.8,
-    dailyData: {
-      "23-Jun-26": 97.2,
-      "24-Jun-26": 96.8,
-      "25-Jun-26": 97.0,
-    },
-    dailyLs: {
-      "23-Jun-26": 2.5,
-      "24-Jun-26": 1.8,
-      "25-Jun-26": 0.5,
-    },
-  },
-  // Add more mock sites as needed
-];
-
-// ============================================================
-// SHARED UI COMPONENTS (unchanged)
-// ============================================================
-
-function CaBadge({ value, threshold }: { value: number; threshold: number }) {
-  const color = value >= threshold ? "bg-emerald-500/15 text-emerald-400" : "bg-red-500/15 text-red-400";
-  return (
-    <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${color}`}>{value.toFixed(2)}%</span>
-  );
-}
-
-function CategoryBadge({ category }: { category: string }) {
-  const color = CATEGORY_COLORS[category] || "#475569";
-  return (
-    <span className="inline-block px-2 py-0.5 rounded text-[11px] font-medium" style={{ background: `${color}22`, color }}>
-      {category}
-    </span>
-  );
-}
-
-function FilterSelect({ label, options, value, onChange }: {
-  label: string;
-  options: string[];
-  value: string;
-  onChange: (v: string) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  return (
-    <div className="relative">
-      <button
-        onClick={() => setOpen((o) => !o)}
-        className="flex items-center gap-2 px-3.5 py-2 rounded-lg bg-slate-900 border border-slate-700 hover:border-slate-600 text-sm text-slate-200 transition-colors w-full justify-between min-w-[150px]"
-      >
-        <span className="text-slate-500">{label}:</span>
-        <span className="font-medium truncate max-w-[120px]">{value === "__all" ? "All" : value}</span>
-        <ChevronDown className={`w-4 h-4 text-slate-500 transition-transform ${open ? "rotate-180" : ""}`} />
-      </button>
-      {open && (
-        <>
-          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-          <div className="absolute z-20 mt-1 w-full max-h-60 overflow-y-auto rounded-lg bg-slate-900 border border-slate-600 shadow-xl py-1">
-            <button
-              onClick={() => {
-                onChange("__all");
-                setOpen(false);
-              }}
-              className={`w-full text-left px-3 py-1.5 text-sm hover:bg-slate-800 ${
-                value === "__all" ? "text-cyan-400" : "text-slate-300"
-              }`}
-            >
-              All
-            </button>
-            {options.map((opt) => (
-              <button
-                key={opt}
-                onClick={() => {
-                  onChange(opt);
-                  setOpen(false);
-                }}
-                className={`w-full text-left px-3 py-1.5 text-sm hover:bg-slate-800 truncate ${
-                  value === opt ? "text-cyan-400" : "text-slate-300"
-                }`}
-              >
-                {opt}
-              </button>
-            ))}
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
-
-// ============================================================
-// DETAIL MODAL (unchanged)
+//  DETAIL MODAL
 // ============================================================
 
 function DetailModal({ row, onClose }: { row: SiteData; onClose: () => void }) {
@@ -543,7 +497,7 @@ function DetailModal({ row, onClose }: { row: SiteData; onClose: () => void }) {
 }
 
 // ============================================================
-// SITE TABLE (unchanged)
+//  SITE TABLE
 // ============================================================
 
 function uniqueVals(rows: SiteData[], key: keyof SiteData): string[] {
@@ -709,7 +663,7 @@ function SiteTable({ rows, onSelect }: { rows: SiteData[]; onSelect: (r: SiteDat
 }
 
 // ============================================================
-// CATEGORY PAGE WITH DYNAMIC LAST 3 DAYS (unchanged)
+//  CATEGORY PAGE
 // ============================================================
 
 function CategoryPage({
@@ -738,7 +692,7 @@ function CategoryPage({
   const filteredSites = useMemo(() => sites.filter(filterFn), [sites, filterFn]);
   const activeSites = useMemo(() => filteredSites.filter((s) => s.currentAvb > 0), [filteredSites]);
 
-  // Export all sites
+  // Export all sites in this category
   const categoryExportData = useMemo(() => {
     return filteredSites.map((s) => ({
       "Site ID": s.siteName,
@@ -877,7 +831,7 @@ function CategoryPage({
     });
   }, [worstSites, lastThreeDays]);
 
-  // --- Unstable sites ---
+  // --- Unstable sites (avg < 98%) ---
   const gridUnstableSites = useMemo(() => {
     return filteredSites.filter((s) => s.currentAvb > 0 && s.currentAvb < 98);
   }, [filteredSites]);
@@ -966,6 +920,7 @@ function CategoryPage({
     Status: g.avgCa >= threshold ? "Healthy" : "Critical",
   }));
 
+  // --- Render ---
   return (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="max-w-[1600px] mx-auto space-y-6">
       <div
@@ -995,6 +950,7 @@ function CategoryPage({
         </div>
       </div>
 
+      {/* Stats cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
           { icon: <MapPin className="w-5 h-5 text-blue-400" />, bg: "bg-blue-500/20", value: stats.total, label: "Total Sites" },
@@ -1024,6 +980,7 @@ function CategoryPage({
         ))}
       </div>
 
+      {/* Employee filter */}
       <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-4">
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div className="flex items-center gap-3 flex-wrap">
@@ -1076,6 +1033,7 @@ function CategoryPage({
         </div>
       </div>
 
+      {/* Worst 10 */}
       <div className="bg-red-500/5 border border-red-500/30 rounded-xl p-4">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
@@ -1152,6 +1110,7 @@ function CategoryPage({
         )}
       </div>
 
+      {/* Unstable sites */}
       <div className="bg-slate-800 border border-slate-700 rounded-xl p-6">
         <div className="flex items-center justify-between mb-4">
           <div>
@@ -1217,6 +1176,7 @@ function CategoryPage({
         )}
       </div>
 
+      {/* Grid performance */}
       <div className="bg-slate-800 border border-slate-700 rounded-xl p-6">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-semibold text-white">Grid Performance Analysis - All Sites</h3>
@@ -1337,7 +1297,7 @@ function CategoryPage({
 }
 
 // ============================================================
-// SITE QUERY COMPONENT (unchanged)
+//  SITE QUERY
 // ============================================================
 
 function SiteQuery({ sites }: { sites: SiteData[] }) {
@@ -1397,6 +1357,7 @@ function SiteQuery({ sites }: { sites: SiteData[] }) {
     }));
   }, [selectedSite]);
 
+  // Inner ComboChart component
   function ComboChart({ data, title }: { data: any[]; title: string }) {
     if (!data || data.length === 0) {
       return (
@@ -1756,7 +1717,7 @@ function SiteQuery({ sites }: { sites: SiteData[] }) {
 }
 
 // ============================================================
-// RCA SUMMARY (UPDATED TO 6 COLUMNS: Site ID, Month, Category, Issue, POC, Status)
+//  RCA SUMMARY
 // ============================================================
 
 interface RcaRecord {
@@ -1852,7 +1813,6 @@ function RcaSummary({ rcaData }: { rcaData: SheetPayload | null }) {
         </div>
       </div>
 
-      {/* Summary Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div className="bg-slate-800 border border-slate-700 rounded-xl p-5">
           <div className="flex items-center gap-3 mb-2">
@@ -1900,7 +1860,6 @@ function RcaSummary({ rcaData }: { rcaData: SheetPayload | null }) {
         </div>
       </div>
 
-      {/* Filters */}
       <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-4">
         <div className="flex flex-wrap items-center gap-4">
           <div className="flex items-center gap-2">
@@ -1943,7 +1902,6 @@ function RcaSummary({ rcaData }: { rcaData: SheetPayload | null }) {
         </div>
       </div>
 
-      {/* POC Workload */}
       {pocWorkload.length > 0 && (
         <div className="bg-slate-800/30 border border-slate-700 rounded-xl p-4">
           <h4 className="text-sm font-semibold text-white mb-3">POC Workload (Open + In Progress)</h4>
@@ -1958,7 +1916,6 @@ function RcaSummary({ rcaData }: { rcaData: SheetPayload | null }) {
         </div>
       )}
 
-      {/* Table with 6 columns: Site ID, Month, Category, Issue, POC, Status */}
       <div className="bg-slate-800 border border-slate-700 rounded-xl p-6">
         <h3 className="text-lg font-semibold text-white mb-4">Action Items</h3>
         {filtered.length > 0 ? (
@@ -2009,25 +1966,77 @@ function RcaSummary({ rcaData }: { rcaData: SheetPayload | null }) {
 }
 
 // ============================================================
-// MAIN APP
+//  OVERALL SUMMARY WITH EXPORT
 // ============================================================
 
-const NAV_ITEMS = [
-  { id: "overall", label: "Overall Summary", icon: LayoutDashboard },
-  { id: "employees", label: "Employees", icon: Users },
-  { id: "platinum-plus", label: "Platinum+", icon: Crown },
-  { id: "pgs", label: "PGS Sites", icon: TrendingUp },
-  { id: "sb", label: "SB Sites", icon: TrendingDown },
-  { id: "nps", label: "NPS Sites", icon: Sparkles },
-  { id: "dg", label: "DG Sites", icon: Zap },
-  { id: "li-ion", label: "Li-ion BB", icon: Battery },
-  { id: "below-base", label: "Below Base", icon: AlertTriangle },
-  { id: "agm", label: "AGM BB", icon: BatteryWarning },
-  { id: "rca", label: "RCA of Plat+", icon: ListChecks },
-  { id: "hardware", label: "Hardware Issues", icon: Cpu },
-  { id: "query", label: "Site Query", icon: Search },
-  { id: "weather", label: "Weather Radar", icon: CloudRain },
-];
+function OverallSummaryWithExport({ sites, rawData }: { sites: SiteData[]; rawData?: SheetPayload | null }) {
+  const fullExportData = useMemo(() => {
+    if (rawData && rawData.rows && rawData.rows.length > 0) {
+      return rawData.rows.map((row: any) => {
+        const exportRow: Record<string, any> = {};
+        rawData.headers.forEach((header: string) => {
+          exportRow[header] = row[header] ?? "";
+        });
+        return exportRow;
+      });
+    }
+    return sites.map((site) => ({
+      "Site ID": site.siteName,
+      "Revenue Category": site.revenueCategory,
+      "Sub-Region": site.subRegion,
+      "Current CA%": site.currentAvb?.toFixed(2) || "-",
+      "Monthly AVB": site.monthlyAvb?.toFixed(2) || "-",
+      Grid: site.grid || "-",
+      Terrain: site.terrain || "-",
+      Technology: site.technology || "-",
+      "Sharing Status": site.sharingStatus || "-",
+      "Indoor/Outdoor": site.indoorOutdoor || "-",
+      "DG Status": site.dgInstalled || "-",
+      "DG Rating": site.dgRating || "-",
+      "Li-ion Installed": site.liIonInstalled || "-",
+      "Li-ion Capacity": site.liIonCapacity || "-",
+      "AGM/LION": site.agmBb || "-",
+      "BB Status": site.bbStatus || "-",
+      "Below Base": site.belowBase || "-",
+      "HUB/Single": site.hubSingle || "-",
+      "Dependent Sites": site.dependentSites || "-",
+      "Cluster Owner": site.clusterOwner || "-",
+      "MS GTL": site.msGtl || "-",
+      "Zone Lead": site.zongLead || "-",
+      Chronic: site.chronic || "-",
+      "DG Chronic": site.dgChronic || "-",
+      "Li-ion Chronic": site.liIonChronic || "-",
+      Target: site.target ? `${site.target}%` : "-",
+      City: site.city || "-",
+      "2G CA": site.ca2G?.toFixed(2) || "-",
+      "3G CA": site.ca3G?.toFixed(2) || "-",
+      "4G CA": site.ca4G?.toFixed(2) || "-",
+    }));
+  }, [sites, rawData]);
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between flex-wrap gap-4">
+        <div className="flex items-center gap-3">
+          <FileSpreadsheet className="w-5 h-5 text-cyan-400" />
+          <div>
+            <h3 className="text-white font-semibold">Export All Google Sheet Data</h3>
+            <p className="text-xs text-slate-400">{fullExportData.length} rows · All columns</p>
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <ExportButtonComponent data={fullExportData} filename="all_sites_full_data" label="Export Excel" format="excel" variant="primary" />
+          <ExportButtonComponent data={fullExportData} filename="all_sites_full_data" label="CSV" format="csv" variant="secondary" />
+        </div>
+      </div>
+      <OverallSummaryComponent sites={sites} />
+    </div>
+  );
+}
+
+// ============================================================
+//  LOADING / ERROR / BANNER
+// ============================================================
 
 function LoadingScreen() {
   return (
@@ -2079,64 +2088,90 @@ function SectionBanner({ icon, title, subtitle, gradient }: { icon: React.ReactN
   );
 }
 
+// ============================================================
+//  MAIN APP
+// ============================================================
+
 export default function App() {
-  const [rawData, setRawData] = useState<SheetPayload | null>(null);
-  const [hardwareData, setHardwareData] = useState<SheetPayload | null>(null);
-  const [rcaData, setRcaData] = useState<SheetPayload | null>(null);
-  const [appState, setAppState] = useState<"loading" | "dashboard" | "error">("loading");
+  // Month selection state
+  const [selectedMonth, setSelectedMonth] = useState<Month | null>(null);
+  const [appState, setAppState] = useState<AppState>("dashboard");
   const [errorMsg, setErrorMsg] = useState("");
-  const [activeTab, setActiveTab] = useState("overall");
+
+  // Data state for the selected month
+  const [monthData, setMonthData] = useState<SheetPayload | null>(null);
+  const [monthHardware, setMonthHardware] = useState<SheetPayload | null>(null);
+  const [monthRca, setMonthRca] = useState<SheetPayload | null>(null);
+  const [monthLastUpdated, setMonthLastUpdated] = useState("");
+  const [monthLastColumnIndex, setMonthLastColumnIndex] = useState(0);
+  const [useMock, setUseMock] = useState(false);
+
+  // UI state
+  const [activeTab, setActiveTab] = useState<string>("overall");
   const [selectedRow, setSelectedRow] = useState<SiteData | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [useMockData, setUseMockData] = useState(false);
 
-  const [lastUpdatedDate, setLastUpdatedDate] = useState<string>("");
-  const [lastColumnIndex, setLastColumnIndex] = useState<number>(0);
+  // ------------------------------------------------------------------
+  //  Data fetching
+  // ------------------------------------------------------------------
 
-  const loadSheetData = async () => {
+  const loadMonthData = async (month: Month) => {
     setAppState("loading");
     setErrorMsg("");
+    const sheetId = SHEET_IDS[month];
     try {
       const [data, hwData, dateData, rcaSheet] = await Promise.all([
-        fetchGoogleSheet("1Bu4lneVsXvoHdiiJtJvzKSVq0MrTHQOqvH38w7MlNPk"),
-        fetchGoogleSheet("1Bu4lneVsXvoHdiiJtJvzKSVq0MrTHQOqvH38w7MlNPk", "Hardware issues"),
-        fetchGoogleSheet("1Bu4lneVsXvoHdiiJtJvzKSVq0MrTHQOqvH38w7MlNPk", "Updated Date"),
-        fetchGoogleSheet("1Bu4lneVsXvoHdiiJtJvzKSVq0MrTHQOqvH38w7MlNPk", "RCA of Plat +"),
+        fetchGoogleSheet(sheetId),
+        fetchGoogleSheet(sheetId, "Hardware issues"),
+        fetchGoogleSheet(sheetId, "Updated Date"),
+        fetchGoogleSheet(sheetId, "RCA of Plat +"),
       ]);
-      setRawData(data);
-      setHardwareData(hwData);
-      setRcaData(rcaSheet);
+      setMonthData(data);
+      setMonthHardware(hwData);
+      setMonthRca(rcaSheet);
       if (dateData && dateData.rows && dateData.rows.length > 0) {
         const row = dateData.rows[0];
-        const dateVal = row["Last Updated"] || row["Date"] || row["Last Date"] || "";
-        const idxVal = parseInt(row["Column Index"] || row["Column"] || row["Index"] || "0");
-        setLastUpdatedDate(dateVal);
-        setLastColumnIndex(idxVal);
+        setMonthLastUpdated(row["Last Updated"] || row["Date"] || row["Last Date"] || "");
+        setMonthLastColumnIndex(parseInt(row["Column Index"] || row["Column"] || row["Index"] || "0"));
       }
-      setUseMockData(false);
+      setUseMock(false);
+      setSelectedMonth(month);
       setAppState("dashboard");
     } catch (error) {
-      console.error("Error loading data from Google Sheets, using mock data:", error);
-      setLastUpdatedDate("25-Jun-26");
-      setLastColumnIndex(74);
-      setUseMockData(true);
+      console.error(`Error loading ${month} data:`, error);
+      // Fallback to mock
+      setMonthData(null);
+      setMonthHardware(null);
+      setMonthRca(null);
+      setMonthLastUpdated(month === "june" ? "25-Jun-26" : "25-Jul-26");
+      setMonthLastColumnIndex(74);
+      setUseMock(true);
+      setSelectedMonth(month);
       setAppState("dashboard");
     }
   };
 
-  useEffect(() => {
-    loadSheetData();
-  }, []);
+  const goToMonthSelection = () => {
+    setSelectedMonth(null);
+    setAppState("dashboard");
+    setActiveTab("overall");
+    // Optionally clear data to free memory
+    setMonthData(null);
+    setMonthHardware(null);
+    setMonthRca(null);
+  };
+
+  // ------------------------------------------------------------------
+  //  Derived data
+  // ------------------------------------------------------------------
 
   const sites: SiteData[] = useMemo(() => {
-    if (useMockData) {
-      return MOCK_SITES;
-    }
-    return rawData ? rawData.rows.map(normalizeRow) : [];
-  }, [rawData, useMockData]);
+    if (useMock) return MOCK_SITES;
+    return monthData ? monthData.rows.map(normalizeRow) : [];
+  }, [monthData, useMock]);
 
-  const hardwareIssuesData: SheetPayload | null = useMemo(() => {
-    if (useMockData) {
+  const hardwareData: SheetPayload | null = useMemo(() => {
+    if (useMock) {
       return {
         sheetTitle: "Hardware issues",
         tabTitle: "Hardware issues",
@@ -2152,9 +2187,12 @@ export default function App() {
         fetchedAt: new Date().toISOString(),
       };
     }
-    return hardwareData;
-  }, [hardwareData, useMockData]);
+    return monthHardware;
+  }, [monthHardware, useMock]);
 
+  const rcaData = monthRca;
+
+  // Filtered lists for tabs
   const platinumPlusRows = useMemo(() => sites.filter((s) => s.revenueCategory === "Platinum +"), [sites]);
   const pgsRows = useMemo(() => sites.filter((s) => PGS_GROUP.includes(s.revenueCategory)), [sites]);
   const sbRows = useMemo(() => sites.filter((s) => SB_GROUP.includes(s.revenueCategory)), [sites]);
@@ -2164,32 +2202,104 @@ export default function App() {
   const belowBaseRows = useMemo(() => sites.filter((s) => isBelowBase(s)), [sites]);
   const agmRows = useMemo(() => sites.filter((s) => hasAGM(s)), [sites]);
 
-  if (appState === "loading") return <LoadingScreen />;
-  if (appState === "error") return <ErrorScreen message={errorMsg} onRetry={loadSheetData} />;
-
   const activeLabel = NAV_ITEMS.find((item) => item.id === activeTab)?.label ?? "";
 
-  const categoryProps = {
-    lastUpdatedDate,
-    lastColumnIndex,
-  };
+  // ------------------------------------------------------------------
+  //  Render
+  // ------------------------------------------------------------------
+
+  if (appState === "loading") return <LoadingScreen />;
+  if (appState === "error") return <ErrorScreen message={errorMsg} onRetry={() => loadMonthData(selectedMonth || "june")} />;
+
+  // ============================================================
+  //  LANDING PAGE – ATTRACTIVE NETWORK TOWER BACKGROUND
+  // ============================================================
+  if (!selectedMonth) {
+    return (
+      <div className="min-h-screen relative flex items-center justify-center overflow-hidden">
+        {/* Background image – replace with your own */}
+        <div
+          className="absolute inset-0 z-0"
+          style={{
+            backgroundImage: `url('https://images.unsplash.com/photo-1579451861283-bc2f2ba7ab68?ixlib=rb-4.0.3&auto=format&fit=crop&w=1920&q=80')`,
+            backgroundSize: 'cover',
+            backgroundPosition: 'center',
+          }}
+        />
+        {/* Dark overlay with blur */}
+        <div className="absolute inset-0 z-1 bg-black/60 backdrop-blur-sm" />
+
+        <div className="relative z-10 max-w-4xl w-full px-6 text-center">
+          {/* 5G Badge */}
+          <div className="inline-block mb-6 px-6 py-2 rounded-full bg-cyan-500/20 border border-cyan-400/30 backdrop-blur-sm">
+            <span className="text-cyan-300 font-bold tracking-widest text-sm">📶 5G NETWORK</span>
+          </div>
+
+          <h1 className="text-5xl md:text-7xl font-extrabold text-white leading-tight mb-4 drop-shadow-lg">
+            C1 & C6 <br />
+            <span className="bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">
+              Cell Avb Analysis
+            </span>
+          </h1>
+          <p className="text-xl text-slate-300 max-w-2xl mx-auto mb-12 drop-shadow">
+            Monitor site availability, performance, and reliability across your telecom infrastructure.
+          </p>
+
+          <div className="flex flex-col sm:flex-row justify-center gap-6">
+            {/* June Button */}
+            <button
+              onClick={() => loadMonthData("june")}
+              className="group relative px-10 py-5 rounded-2xl bg-gradient-to-br from-slate-800/80 to-slate-900/80 border border-slate-600/50 hover:border-cyan-400 transition-all duration-300 shadow-xl hover:shadow-cyan-500/20 backdrop-blur-sm overflow-hidden"
+            >
+              <span className="absolute inset-0 bg-gradient-to-r from-cyan-500/10 to-blue-500/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+              <div className="relative flex items-center gap-4">
+                <span className="text-5xl group-hover:scale-110 transition-transform">📅</span>
+                <div className="text-left">
+                  <span className="block text-2xl font-bold text-white">June 2026</span>
+                  <span className="text-slate-400 text-sm">Final data · 30 days</span>
+                </div>
+                <span className="ml-4 text-cyan-400 group-hover:translate-x-2 transition-transform">→</span>
+              </div>
+            </button>
+
+            {/* July Button */}
+            <button
+              onClick={() => loadMonthData("july")}
+              className="group relative px-10 py-5 rounded-2xl bg-gradient-to-br from-cyan-500/20 to-blue-500/20 border border-cyan-400/30 hover:border-cyan-300 transition-all duration-300 shadow-xl hover:shadow-cyan-500/40 backdrop-blur-sm overflow-hidden"
+            >
+              <span className="absolute inset-0 bg-gradient-to-r from-cyan-400/20 to-blue-400/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+              <div className="relative flex items-center gap-4">
+                <span className="text-5xl group-hover:scale-110 transition-transform">📊</span>
+                <div className="text-left">
+                  <span className="block text-2xl font-bold text-white">July 2026</span>
+                  <span className="text-slate-300 text-sm">Live updates · Progressive</span>
+                </div>
+                <span className="ml-4 text-cyan-300 group-hover:translate-x-2 transition-transform">→</span>
+              </div>
+            </button>
+          </div>
+
+          {/* Footer note */}
+          <div className="mt-12 text-slate-500 text-sm flex items-center justify-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            <span>Real-time data from Google Sheets</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ============================================================
+  //  DASHBOARD (unchanged)
+  // ============================================================
+  const monthLabel = selectedMonth === "june" ? "June 2026" : "July 2026";
+  const isLive = selectedMonth === "july";
 
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100 flex">
       <RainAlertWidget />
 
-      <AnimatePresence>
-        {sidebarOpen && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-30 bg-black/50 lg:hidden"
-            onClick={() => setSidebarOpen(false)}
-          />
-        )}
-      </AnimatePresence>
-
+      {/* Sidebar */}
       <aside
         className={`fixed lg:sticky top-0 z-40 h-screen w-64 bg-slate-950 border-r border-slate-800 flex flex-col transition-transform ${
           sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
@@ -2202,7 +2312,7 @@ export default function App() {
             </div>
             <div>
               <h1 className="text-sm font-bold text-white leading-tight">C1 &amp; C6 Cell Avb Analysis</h1>
-              <p className="text-[10px] text-slate-500">{useMockData ? "📊 Demo Mode" : "Google Sheets Connected"}</p>
+              <p className="text-[10px] text-slate-500">{useMock ? "📊 Demo Mode" : "Google Sheets Connected"}</p>
             </div>
           </div>
         </div>
@@ -2237,13 +2347,12 @@ export default function App() {
               <Database className="w-3.5 h-3.5" />
               {sites.length} sites
             </div>
-            {useMockData && (
-              <span className="text-amber-400 text-[10px] bg-amber-500/10 px-2 py-0.5 rounded">Demo Data</span>
-            )}
+            {useMock && <span className="text-amber-400 text-[10px] bg-amber-500/10 px-2 py-0.5 rounded">Demo</span>}
           </div>
         </div>
       </aside>
 
+      {/* Main */}
       <div className="flex-1 min-w-0 flex flex-col">
         <header className="sticky top-0 z-20 bg-slate-900/80 backdrop-blur-xl border-b border-slate-800">
           <div className="px-4 sm:px-6 py-4 flex items-center justify-between gap-4">
@@ -2252,47 +2361,56 @@ export default function App() {
                 <Menu className="w-5 h-5" />
               </button>
               <div className="min-w-0">
-                <h2 className="text-lg font-bold text-white truncate">{activeLabel}</h2>
+                <h2 className="text-lg font-bold text-white truncate">
+                  {activeLabel} — {monthLabel}
+                  {isLive && <span className="ml-2 text-xs text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded">LIVE</span>}
+                </h2>
                 <p className="text-[11px] text-slate-500 truncate flex items-center gap-2 flex-wrap">
-                  {lastUpdatedDate && (
-                    <span className="text-cyan-400 font-medium">
-                      Report Updated: {lastUpdatedDate}
-                    </span>
+                  {monthLastUpdated && (
+                    <span className="text-cyan-400 font-medium">Report Updated: {monthLastUpdated}</span>
                   )}
-                  {!lastUpdatedDate && useMockData && (
-                    <span className="text-cyan-400 font-medium">Report Updated: 25-Jun-26</span>
+                  {!monthLastUpdated && useMock && (
+                    <span className="text-cyan-400 font-medium">Report Updated: {selectedMonth === "june" ? "25-Jun-26" : "25-Jul-26"}</span>
                   )}
                 </p>
               </div>
             </div>
-            <button
-              onClick={loadSheetData}
-              className="flex items-center gap-2 px-3.5 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm font-medium transition-colors shrink-0"
-            >
-              <RefreshCw className="w-4 h-4" /> {useMockData ? "Try Live Data" : "Refresh"}
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={goToMonthSelection}
+                className="flex items-center gap-2 px-3.5 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm font-medium transition-colors shrink-0"
+              >
+                <span className="text-slate-400">←</span> Switch Month
+              </button>
+              <button
+                onClick={() => loadMonthData(selectedMonth)}
+                className="flex items-center gap-2 px-3.5 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm font-medium transition-colors shrink-0"
+              >
+                <RefreshCw className="w-4 h-4" /> Refresh
+              </button>
+            </div>
           </div>
         </header>
 
         <main className="flex-1 p-4 sm:p-6 space-y-6">
-          <ErrorBoundary key={activeTab}>
+          <ErrorBoundary key={activeTab + selectedMonth}>
             <AnimatePresence mode="wait">
               <motion.div
-                key={activeTab}
+                key={activeTab + selectedMonth}
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -10 }}
                 transition={{ duration: 0.2 }}
                 className="space-y-6"
               >
-                {activeTab === "overall" && <OverallSummaryWithExport sites={sites} rawData={rawData} />}
+                {activeTab === "overall" && <OverallSummaryWithExport sites={sites} rawData={monthData} />}
 
                 {activeTab === "employees" && (
                   <>
                     <SectionBanner
                       icon={<Users className="w-6 h-6 text-indigo-400" />}
                       title="Employee Performance Analysis"
-                      subtitle={`${sites.filter((s) => s.currentAvb > 0).length} active sites across Zone Leads, MS GTL, and Cluster Owners`}
+                      subtitle={`${sites.filter((s) => s.currentAvb > 0).length} active sites`}
                       gradient="from-indigo-500/10 to-purple-500/10 border-indigo-500/20"
                     />
                     <EmployeePerformance sites={sites} />
@@ -2306,7 +2424,8 @@ export default function App() {
                     description={`${platinumPlusRows.length} sites in the Platinum+ category`}
                     threshold={98.5}
                     filterFn={(s) => s.revenueCategory === "Platinum +"}
-                    {...categoryProps}
+                    lastUpdatedDate={monthLastUpdated}
+                    lastColumnIndex={monthLastColumnIndex}
                   />
                 )}
 
@@ -2314,10 +2433,11 @@ export default function App() {
                   <CategoryPage
                     sites={sites}
                     title="PGS Sites"
-                    description={`${pgsRows.length} high-priority revenue sites (Platinum, Gold, Strategic)`}
+                    description={`${pgsRows.length} high-priority revenue sites`}
                     threshold={98.1}
                     filterFn={(s) => PGS_GROUP.includes(s.revenueCategory)}
-                    {...categoryProps}
+                    lastUpdatedDate={monthLastUpdated}
+                    lastColumnIndex={monthLastColumnIndex}
                   />
                 )}
 
@@ -2325,10 +2445,11 @@ export default function App() {
                   <CategoryPage
                     sites={sites}
                     title="SB Sites"
-                    description={`${sbRows.length} standard-tier revenue sites (Silver, Bronze)`}
+                    description={`${sbRows.length} standard-tier revenue sites`}
                     threshold={95}
                     filterFn={(s) => SB_GROUP.includes(s.revenueCategory)}
-                    {...categoryProps}
+                    lastUpdatedDate={monthLastUpdated}
+                    lastColumnIndex={monthLastColumnIndex}
                   />
                 )}
 
@@ -2339,7 +2460,8 @@ export default function App() {
                     description={`${npsRows.length} NPS Y26 sites`}
                     threshold={95}
                     filterFn={(s) => isNPSSite(s)}
-                    {...categoryProps}
+                    lastUpdatedDate={monthLastUpdated}
+                    lastColumnIndex={monthLastColumnIndex}
                   />
                 )}
 
@@ -2350,7 +2472,8 @@ export default function App() {
                     description={`${dgRows.length} sites with diesel generators`}
                     threshold={99}
                     filterFn={(s) => hasDG(s)}
-                    {...categoryProps}
+                    lastUpdatedDate={monthLastUpdated}
+                    lastColumnIndex={monthLastColumnIndex}
                   />
                 )}
 
@@ -2361,7 +2484,8 @@ export default function App() {
                     description={`${liIonRows.length} sites with Li-ion batteries installed`}
                     threshold={98}
                     filterFn={(s) => hasLiIon(s)}
-                    {...categoryProps}
+                    lastUpdatedDate={monthLastUpdated}
+                    lastColumnIndex={monthLastColumnIndex}
                   />
                 )}
 
@@ -2372,7 +2496,8 @@ export default function App() {
                     description={`${belowBaseRows.length} sites flagged below base threshold`}
                     threshold={95}
                     filterFn={(s) => isBelowBase(s)}
-                    {...categoryProps}
+                    lastUpdatedDate={monthLastUpdated}
+                    lastColumnIndex={monthLastColumnIndex}
                   />
                 )}
 
@@ -2383,22 +2508,24 @@ export default function App() {
                     description={`${agmRows.length} sites with AGM battery banks`}
                     threshold={95}
                     filterFn={(s) => hasAGM(s)}
-                    {...categoryProps}
+                    lastUpdatedDate={monthLastUpdated}
+                    lastColumnIndex={monthLastColumnIndex}
                   />
                 )}
 
                 {activeTab === "rca" && <RcaSummary rcaData={rcaData} />}
 
-                {activeTab === "hardware" && hardwareIssuesData && <HardwareIssues data={hardwareIssuesData} />}
+                {activeTab === "hardware" && hardwareData && <HardwareIssues data={hardwareData} />}
+
                 {activeTab === "query" && <SiteQuery sites={sites} />}
+
                 {activeTab === "weather" && <WeatherRadar />}
               </motion.div>
             </AnimatePresence>
           </ErrorBoundary>
 
           <footer className="text-center text-xs text-slate-600 py-4">
-            {useMockData ? "📊 Demo Mode - Using sample data" : "Live data from Google Sheets"} · {sites.length} sites · C1
-            &amp; C6 Cell Avb Analysis
+            {useMock ? "📊 Demo Mode - Using sample data" : `Live data from Google Sheets (${monthLabel})`} · {sites.length} sites · C1 & C6 Cell Avb Analysis
           </footer>
         </main>
       </div>
