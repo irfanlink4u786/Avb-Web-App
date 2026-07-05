@@ -80,6 +80,7 @@ const SHEET_IDS = {
   july: "1aLTAisv5jjRuIkTVa6MjWZ-QFOSYn8FvMlJ09GWUpX0",
 } as const;
 
+// Month dashboard sidebar – Pre‑Vs‑Post and Hardware Issues are removed
 const NAV_ITEMS = [
   { id: "overall", label: "Overall Summary", icon: LayoutDashboard },
   { id: "employees", label: "Employees", icon: Users },
@@ -92,15 +93,14 @@ const NAV_ITEMS = [
   { id: "below-base", label: "Below Base", icon: AlertTriangle },
   { id: "agm", label: "AGM BB", icon: BatteryWarning },
   { id: "rca", label: "RCA of Plat+", icon: ListChecks },
-  { id: "hardware", label: "Hardware Issues", icon: Cpu },
-  { id: "pre-vs-post", label: "Pre Vs Post", icon: GitCompare },
   { id: "query", label: "Site Query", icon: Search },
   { id: "weather", label: "Weather Radar", icon: CloudRain },
 ] as const;
 
 type Month = "june" | "july";
 type AppState = "loading" | "dashboard" | "error";
-type ViewMode = "home" | "month" | "prepost";
+type ViewMode = "home" | "month" | "prepost" | "hardware";
+type PrePostSubView = "analysis" | "query";
 
 // ============================================================
 //  UTILITY FUNCTIONS
@@ -476,7 +476,7 @@ function DetailModal({ row, onClose }: { row: SiteData; onClose: () => void }) {
                 {f.type === "ca" && typeof f.value === "number" && f.value > 0 ? (
                   <CaBadge value={f.value} threshold={95} />
                 ) : f.type === "category" ? (
-                  <CategoryBadge category={String(f.value || "Unknown")} />
+                  <CategoryBadge category={String(f.value)} />
                 ) : (
                   <span className="break-words">{f.value || "—"}</span>
                 )}
@@ -598,7 +598,7 @@ function SiteTable({ rows, onSelect }: { rows: SiteData[]; onSelect: (r: SiteDat
               >
                 <td className="px-3 py-2.5 font-mono text-cyan-300 whitespace-nowrap">{row.siteName}</td>
                 <td className="px-3 py-2.5">
-                  <CategoryBadge category={String(row.revenueCategory || "Unknown")} />
+                  <CategoryBadge category={row.revenueCategory} />
                 </td>
                 <td className="px-3 py-2.5">
                   {row.currentAvb > 0 ? <CaBadge value={row.currentAvb} threshold={95} /> : <span className="text-slate-600">—</span>}
@@ -1062,7 +1062,7 @@ function CategoryPage({
                     <td className="py-2 px-2 text-center text-slate-500">{i + 1}</td>
                     <td className="py-2 px-3 text-cyan-300 font-mono">{site.siteName}</td>
                     <td className="py-2 px-3">
-                      <CategoryBadge category={String(site.revenueCategory || "Unknown")} />
+                      <CategoryBadge category={site.revenueCategory} />
                     </td>
                     <td className="py-2 px-3 text-slate-400">{site.subRegion}</td>
                     <td className="py-2 px-3 text-slate-300">{site.grid}</td>
@@ -1078,7 +1078,7 @@ function CategoryPage({
                       {avg.toFixed(2)}%
                     </td>
                     <td className="py-2 px-3 text-center text-slate-300">
-                      {site.currentAvb?.toFixed(2) || "-"}
+                      {site.currentAvb.toFixed(2)}%
                     </td>
                   </tr>
                 ))}
@@ -1129,7 +1129,7 @@ function CategoryPage({
                   <tr key={site.siteName} className="border-b border-slate-700/50 hover:bg-slate-700/30 transition-colors">
                     <td className="py-2 px-3 text-cyan-300 font-mono">{site.siteName}</td>
                     <td className="py-2 px-3">
-                      <CategoryBadge category={String(site.revenueCategory || "Unknown")} />
+                      <CategoryBadge category={site.revenueCategory} />
                     </td>
                     <td className="py-2 px-3 text-slate-300">{site.clusterOwner || "-"}</td>
                     <td className="py-2 px-3 text-slate-300">{site.msGtl || "-"}</td>
@@ -2066,72 +2066,20 @@ function SectionBanner({ icon, title, subtitle, gradient }: { icon: React.ReactN
 }
 
 // ============================================================
-//  Pre‑Vs‑Post Analysis Component (UPDATED WITH SAFE DEFAULTS)
+//  Pre‑Vs‑Post Analysis Component (receives parsed sites)
 // ============================================================
 
 function PreVsPostAnalysis({
-  preVsPostData,
+  sites,
   lastUpdatedDate,
 }: {
-  preVsPostData: SheetPayload | null;
+  sites: SiteData[];
   lastUpdatedDate: string;
 }) {
   const [selectedEmployee, setSelectedEmployee] = useState<string>("all");
   const [selectedLevel, setSelectedLevel] = useState<"zongLead" | "msGtl" | "clusterOwner">("zongLead");
-  const [expandedGrids, setExpandedGrids] = useState<Set<string>>(new Set());
-
-  const sites = useMemo(() => {
-    if (!preVsPostData || !preVsPostData.rows) return [];
-    return preVsPostData.rows.map((row: any) => {
-      const dailyData: Record<string, number> = {};
-      const dateRegex = /^\d{1,2}-[A-Z][a-z]{2}-\d{2,4}$/;
-      for (const [key, value] of Object.entries(row)) {
-        if (dateRegex.test(key)) {
-          const num = parseFloatSafe(value as string);
-          if (num > 0) dailyData[key] = num;
-        }
-      }
-
-      return {
-        siteName: row["Site ID"] || "",
-        subRegion: row["Sub-Region"] || "",
-        revenueCategory: row["Category"] || "",
-        grid: row["Grid"] || "",
-        currentAvb: parseFloatSafe(row["Current Month"]),
-        monthlyAvb: parseFloatSafe(row["Current Month"]),
-        dgStatus: "",
-        dgInstalled: "",
-        liIonInstalled: "",
-        agmBb: "",
-        belowBase: "",
-        msGtl: row["MS GTL"] || "",
-        zongLead: row["Zone Lead"] || "",
-        clusterOwner: row["Cluster Owner"] || "",
-        npsSiteDomain: "",
-        technology: "",
-        terrain: "",
-        sharingStatus: "",
-        indoorOutdoor: "",
-        hubSingle: "",
-        dependentSites: 0,
-        chronic: "",
-        dgChronic: "",
-        liIonChronic: "",
-        target: 0,
-        city: "",
-        ca2G: 0,
-        ca3G: 0,
-        ca4G: 0,
-        dailyData,
-        dailyLs: {},
-        previousMonth: parseFloatSafe(row["Previous Month"]),
-        oldCase: row["Old Case"]?.toString().trim() || "",
-        now: row["Now"]?.toString().trim() || "",
-        newCase: row["New case"]?.toString().trim() || "",
-        category: row["Category"]?.toString().trim() || "",
-      } as SiteData;
-    });
-  }, [preVsPostData]);
+  const [expandedStillGrids, setExpandedStillGrids] = useState<Set<string>>(new Set());
+  const [expandedNewGrids, setExpandedNewGrids] = useState<Set<string>>(new Set());
 
   const employeeNames = useMemo(() => {
     const names = new Set<string>();
@@ -2216,57 +2164,49 @@ function PreVsPostAnalysis({
 
   const kpis = useMemo(() => {
     const total = employeeFilteredSites.length;
-
     const categoryCounts: Record<string, number> = {};
     employeeFilteredSites.forEach((s) => {
       const cat = s.category || "Unknown";
       categoryCounts[cat] = (categoryCounts[cat] || 0) + 1;
     });
-
     const sitesWithPrev = employeeFilteredSites.filter(s => s.previousMonth !== undefined && s.previousMonth > 0);
     const avgPrevMonth = sitesWithPrev.length > 0
       ? sitesWithPrev.reduce((sum, s) => sum + (s.previousMonth || 0), 0) / sitesWithPrev.length
       : 0;
-
     const avgCurrent = employeeFilteredSites.length > 0
       ? employeeFilteredSites.reduce((sum, s) => sum + s.currentAvb, 0) / employeeFilteredSites.length
       : 0;
-
     const unstablePrev = employeeFilteredSites.filter((s) => s.oldCase === "Unstable").length;
     const fixedNow = employeeFilteredSites.filter((s) => s.now === "Stable").length;
     const stillUnstable = employeeFilteredSites.filter((s) => s.now === "Still Unstable").length;
     const newUnstable = employeeFilteredSites.filter((s) => s.newCase === "New case").length;
-
-    return {
-      total,
-      categoryCounts,
-      avgPrevMonth,
-      avgCurrent,
-      unstablePrev,
-      fixedNow,
-      stillUnstable,
-      newUnstable,
-    };
+    return { total, categoryCounts, avgPrevMonth, avgCurrent, unstablePrev, fixedNow, stillUnstable, newUnstable };
   }, [employeeFilteredSites]);
 
-  const stillUnstableSites = useMemo(() => {
-    return employeeFilteredSites.filter((s) => s.now === "Still Unstable");
-  }, [employeeFilteredSites]);
-
-  const gridBreakdown = useMemo(() => {
+  const stillUnstableSites = useMemo(() => employeeFilteredSites.filter((s) => s.now === "Still Unstable"), [employeeFilteredSites]);
+  const stillUnstableGridBreakdown = useMemo(() => {
     const map = new Map<string, SiteData[]>();
     stillUnstableSites.forEach((site) => {
       const grid = site.grid || "Unknown";
       if (!map.has(grid)) map.set(grid, []);
       map.get(grid)!.push(site);
     });
-    return Array.from(map.entries())
-      .map(([grid, sites]) => ({ grid, count: sites.length, sites }))
-      .sort((a, b) => b.count - a.count);
+    return Array.from(map.entries()).map(([grid, sites]) => ({ grid, count: sites.length, sites })).sort((a, b) => b.count - a.count);
   }, [stillUnstableSites]);
 
-  const toggleGrid = (grid: string) => {
-    setExpandedGrids((prev) => {
+  const newCaseSites = useMemo(() => employeeFilteredSites.filter((s) => s.newCase === "New case"), [employeeFilteredSites]);
+  const newCaseGridBreakdown = useMemo(() => {
+    const map = new Map<string, SiteData[]>();
+    newCaseSites.forEach((site) => {
+      const grid = site.grid || "Unknown";
+      if (!map.has(grid)) map.set(grid, []);
+      map.get(grid)!.push(site);
+    });
+    return Array.from(map.entries()).map(([grid, sites]) => ({ grid, count: sites.length, sites })).sort((a, b) => b.count - a.count);
+  }, [newCaseSites]);
+
+  const toggleStillGrid = (grid: string) => {
+    setExpandedStillGrids((prev) => {
       const newSet = new Set(prev);
       if (newSet.has(grid)) newSet.delete(grid);
       else newSet.add(grid);
@@ -2274,35 +2214,52 @@ function PreVsPostAnalysis({
     });
   };
 
-  const worstExportData = useMemo(() => {
-    return worstSites.map(({ site, values, avg }, i) => {
-      const row: Record<string, any> = {
-        Rank: i + 1,
-        "Site ID": site.siteName,
-        Category: site.category,
-        "Sub-Region": site.subRegion,
-        Grid: site.grid,
-        "Cluster Owner": site.clusterOwner || "-",
-        "MS GTL": site.msGtl || "-",
-        "Zone Lead": site.zongLead || "-",
-        "Prev Month CA": site.previousMonth?.toFixed(2) || "-",
-        "Old Case": site.oldCase || "-",
-        Now: site.now || "-",
-        "New Case": site.newCase || "-",
-      };
-      lastThreeDays.forEach(({ label }, idx) => {
-        row[label] = values[idx]?.toFixed(2) || "-";
-      });
-      row["Last 3 Days Avg"] = avg.toFixed(2) + "%";
-      row["Current CA%"] = site.currentAvb?.toFixed(2) || "-";
-      return row;
+  const toggleNewGrid = (grid: string) => {
+    setExpandedNewGrids((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(grid)) newSet.delete(grid);
+      else newSet.add(grid);
+      return newSet;
     });
+  };
+
+  const nowBadge = (value: string | undefined) => {
+    const v = value || "";
+    if (v === "Stable") return <span className="bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded text-xs">Stable</span>;
+    if (v === "Still Unstable") return <span className="bg-red-500/20 text-red-400 px-2 py-0.5 rounded text-xs">Still Unstable</span>;
+    return <span className="bg-slate-500/20 text-slate-400 px-2 py-0.5 rounded text-xs">{v || "-"}</span>;
+  };
+
+  const newCaseBadge = (value: string | undefined) => {
+    const v = value || "";
+    if (v === "New case") return <span className="bg-red-500/20 text-red-400 px-2 py-0.5 rounded text-xs">New case</span>;
+    return <span className="bg-slate-500/20 text-slate-400 px-2 py-0.5 rounded text-xs">{v || "-"}</span>;
+  };
+
+  const worstExportData = useMemo(() => {
+    return worstSites.map(({ site, values, avg }, i) => ({
+      Rank: i + 1,
+      "Site ID": site.siteName,
+      Category: site.category || "Unknown",
+      "Sub-Region": site.subRegion,
+      Grid: site.grid,
+      "Cluster Owner": site.clusterOwner || "-",
+      "MS GTL": site.msGtl || "-",
+      "Zone Lead": site.zongLead || "-",
+      "Prev Month CA": site.previousMonth?.toFixed(2) || "-",
+      "Old Case": site.oldCase || "-",
+      Now: site.now || "-",
+      "New Case": site.newCase || "-",
+      ...Object.fromEntries(lastThreeDays.map(({ label }, idx) => [label, values[idx]?.toFixed(2) || "-"])),
+      "Last 3 Days Avg": avg.toFixed(2) + "%",
+      "Current CA%": site.currentAvb?.toFixed(2) || "-",
+    }));
   }, [worstSites, lastThreeDays]);
 
   const allExportData = useMemo(() => {
     return employeeFilteredSites.map((site) => ({
       "Site ID": site.siteName,
-      Category: site.category,
+      Category: site.category || "Unknown",
       "Sub-Region": site.subRegion,
       Grid: site.grid,
       "Cluster Owner": site.clusterOwner || "-",
@@ -2316,7 +2273,7 @@ function PreVsPostAnalysis({
     }));
   }, [employeeFilteredSites]);
 
-  const unstableGridExport = useMemo(() => {
+  const stillUnstableExport = useMemo(() => {
     return stillUnstableSites.map((site) => ({
       "Site ID": site.siteName,
       Grid: site.grid || "Unknown",
@@ -2325,60 +2282,45 @@ function PreVsPostAnalysis({
       "MS GTL": site.msGtl || "-",
       "Zone Lead": site.zongLead || "-",
       "Current CA%": site.currentAvb?.toFixed(2) || "-",
+      "Prev Month": site.previousMonth?.toFixed(2) || "-",
+      "Old Case": site.oldCase || "-",
     }));
   }, [stillUnstableSites]);
 
-  // Safe badge renderers – ensure string
-  const nowBadge = (value: string | undefined) => {
-  const v = value || "";
-  if (v === "Stable") return <span className="bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded text-xs">Stable</span>;
-  if (v === "Still Unstable") return <span className="bg-red-500/20 text-red-400 px-2 py-0.5 rounded text-xs">Still Unstable</span>;
-  return <span className="bg-slate-500/20 text-slate-400 px-2 py-0.5 rounded text-xs">{v || "-"}</span>;
-};
-
-  const newCaseBadge = (value: string | undefined) => {
-  const v = value || "";
-  if (v === "New case") return <span className="bg-red-500/20 text-red-400 px-2 py-0.5 rounded text-xs">New case</span>;
-  return <span className="bg-slate-500/20 text-slate-400 px-2 py-0.5 rounded text-xs">{v || "-"}</span>;
-};
+  const newCaseExport = useMemo(() => {
+    return newCaseSites.map((site) => ({
+      "Site ID": site.siteName,
+      Grid: site.grid || "Unknown",
+      "Sub-Region": site.subRegion,
+      "Cluster Owner": site.clusterOwner || "-",
+      "MS GTL": site.msGtl || "-",
+      "Zone Lead": site.zongLead || "-",
+      "Current CA%": site.currentAvb?.toFixed(2) || "-",
+      "Prev Month": site.previousMonth?.toFixed(2) || "-",
+      "Old Case": site.oldCase || "-",
+    }));
+  }, [newCaseSites]);
 
   return (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="max-w-[1600px] mx-auto space-y-6">
+      {/* Header */}
       <div className="bg-gradient-to-r from-purple-500/10 to-pink-500/10 border border-purple-500/20 rounded-xl p-6">
         <div className="flex items-center justify-between flex-wrap gap-4">
           <div>
             <h2 className="text-2xl font-bold text-white">Pre Vs Post Analysis</h2>
-            <p className="text-slate-400 text-sm">
-              {employeeFilteredSites.length} sites in total
-            </p>
+            <p className="text-slate-400 text-sm">{employeeFilteredSites.length} sites in total</p>
             <p className="text-xs text-slate-500 mt-1">Comparing June (Pre) vs July (Post) performance</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <ExportButtonComponent
-              data={allExportData}
-              filename="pre_vs_post_all_sites"
-              label="Export All"
-              format="excel"
-              variant="primary"
-            />
-            <ExportButtonComponent
-              data={worstExportData}
-              filename="pre_vs_post_worst_10"
-              label="Export Worst 10"
-              format="excel"
-              variant="danger"
-            />
-            <ExportButtonComponent
-              data={unstableGridExport}
-              filename="pre_vs_post_still_unstable"
-              label="Export Unstable"
-              format="excel"
-              variant="secondary"
-            />
+            <ExportButtonComponent data={allExportData} filename="pre_vs_post_all_sites" label="Export All" format="excel" variant="primary" />
+            <ExportButtonComponent data={worstExportData} filename="pre_vs_post_worst_10" label="Export Worst 10" format="excel" variant="danger" />
+            <ExportButtonComponent data={stillUnstableExport} filename="pre_vs_post_still_unstable" label="Export Still Unstable" format="excel" variant="secondary" />
+            <ExportButtonComponent data={newCaseExport} filename="pre_vs_post_new_case" label="Export New Case" format="excel" variant="secondary" />
           </div>
         </div>
       </div>
 
+      {/* Employee Filter */}
       <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-4">
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div className="flex items-center gap-3 flex-wrap">
@@ -2395,9 +2337,7 @@ function PreVsPostAnalysis({
                 <button
                   key={lvl.id}
                   onClick={() => setSelectedLevel(lvl.id)}
-                  className={`px-2 py-1 rounded-md text-[10px] font-medium transition-colors ${
-                    selectedLevel === lvl.id ? "bg-purple-500/20 text-purple-400" : "text-slate-400 hover:text-slate-200"
-                  }`}
+                  className={`px-2 py-1 rounded-md text-[10px] font-medium transition-colors ${selectedLevel === lvl.id ? "bg-purple-500/20 text-purple-400" : "text-slate-400 hover:text-slate-200"}`}
                 >
                   {lvl.label}
                 </button>
@@ -2410,16 +2350,11 @@ function PreVsPostAnalysis({
             >
               <option value="all">All Employees ({employeeNames.length})</option>
               {employeeNames.map((name) => (
-                <option key={name} value={name}>
-                  {name}
-                </option>
+                <option key={name} value={name}>{name}</option>
               ))}
             </select>
             {selectedEmployee !== "all" && (
-              <button
-                onClick={() => setSelectedEmployee("all")}
-                className="flex items-center gap-1 px-2 py-1 rounded text-xs bg-red-500/10 hover:bg-red-500/20 text-red-400 transition-colors"
-              >
+              <button onClick={() => setSelectedEmployee("all")} className="flex items-center gap-1 px-2 py-1 rounded text-xs bg-red-500/10 hover:bg-red-500/20 text-red-400 transition-colors">
                 <X className="w-3 h-3" /> Clear
               </button>
             )}
@@ -2431,6 +2366,7 @@ function PreVsPostAnalysis({
         </div>
       </div>
 
+      {/* Category Breakdown */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {Object.entries(kpis.categoryCounts).map(([cat, count]) => (
           <div key={cat} className="bg-slate-800 border border-slate-700 rounded-xl p-4">
@@ -2442,46 +2378,28 @@ function PreVsPostAnalysis({
         ))}
       </div>
 
+      {/* KPIs */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-4">
         <KpiCard label="Total Sites" value={kpis.total} icon={<MapPin className="w-5 h-5 text-blue-400" />} color="blue" />
-        <KpiCard
-          label="Avg Pre Month CA"
-          value={kpis.avgPrevMonth > 0 ? `${kpis.avgPrevMonth.toFixed(2)}%` : "—"}
-          icon={<TrendingDown className="w-5 h-5 text-amber-400" />}
-          color="amber"
-        />
-        <KpiCard
-          label="Avg Current CA"
-          value={kpis.avgCurrent > 0 ? `${kpis.avgCurrent.toFixed(2)}%` : "—"}
-          icon={<TrendingUp className="w-5 h-5 text-emerald-400" />}
-          color="emerald"
-        />
+        <KpiCard label="Avg Pre Month CA" value={kpis.avgPrevMonth > 0 ? `${kpis.avgPrevMonth.toFixed(2)}%` : "—"} icon={<TrendingDown className="w-5 h-5 text-amber-400" />} color="amber" />
+        <KpiCard label="Avg Current CA" value={kpis.avgCurrent > 0 ? `${kpis.avgCurrent.toFixed(2)}%` : "—"} icon={<TrendingUp className="w-5 h-5 text-emerald-400" />} color="emerald" />
         <KpiCard label="Unstable Pre Month" value={kpis.unstablePrev} icon={<AlertTriangle className="w-5 h-5 text-red-400" />} color="red" />
         <KpiCard label="Fixed (Now Stable)" value={kpis.fixedNow} icon={<CheckCircle2 className="w-5 h-5 text-green-400" />} color="green" />
         <KpiCard label="Still Unstable" value={kpis.stillUnstable} icon={<AlertCircle className="w-5 h-5 text-orange-400" />} color="orange" />
         <KpiCard label="New Unstable" value={kpis.newUnstable} icon={<AlertCircle className="w-5 h-5 text-red-400" />} color="red" />
       </div>
 
+      {/* Worst 10 */}
       <div className="bg-red-500/5 border border-red-500/30 rounded-xl p-4">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
             <AlertTriangle className="w-5 h-5 text-red-400" />
             <h4 className="text-lg font-semibold text-white">Worst 10 Sites by Current CA%</h4>
-            <span className="text-xs text-slate-500">
-              ({selectedEmployee === "all" ? "All Employees" : selectedEmployee})
-            </span>
+            <span className="text-xs text-slate-500">({selectedEmployee === "all" ? "All Employees" : selectedEmployee})</span>
           </div>
           <div className="flex items-center gap-3">
             <span className="text-xs text-slate-500">Sorted by CA% (Lowest to Highest)</span>
-            {worstSites.length > 0 && (
-              <ExportButtonComponent
-                data={worstExportData}
-                filename="pre_vs_post_worst_10"
-                label="Export"
-                format="excel"
-                variant="danger"
-              />
-            )}
+            {worstSites.length > 0 && <ExportButtonComponent data={worstExportData} filename="pre_vs_post_worst_10" label="Export" format="excel" variant="danger" />}
           </div>
         </div>
         {worstSites.length > 0 ? (
@@ -2501,9 +2419,7 @@ function PreVsPostAnalysis({
                   <th className="text-center py-2 px-3 text-slate-400 font-medium">Old Case</th>
                   <th className="text-center py-2 px-3 text-slate-400 font-medium">Now</th>
                   <th className="text-center py-2 px-3 text-slate-400 font-medium">New Case</th>
-                  {lastThreeDays.map(({ label }, idx) => (
-                    <th key={idx} className="text-center py-2 px-3 text-slate-400 font-medium">{label}</th>
-                  ))}
+                  {lastThreeDays.map(({ label }, idx) => <th key={idx} className="text-center py-2 px-3 text-slate-400 font-medium">{label}</th>)}
                   <th className="text-center py-2 px-3 text-slate-400 font-medium">Last 3 Days Avg</th>
                   <th className="text-center py-2 px-3 text-slate-400 font-medium">Current CA%</th>
                 </tr>
@@ -2513,39 +2429,19 @@ function PreVsPostAnalysis({
                   <tr key={site.siteName} className="border-b border-slate-700/50 hover:bg-slate-800/50 transition-colors">
                     <td className="py-2 px-2 text-center text-slate-500">{i + 1}</td>
                     <td className="py-2 px-3 text-cyan-300 font-mono">{site.siteName}</td>
-                    <td className="py-2 px-3">
-                      <CategoryBadge category={String(site.category || "Unknown")} />
-                    </td>
+                    <td className="py-2 px-3"><CategoryBadge category={site.category || "Unknown"} /></td>
                     <td className="py-2 px-3 text-slate-400">{site.subRegion}</td>
                     <td className="py-2 px-3 text-slate-300">{site.grid}</td>
                     <td className="py-2 px-3 text-slate-300">{site.clusterOwner || "-"}</td>
                     <td className="py-2 px-3 text-slate-300">{site.msGtl || "-"}</td>
                     <td className="py-2 px-3 text-slate-300">{site.zongLead || "-"}</td>
-                    <td className="py-2 px-3 text-center text-slate-300">
-                      {site.previousMonth?.toFixed(2) || "-"}
-                    </td>
-                    <td className="py-2 px-3 text-center">
-                      <span className={`text-xs px-2 py-0.5 rounded ${site.oldCase === "Stable" ? "bg-emerald-500/20 text-emerald-400" : "bg-red-500/20 text-red-400"}`}>
-                        {site.oldCase || "-"}
-                      </span>
-                    </td>
-                    <td className="py-2 px-3 text-center">
-                      {nowBadge(site.now)}
-                    </td>
-                    <td className="py-2 px-3 text-center">
-                      {newCaseBadge(site.newCase)}
-                    </td>
-                    {values.map((val, idx) => (
-                      <td key={idx} className="py-2 px-3 text-center text-slate-300">
-                        {val?.toFixed(2) || "-"}
-                      </td>
-                    ))}
-                    <td className={`py-2 px-3 text-center font-bold ${avg < 98 ? "text-red-400" : "text-amber-400"}`}>
-                      {avg.toFixed(2)}%
-                    </td>
-                    <td className="py-2 px-3 text-center text-slate-300">
-                      {site.currentAvb?.toFixed(2) || "-"}
-                    </td>
+                    <td className="py-2 px-3 text-center text-slate-300">{site.previousMonth?.toFixed(2) || "-"}</td>
+                    <td className="py-2 px-3 text-center"><span className={`text-xs px-2 py-0.5 rounded ${site.oldCase === "Stable" ? "bg-emerald-500/20 text-emerald-400" : "bg-red-500/20 text-red-400"}`}>{site.oldCase || "-"}</span></td>
+                    <td className="py-2 px-3 text-center">{nowBadge(site.now)}</td>
+                    <td className="py-2 px-3 text-center">{newCaseBadge(site.newCase)}</td>
+                    {values.map((val, idx) => <td key={idx} className="py-2 px-3 text-center text-slate-300">{val?.toFixed(2) || "-"}</td>)}
+                    <td className={`py-2 px-3 text-center font-bold ${avg < 98 ? "text-red-400" : "text-amber-400"}`}>{avg.toFixed(2)}%</td>
+                    <td className="py-2 px-3 text-center text-slate-300">{site.currentAvb.toFixed(2)}%</td>
                   </tr>
                 ))}
               </tbody>
@@ -2556,100 +2452,58 @@ function PreVsPostAnalysis({
         )}
       </div>
 
+      {/* Still Unstable by Grid */}
       <div className="bg-amber-500/5 border border-amber-500/30 rounded-xl p-4">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
             <AlertCircle className="w-5 h-5 text-amber-400" />
             <h4 className="text-lg font-semibold text-white">Still Unstable Sites by Grid</h4>
-            <span className="text-xs text-slate-500">
-              ({stillUnstableSites.length} sites · {gridBreakdown.length} grids)
-            </span>
+            <span className="text-xs text-slate-500">({stillUnstableSites.length} sites · {stillUnstableGridBreakdown.length} grids)</span>
           </div>
-          {stillUnstableSites.length > 0 && (
-            <ExportButtonComponent
-              data={unstableGridExport}
-              filename="pre_vs_post_still_unstable"
-              label="Export All"
-              format="excel"
-              variant="secondary"
-            />
-          )}
+          {stillUnstableSites.length > 0 && <ExportButtonComponent data={stillUnstableExport} filename="pre_vs_post_still_unstable" label="Export All" format="excel" variant="secondary" />}
         </div>
         {stillUnstableSites.length > 0 ? (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-amber-500/30">
-                  <th className="text-left py-2 px-3 text-slate-400 font-medium">Grid</th>
-                  <th className="text-center py-2 px-3 text-slate-400 font-medium">Count</th>
-                  <th className="text-center py-2 px-3 text-slate-400 font-medium">Actions</th>
-                </tr>
-              </thead>
+              <thead><tr className="border-b border-amber-500/30"><th className="text-left py-2 px-3 text-slate-400 font-medium">Grid</th><th className="text-center py-2 px-3 text-slate-400 font-medium">Count</th><th className="text-center py-2 px-3 text-slate-400 font-medium">Actions</th></tr></thead>
               <tbody>
-                {gridBreakdown.map(({ grid, count, sites: gridSites }) => {
-                  const isExpanded = expandedGrids.has(grid);
+                {stillUnstableGridBreakdown.map(({ grid, count, sites: gridSites }) => {
+                  const isExpanded = expandedStillGrids.has(grid);
                   return (
                     <Fragment key={grid}>
                       <tr className="border-b border-slate-700/50 hover:bg-slate-800/30 transition-colors">
                         <td className="py-2 px-3 text-slate-200 font-medium">{grid}</td>
                         <td className="py-2 px-3 text-center text-slate-300">{count}</td>
                         <td className="py-2 px-3 text-center">
-                          <button
-                            onClick={() => toggleGrid(grid)}
-                            className="inline-flex items-center gap-1 px-3 py-1 rounded bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 text-xs transition-colors"
-                          >
+                          <button onClick={() => toggleStillGrid(grid)} className="inline-flex items-center gap-1 px-3 py-1 rounded bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 text-xs transition-colors">
                             {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
                             {isExpanded ? "Hide" : "View"}
                           </button>
                         </td>
                       </tr>
                       {isExpanded && (
-                        <tr>
-                          <td colSpan={3} className="px-3 py-2 bg-slate-900/40">
-                            <div className="overflow-x-auto">
-                              <table className="w-full text-xs">
-                                <thead>
-                                  <tr className="border-b border-slate-700">
-                                    <th className="text-left py-1 px-2 text-slate-500">Site ID</th>
-                                    <th className="text-left py-1 px-2 text-slate-500">Sub-Region</th>
-                                    <th className="text-left py-1 px-2 text-slate-500">Cluster Owner</th>
-                                    <th className="text-left py-1 px-2 text-slate-500">MS GTL</th>
-                                    <th className="text-left py-1 px-2 text-slate-500">Zone Lead</th>
-                                    <th className="text-center py-1 px-2 text-slate-500">Current CA%</th>
-                                    <th className="text-center py-1 px-2 text-slate-500">Prev Month</th>
-                                    <th className="text-center py-1 px-2 text-slate-500">Old Case</th>
-                                    <th className="text-center py-1 px-2 text-slate-500">Now</th>
+                        <tr><td colSpan={3} className="px-3 py-2 bg-slate-900/40">
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-xs">
+                              <thead><tr className="border-b border-slate-700"><th className="text-left py-1 px-2 text-slate-500">Site ID</th><th className="text-left py-1 px-2 text-slate-500">Sub-Region</th><th className="text-left py-1 px-2 text-slate-500">Cluster Owner</th><th className="text-left py-1 px-2 text-slate-500">MS GTL</th><th className="text-left py-1 px-2 text-slate-500">Zone Lead</th><th className="text-center py-1 px-2 text-slate-500">Current CA%</th><th className="text-center py-1 px-2 text-slate-500">Prev Month</th><th className="text-center py-1 px-2 text-slate-500">Old Case</th><th className="text-center py-1 px-2 text-slate-500">Now</th></tr></thead>
+                              <tbody>
+                                {gridSites.map((site) => (
+                                  <tr key={site.siteName} className="border-b border-slate-800">
+                                    <td className="py-1 px-2 text-cyan-300 font-mono">{site.siteName}</td>
+                                    <td className="py-1 px-2 text-slate-300">{site.subRegion}</td>
+                                    <td className="py-1 px-2 text-slate-300">{site.clusterOwner || "-"}</td>
+                                    <td className="py-1 px-2 text-slate-300">{site.msGtl || "-"}</td>
+                                    <td className="py-1 px-2 text-slate-300">{site.zongLead || "-"}</td>
+                                    <td className="py-1 px-2 text-center text-red-400 font-medium">{site.currentAvb.toFixed(2)}%</td>
+                                    <td className="py-1 px-2 text-center text-slate-300">{site.previousMonth?.toFixed(2) || "-"}</td>
+                                    <td className="py-1 px-2 text-center"><span className="text-xs px-2 py-0.5 rounded bg-red-500/20 text-red-400">Unstable</span></td>
+                                    <td className="py-1 px-2 text-center">{nowBadge(site.now)}</td>
                                   </tr>
-                                </thead>
-                                <tbody>
-                                  {gridSites.map((site) => (
-                                    <tr key={site.siteName} className="border-b border-slate-800">
-                                      <td className="py-1 px-2 text-cyan-300 font-mono">{site.siteName}</td>
-                                      <td className="py-1 px-2 text-slate-300">{site.subRegion}</td>
-                                      <td className="py-1 px-2 text-slate-300">{site.clusterOwner || "-"}</td>
-                                      <td className="py-1 px-2 text-slate-300">{site.msGtl || "-"}</td>
-                                      <td className="py-1 px-2 text-slate-300">{site.zongLead || "-"}</td>
-                                      <td className="py-1 px-2 text-center text-red-400 font-medium">
-                                        {site.currentAvb?.toFixed(2) || "-"}
-                                      </td>
-                                      <td className="py-1 px-2 text-center text-slate-300">
-                                        {site.previousMonth?.toFixed(2) || "-"}
-                                      </td>
-                                      <td className="py-1 px-2 text-center">
-                                        <span className="text-xs px-2 py-0.5 rounded bg-red-500/20 text-red-400">
-                                          Unstable
-                                        </span>
-                                      </td>
-                                      <td className="py-1 px-2 text-center">
-                                        {nowBadge(site.now)}
-                                      </td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            </div>
-                          </td>
-                        </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </td></tr>
                       )}
                     </Fragment>
                   );
@@ -2658,15 +2512,80 @@ function PreVsPostAnalysis({
             </table>
           </div>
         ) : (
-          <div className="text-center py-8 text-slate-500">
-            <CheckCircle2 className="w-8 h-8 mx-auto mb-2 opacity-50 text-emerald-400" />
-            <p>All unstable sites have been fixed! 🎉</p>
+          <div className="text-center py-8 text-slate-500"><CheckCircle2 className="w-8 h-8 mx-auto mb-2 opacity-50 text-emerald-400" /><p>No still unstable sites! 🎉</p></div>
+        )}
+      </div>
+
+      {/* New Case by Grid */}
+      <div className="bg-red-500/5 border border-red-500/30 rounded-xl p-4">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-5 h-5 text-red-400" />
+            <h4 className="text-lg font-semibold text-white">New Case Sites by Grid</h4>
+            <span className="text-xs text-slate-500">({newCaseSites.length} sites · {newCaseGridBreakdown.length} grids)</span>
           </div>
+          {newCaseSites.length > 0 && <ExportButtonComponent data={newCaseExport} filename="pre_vs_post_new_case" label="Export All" format="excel" variant="secondary" />}
+        </div>
+        {newCaseSites.length > 0 ? (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead><tr className="border-b border-red-500/30"><th className="text-left py-2 px-3 text-slate-400 font-medium">Grid</th><th className="text-center py-2 px-3 text-slate-400 font-medium">Count</th><th className="text-center py-2 px-3 text-slate-400 font-medium">Actions</th></tr></thead>
+              <tbody>
+                {newCaseGridBreakdown.map(({ grid, count, sites: gridSites }) => {
+                  const isExpanded = expandedNewGrids.has(grid);
+                  return (
+                    <Fragment key={grid}>
+                      <tr className="border-b border-slate-700/50 hover:bg-slate-800/30 transition-colors">
+                        <td className="py-2 px-3 text-slate-200 font-medium">{grid}</td>
+                        <td className="py-2 px-3 text-center text-slate-300">{count}</td>
+                        <td className="py-2 px-3 text-center">
+                          <button onClick={() => toggleNewGrid(grid)} className="inline-flex items-center gap-1 px-3 py-1 rounded bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs transition-colors">
+                            {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                            {isExpanded ? "Hide" : "View"}
+                          </button>
+                        </td>
+                      </tr>
+                      {isExpanded && (
+                        <tr><td colSpan={3} className="px-3 py-2 bg-slate-900/40">
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-xs">
+                              <thead><tr className="border-b border-slate-700"><th className="text-left py-1 px-2 text-slate-500">Site ID</th><th className="text-left py-1 px-2 text-slate-500">Sub-Region</th><th className="text-left py-1 px-2 text-slate-500">Cluster Owner</th><th className="text-left py-1 px-2 text-slate-500">MS GTL</th><th className="text-left py-1 px-2 text-slate-500">Zone Lead</th><th className="text-center py-1 px-2 text-slate-500">Current CA%</th><th className="text-center py-1 px-2 text-slate-500">Prev Month</th><th className="text-center py-1 px-2 text-slate-500">Old Case</th><th className="text-center py-1 px-2 text-slate-500">New Case</th></tr></thead>
+                              <tbody>
+                                {gridSites.map((site) => (
+                                  <tr key={site.siteName} className="border-b border-slate-800">
+                                    <td className="py-1 px-2 text-cyan-300 font-mono">{site.siteName}</td>
+                                    <td className="py-1 px-2 text-slate-300">{site.subRegion}</td>
+                                    <td className="py-1 px-2 text-slate-300">{site.clusterOwner || "-"}</td>
+                                    <td className="py-1 px-2 text-slate-300">{site.msGtl || "-"}</td>
+                                    <td className="py-1 px-2 text-slate-300">{site.zongLead || "-"}</td>
+                                    <td className="py-1 px-2 text-center text-red-400 font-medium">{site.currentAvb.toFixed(2)}%</td>
+                                    <td className="py-1 px-2 text-center text-slate-300">{site.previousMonth?.toFixed(2) || "-"}</td>
+                                    <td className="py-1 px-2 text-center"><span className="text-xs px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400">{site.oldCase || "Stable"}</span></td>
+                                    <td className="py-1 px-2 text-center">{newCaseBadge(site.newCase)}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </td></tr>
+                      )}
+                    </Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="text-center py-8 text-slate-500"><CheckCircle2 className="w-8 h-8 mx-auto mb-2 opacity-50 text-emerald-400" /><p>No new cases found! 🎉</p></div>
         )}
       </div>
     </motion.div>
   );
 }
+
+// ============================================================
+//  KPI CARD HELPER
+// ============================================================
 
 function KpiCard({ label, value, icon, color }: { label: string; value: string | number; icon: React.ReactNode; color: string }) {
   const colorMap: Record<string, string> = {
@@ -2680,9 +2599,7 @@ function KpiCard({ label, value, icon, color }: { label: string; value: string |
   return (
     <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
       <div className="flex items-center gap-3">
-        <div className={`w-10 h-10 rounded-lg ${colorMap[color]} flex items-center justify-center`}>
-          {icon}
-        </div>
+        <div className={`w-10 h-10 rounded-lg ${colorMap[color]} flex items-center justify-center`}>{icon}</div>
         <div>
           <div className="text-2xl font-bold text-white">{value}</div>
           <div className="text-xs text-slate-400">{label}</div>
@@ -2700,7 +2617,7 @@ function parseFloatSafe(v: string | undefined): number {
 }
 
 // ============================================================
-//  LOGIN SCREEN (NEW)
+//  LOGIN SCREEN
 // ============================================================
 
 function LoginScreen({ onLogin }: { onLogin: (success: boolean) => void }) {
@@ -2729,21 +2646,9 @@ function LoginScreen({ onLogin }: { onLogin: (success: boolean) => void }) {
 
   return (
     <div className="min-h-screen relative flex items-center justify-center overflow-hidden">
-      <div
-        className="absolute inset-0 z-0"
-        style={{
-          backgroundImage: `url('/zong 5G.png')`,
-          backgroundSize: 'cover',
-          backgroundPosition: 'center',
-        }}
-      />
+      <div className="absolute inset-0 z-0" style={{ backgroundImage: `url('/zong 5G.png')`, backgroundSize: 'cover', backgroundPosition: 'center' }} />
       <div className="absolute inset-0 z-1 bg-black/70" />
-      <motion.div
-        initial={{ opacity: 0, y: -30 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, ease: "easeOut" }}
-        className="relative z-10 w-full max-w-md px-6"
-      >
+      <motion.div initial={{ opacity: 0, y: -30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, ease: "easeOut" }} className="relative z-10 w-full max-w-md px-6">
         <div className="bg-slate-800/90 backdrop-blur-xl border border-slate-700/60 rounded-2xl p-8 shadow-2xl">
           <div className="text-center mb-8">
             <h2 className="text-3xl font-bold text-white">Welcome Back</h2>
@@ -2752,43 +2657,15 @@ function LoginScreen({ onLogin }: { onLogin: (success: boolean) => void }) {
           <form onSubmit={handleSubmit} className="space-y-5">
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-1.5">Username</label>
-              <input
-                type="text"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                placeholder="Enter your username"
-                className="w-full px-4 py-3 rounded-lg bg-slate-900/60 border border-slate-700 focus:border-cyan-500 outline-none text-white placeholder:text-slate-500 transition-colors"
-              />
+              <input type="text" value={username} onChange={(e) => setUsername(e.target.value)} placeholder="Enter your username" className="w-full px-4 py-3 rounded-lg bg-slate-900/60 border border-slate-700 focus:border-cyan-500 outline-none text-white placeholder:text-slate-500 transition-colors" />
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-1.5">Password</label>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Enter your password"
-                className="w-full px-4 py-3 rounded-lg bg-slate-900/60 border border-slate-700 focus:border-cyan-500 outline-none text-white placeholder:text-slate-500 transition-colors"
-              />
+              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Enter your password" className="w-full px-4 py-3 rounded-lg bg-slate-900/60 border border-slate-700 focus:border-cyan-500 outline-none text-white placeholder:text-slate-500 transition-colors" />
             </div>
-            {error && (
-              <motion.div
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: "auto" }}
-                className="bg-red-500/10 border border-red-500/30 text-red-400 text-sm px-4 py-2.5 rounded-lg"
-              >
-                {error}
-              </motion.div>
-            )}
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full py-3.5 rounded-lg bg-gradient-to-r from-cyan-500 to-blue-500 hover:opacity-90 text-white font-bold text-lg transition-all shadow-lg shadow-cyan-500/20 disabled:opacity-50 flex items-center justify-center"
-            >
-              {loading ? (
-                <RefreshCw className="w-5 h-5 animate-spin" />
-              ) : (
-                "Sign In"
-              )}
+            {error && <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} className="bg-red-500/10 border border-red-500/30 text-red-400 text-sm px-4 py-2.5 rounded-lg">{error}</motion.div>}
+            <button type="submit" disabled={loading} className="w-full py-3.5 rounded-lg bg-gradient-to-r from-cyan-500 to-blue-500 hover:opacity-90 text-white font-bold text-lg transition-all shadow-lg shadow-cyan-500/20 disabled:opacity-50 flex items-center justify-center">
+              {loading ? <RefreshCw className="w-5 h-5 animate-spin" /> : "Sign In"}
             </button>
           </form>
         </div>
@@ -2803,12 +2680,9 @@ function LoginScreen({ onLogin }: { onLogin: (success: boolean) => void }) {
 
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
-
   useEffect(() => {
     const auth = sessionStorage.getItem("c1_auth");
-    if (auth === "true") {
-      setIsAuthenticated(true);
-    }
+    if (auth === "true") setIsAuthenticated(true);
   }, []);
 
   const handleLogin = (success: boolean) => {
@@ -2827,6 +2701,8 @@ export default function App() {
   const [monthHardware, setMonthHardware] = useState<SheetPayload | null>(null);
   const [monthRca, setMonthRca] = useState<SheetPayload | null>(null);
   const [preVsPostData, setPreVsPostData] = useState<SheetPayload | null>(null);
+  const [prePostSites, setPrePostSites] = useState<SiteData[]>([]);
+  const [prePostLastUpdated, setPrePostLastUpdated] = useState("");
   const [monthLastUpdated, setMonthLastUpdated] = useState("");
   const [monthLastColumnIndex, setMonthLastColumnIndex] = useState(0);
   const [useMock, setUseMock] = useState(false);
@@ -2834,6 +2710,58 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<string>("overall");
   const [selectedRow, setSelectedRow] = useState<SiteData | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [prePostSubView, setPrePostSubView] = useState<PrePostSubView>("analysis");
+
+  const parsePrePostRows = (rows: Record<string, string>[]): SiteData[] => {
+    return rows.map((row) => {
+      const dailyData: Record<string, number> = {};
+      const dateRegex = /^\d{1,2}-[A-Z][a-z]{2}-\d{2,4}$/;
+      for (const [key, value] of Object.entries(row)) {
+        if (dateRegex.test(key)) {
+          const num = parseFloatSafe(value);
+          if (num > 0) dailyData[key] = num;
+        }
+      }
+      return {
+        siteName: row["Site ID"] || "",
+        subRegion: row["Sub-Region"] || "",
+        revenueCategory: row["Category"] || "",
+        grid: row["Grid"] || "",
+        currentAvb: parseFloatSafe(row["Current Month"]),
+        monthlyAvb: parseFloatSafe(row["Current Month"]),
+        dgStatus: "",
+        dgInstalled: "",
+        liIonInstalled: "",
+        agmBb: "",
+        belowBase: "",
+        msGtl: row["MS GTL"] || "",
+        zongLead: row["Zone Lead"] || "",
+        clusterOwner: row["Cluster Owner"] || "",
+        npsSiteDomain: "",
+        technology: "",
+        terrain: "",
+        sharingStatus: "",
+        indoorOutdoor: "",
+        hubSingle: "",
+        dependentSites: 0,
+        chronic: "",
+        dgChronic: "",
+        liIonChronic: "",
+        target: 0,
+        city: "",
+        ca2G: 0,
+        ca3G: 0,
+        ca4G: 0,
+        dailyData,
+        dailyLs: {},
+        previousMonth: parseFloatSafe(row["Previous Month"]),
+        oldCase: row["Old Case"]?.toString().trim() || "",
+        now: row["Now"]?.toString().trim() || "",
+        newCase: row["New case"]?.toString().trim() || "",
+        category: row["Category"]?.toString().trim() || "",
+      } as SiteData;
+    });
+  };
 
   const loadMonthData = async (month: Month) => {
     setAppState("loading");
@@ -2878,7 +2806,34 @@ export default function App() {
     try {
       const sheetId = SHEET_IDS.july;
       const data = await fetchGoogleSheet(sheetId, "Pre Vs Post");
-      setPreVsPostData(data);
+      if (data && data.rows) {
+        const parsed = parsePrePostRows(data.rows);
+        setPrePostSites(parsed);
+        setPreVsPostData(data);
+      }
+      const dateData = await fetchGoogleSheet(sheetId, "Updated Date");
+      let updated = "25-Jul-26";
+      if (dateData && dateData.rows && dateData.rows.length > 0) {
+        const row = dateData.rows[0];
+        updated = row["Last Updated"] || row["Date"] || row["Last Date"] || "25-Jul-26";
+      }
+      setPrePostLastUpdated(updated);
+      setViewMode("prepost");
+      setAppState("dashboard");
+    } catch (error) {
+      console.error("Error loading Pre Vs Post:", error);
+      setErrorMsg("Failed to load Pre Vs Post data. Please try again.");
+      setAppState("error");
+    }
+  };
+
+  const loadHardwareIssues = async () => {
+    setAppState("loading");
+    setErrorMsg("");
+    try {
+      const sheetId = SHEET_IDS.july;
+      const data = await fetchGoogleSheet(sheetId, "Hardware issues");
+      setMonthHardware(data);
       const dateData = await fetchGoogleSheet(sheetId, "Updated Date");
       if (dateData && dateData.rows && dateData.rows.length > 0) {
         const row = dateData.rows[0];
@@ -2886,11 +2841,11 @@ export default function App() {
       } else {
         setMonthLastUpdated("25-Jul-26");
       }
-      setViewMode("prepost");
+      setViewMode("hardware");
       setAppState("dashboard");
     } catch (error) {
-      console.error("Error loading Pre Vs Post:", error);
-      setErrorMsg("Failed to load Pre Vs Post data. Please try again.");
+      console.error("Error loading Hardware Issues:", error);
+      setErrorMsg("Failed to load Hardware Issues data. Please try again.");
       setAppState("error");
     }
   };
@@ -2903,6 +2858,7 @@ export default function App() {
     setMonthHardware(null);
     setMonthRca(null);
     setPreVsPostData(null);
+    setPrePostSites([]);
     setAppState("dashboard");
   };
 
@@ -2945,119 +2901,39 @@ export default function App() {
   const activeLabel = NAV_ITEMS.find((item) => item.id === activeTab)?.label ?? "";
 
   if (appState === "loading") return <LoadingScreen />;
-  if (appState === "error") return <ErrorScreen message={errorMsg} onRetry={viewMode === "prepost" ? loadPreVsPost : () => loadMonthData(selectedMonth || "june")} />;
+  if (appState === "error") return <ErrorScreen message={errorMsg} onRetry={viewMode === "prepost" ? loadPreVsPost : viewMode === "hardware" ? loadHardwareIssues : () => loadMonthData(selectedMonth || "june")} />;
+  if (!isAuthenticated) return <LoginScreen onLogin={handleLogin} />;
 
-  if (!isAuthenticated) {
-    return <LoginScreen onLogin={handleLogin} />;
-  }
-
+  // ----- HOME SCREEN (four buttons) -----
   if (viewMode === "home") {
     return (
       <div className="min-h-screen relative flex items-center justify-center overflow-hidden">
-        <div
-          className="absolute inset-0 z-0"
-          style={{
-            backgroundImage: `url('/zong 5G.png')`,
-            backgroundSize: 'cover',
-            backgroundPosition: 'center',
-          }}
-        />
+        <div className="absolute inset-0 z-0" style={{ backgroundImage: `url('/zong 5G.png')`, backgroundSize: 'cover', backgroundPosition: 'center' }} />
         <div className="absolute inset-0 z-1 bg-black/60" />
-
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8, ease: "easeOut" }}
-          className="relative z-10 max-w-5xl w-full px-6 text-center"
-        >
-          <motion.div
-            initial={{ scale: 0.9, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            transition={{ delay: 0.2, duration: 0.5 }}
-            className="inline-block mb-8 px-8 py-3 rounded-full bg-cyan-500/10 border border-cyan-400/30 backdrop-blur-sm"
-          >
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.8, ease: "easeOut" }} className="relative z-10 max-w-5xl w-full px-6 text-center">
+          <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ delay: 0.2, duration: 0.5 }} className="inline-block mb-8 px-8 py-3 rounded-full bg-cyan-500/10 border border-cyan-400/30 backdrop-blur-sm">
             <span className="text-cyan-300 font-bold tracking-widest text-sm">📶 ZONG 5G</span>
           </motion.div>
-
-          <h1 className="text-5xl md:text-7xl font-extrabold text-white leading-tight mb-6 drop-shadow-lg">
-            C1 & C6 <br />
-            <span className="bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">
-              Cell Avb Analysis
-            </span>
-          </h1>
-
-          <motion.div
-            variants={{
-              hidden: { opacity: 0 },
-              show: {
-                opacity: 1,
-                transition: { staggerChildren: 0.15 },
-              },
-            }}
-            initial="hidden"
-            animate="show"
-            className="flex flex-col sm:flex-row justify-center items-stretch gap-6 mt-8"
-          >
-            <motion.button
-              variants={{
-                hidden: { opacity: 0, y: 30 },
-                show: { opacity: 1, y: 0 },
-              }}
-              whileHover={{ scale: 1.03, boxShadow: "0 0 40px rgba(6, 182, 212, 0.25)" }}
-              whileTap={{ scale: 0.98 }}
-              onClick={() => loadMonthData("june")}
-              className="group relative flex-1 min-w-[200px] px-8 py-7 rounded-2xl bg-gradient-to-br from-slate-800/90 to-slate-900/90 border border-slate-600/50 hover:border-cyan-400 transition-all duration-300 shadow-xl backdrop-blur-sm overflow-hidden"
-            >
+          <h1 className="text-5xl md:text-7xl font-extrabold text-white leading-tight mb-6 drop-shadow-lg">C1 & C6 <br /><span className="bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">Cell Avb Analysis</span></h1>
+          <motion.div variants={{ hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.15 } } }} initial="hidden" animate="show" className="flex flex-wrap justify-center items-stretch gap-6 mt-8">
+            <motion.button variants={{ hidden: { opacity: 0, y: 30 }, show: { opacity: 1, y: 0 } }} whileHover={{ scale: 1.03, boxShadow: "0 0 40px rgba(6, 182, 212, 0.25)" }} whileTap={{ scale: 0.98 }} onClick={() => loadMonthData("june")} className="group relative flex-1 min-w-[180px] px-8 py-7 rounded-2xl bg-gradient-to-br from-slate-800/90 to-slate-900/90 border border-slate-600/50 hover:border-cyan-400 transition-all duration-300 shadow-xl backdrop-blur-sm overflow-hidden">
               <span className="absolute inset-0 bg-gradient-to-r from-cyan-500/10 to-blue-500/10 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-              <div className="relative text-center">
-                <span className="block text-2xl font-bold text-white">June 2026</span>
-                <span className="text-slate-400 text-sm">Final data · 30 days</span>
-              </div>
+              <div className="relative text-center"><span className="block text-2xl font-bold text-white">June 2026</span><span className="text-slate-400 text-sm">Final data · 30 days</span></div>
             </motion.button>
-
-            <motion.button
-              variants={{
-                hidden: { opacity: 0, y: 30 },
-                show: { opacity: 1, y: 0 },
-              }}
-              whileHover={{ scale: 1.03, boxShadow: "0 0 40px rgba(6, 182, 212, 0.25)" }}
-              whileTap={{ scale: 0.98 }}
-              onClick={() => loadMonthData("july")}
-              className="group relative flex-1 min-w-[200px] px-8 py-7 rounded-2xl bg-gradient-to-br from-cyan-500/20 to-blue-500/20 border border-cyan-400/30 hover:border-cyan-300 transition-all duration-300 shadow-xl hover:shadow-cyan-500/40 backdrop-blur-sm overflow-hidden"
-            >
+            <motion.button variants={{ hidden: { opacity: 0, y: 30 }, show: { opacity: 1, y: 0 } }} whileHover={{ scale: 1.03, boxShadow: "0 0 40px rgba(6, 182, 212, 0.25)" }} whileTap={{ scale: 0.98 }} onClick={() => loadMonthData("july")} className="group relative flex-1 min-w-[180px] px-8 py-7 rounded-2xl bg-gradient-to-br from-cyan-500/20 to-blue-500/20 border border-cyan-400/30 hover:border-cyan-300 transition-all duration-300 shadow-xl hover:shadow-cyan-500/40 backdrop-blur-sm overflow-hidden">
               <span className="absolute inset-0 bg-gradient-to-r from-cyan-400/20 to-blue-400/20 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-              <div className="relative text-center">
-                <span className="block text-2xl font-bold text-white">July 2026</span>
-                <span className="text-slate-300 text-sm">Live updates · Progressive</span>
-              </div>
+              <div className="relative text-center"><span className="block text-2xl font-bold text-white">July 2026</span><span className="text-slate-300 text-sm">Live updates · Progressive</span></div>
             </motion.button>
-
-            <motion.button
-              variants={{
-                hidden: { opacity: 0, y: 30 },
-                show: { opacity: 1, y: 0 },
-              }}
-              whileHover={{ scale: 1.03, boxShadow: "0 0 40px rgba(168, 85, 247, 0.25)" }}
-              whileTap={{ scale: 0.98 }}
-              onClick={loadPreVsPost}
-              className="group relative flex-1 min-w-[260px] px-8 py-7 rounded-2xl bg-gradient-to-br from-purple-500/20 to-pink-500/20 border border-purple-400/30 hover:border-purple-300 transition-all duration-300 shadow-xl hover:shadow-purple-500/40 backdrop-blur-sm overflow-hidden"
-            >
+            <motion.button variants={{ hidden: { opacity: 0, y: 30 }, show: { opacity: 1, y: 0 } }} whileHover={{ scale: 1.03, boxShadow: "0 0 40px rgba(168, 85, 247, 0.25)" }} whileTap={{ scale: 0.98 }} onClick={loadPreVsPost} className="group relative flex-1 min-w-[200px] px-8 py-7 rounded-2xl bg-gradient-to-br from-purple-500/20 to-pink-500/20 border border-purple-400/30 hover:border-purple-300 transition-all duration-300 shadow-xl hover:shadow-purple-500/40 backdrop-blur-sm overflow-hidden">
               <span className="absolute inset-0 bg-gradient-to-r from-purple-400/20 to-pink-400/20 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-              <div className="relative text-center">
-                <span className="block text-2xl font-bold text-white">
-                  Plat+ & DG Pre vs Post Analysis
-                </span>
-                <span className="text-slate-300 text-sm">June vs July comparison</span>
-              </div>
+              <div className="relative text-center"><span className="block text-2xl font-bold text-white">Pre Vs Post</span><span className="text-slate-300 text-sm">June vs July comparison</span></div>
+            </motion.button>
+            <motion.button variants={{ hidden: { opacity: 0, y: 30 }, show: { opacity: 1, y: 0 } }} whileHover={{ scale: 1.03, boxShadow: "0 0 40px rgba(245, 158, 11, 0.25)" }} whileTap={{ scale: 0.98 }} onClick={loadHardwareIssues} className="group relative flex-1 min-w-[180px] px-8 py-7 rounded-2xl bg-gradient-to-br from-amber-500/20 to-yellow-500/20 border border-amber-400/30 hover:border-amber-300 transition-all duration-300 shadow-xl hover:shadow-amber-500/40 backdrop-blur-sm overflow-hidden">
+              <span className="absolute inset-0 bg-gradient-to-r from-amber-400/20 to-yellow-400/20 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+              <div className="relative text-center"><span className="block text-2xl font-bold text-white">Hardware Issues</span><span className="text-slate-300 text-sm">View hardware problems</span></div>
             </motion.button>
           </motion.div>
-
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.6 }}
-            className="mt-12 text-slate-400 text-sm flex items-center justify-center gap-2"
-          >
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.6 }} className="mt-12 text-slate-400 text-sm flex items-center justify-center gap-2">
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
             <span>Real-time data from Google Sheets</span>
           </motion.div>
@@ -3066,40 +2942,87 @@ export default function App() {
     );
   }
 
+  // ----- PRE‑VS‑POST FULL PAGE WITH SIDEBAR -----
   if (viewMode === "prepost") {
+    const prePostNav = [
+      { id: "analysis", label: "Pre Vs Post", icon: GitCompare },
+      { id: "query", label: "Site Query", icon: Search },
+    ] as const;
+
     return (
-      <div className="min-h-screen bg-slate-900 text-slate-100">
+      <div className="min-h-screen bg-slate-900 text-slate-100 flex">
         <RainAlertWidget />
-        <div className="p-4 sm:p-6">
-          <div className="flex items-center justify-between mb-4">
-            <button
-              onClick={goHome}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm font-medium transition-colors"
-            >
-              <span className="text-slate-400">←</span> Back to Home
-            </button>
-            <div className="text-xs text-slate-500">
-              Data updated: {monthLastUpdated || "25-Jul-26"}
+        <aside className="fixed lg:sticky top-0 z-40 h-screen w-64 bg-slate-950 border-r border-slate-800 flex flex-col">
+          <div className="p-5 border-b border-slate-800">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-pink-600 flex items-center justify-center shadow-lg shadow-purple-500/20">
+                <GitCompare className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <h1 className="text-sm font-bold text-white leading-tight">Pre Vs Post</h1>
+                <p className="text-[10px] text-slate-500">July 2026</p>
+              </div>
             </div>
           </div>
-          <PreVsPostAnalysis preVsPostData={preVsPostData} lastUpdatedDate={monthLastUpdated} />
+          <nav className="flex-1 overflow-y-auto p-3 space-y-1">
+            {prePostNav.map((item) => {
+              const Icon = item.icon;
+              const isActive = prePostSubView === item.id;
+              return (
+                <button key={item.id} onClick={() => setPrePostSubView(item.id as PrePostSubView)} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${isActive ? "bg-purple-500/15 text-purple-400 border border-purple-500/30" : "text-slate-400 hover:bg-slate-800 hover:text-slate-200 border border-transparent"}`}>
+                  <Icon className="w-4 h-4 shrink-0" />
+                  {item.label}
+                </button>
+              );
+            })}
+          </nav>
+          <div className="p-3 border-t border-slate-800">
+            <button onClick={goHome} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm font-medium transition-colors w-full">
+              <span className="text-slate-400">←</span> Back to Home
+            </button>
+          </div>
+        </aside>
+        <div className="flex-1 min-w-0 flex flex-col">
+          <header className="sticky top-0 z-20 bg-slate-900/80 backdrop-blur-xl border-b border-slate-800">
+            <div className="px-4 sm:px-6 py-4 flex items-center justify-between">
+              <h2 className="text-lg font-bold text-white">{prePostSubView === "analysis" ? "Pre Vs Post Analysis" : "Site Query"}</h2>
+              <div className="text-xs text-slate-500">Data updated: {prePostLastUpdated || "25-Jul-26"}</div>
+            </div>
+          </header>
+          <main className="flex-1 p-4 sm:p-6">
+            {prePostSubView === "analysis" ? <PreVsPostAnalysis sites={prePostSites} lastUpdatedDate={prePostLastUpdated} /> : <SiteQuery sites={prePostSites} />}
+          </main>
         </div>
       </div>
     );
   }
 
+  // ----- HARDWARE ISSUES FULL PAGE -----
+  if (viewMode === "hardware") {
+    return (
+      <div className="min-h-screen bg-slate-900 text-slate-100">
+        <RainAlertWidget />
+        <div className="p-4 sm:p-6">
+          <div className="flex items-center justify-between mb-4">
+            <button onClick={goHome} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm font-medium transition-colors">
+              <span className="text-slate-400">←</span> Back to Home
+            </button>
+            <div className="text-xs text-slate-500">Data updated: {monthLastUpdated || "25-Jul-26"}</div>
+          </div>
+          {hardwareData ? <HardwareIssues data={hardwareData} /> : <div className="bg-slate-800 border border-slate-700 rounded-xl p-12 text-center text-slate-400">No hardware issues data available.</div>}
+        </div>
+      </div>
+    );
+  }
+
+  // ----- MONTH DASHBOARD (with sidebar) -----
   const monthLabel = selectedMonth === "june" ? "June 2026" : "July 2026";
   const isLive = selectedMonth === "july";
 
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100 flex">
       <RainAlertWidget />
-
-      <aside
-        className={`fixed lg:sticky top-0 z-40 h-screen w-64 bg-slate-950 border-r border-slate-800 flex flex-col transition-transform ${
-          sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
-        }`}
-      >
+      <aside className={`fixed lg:sticky top-0 z-40 h-screen w-64 bg-slate-950 border-r border-slate-800 flex flex-col transition-transform ${sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}`}>
         <div className="p-5 border-b border-slate-800">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-400 to-blue-600 flex items-center justify-center shadow-lg shadow-cyan-500/20">
@@ -3111,37 +3034,21 @@ export default function App() {
             </div>
           </div>
         </div>
-
         <nav className="flex-1 overflow-y-auto p-3 space-y-1">
           {NAV_ITEMS.map((item) => {
             const Icon = item.icon;
             const isActive = activeTab === item.id;
             return (
-              <button
-                key={item.id}
-                onClick={() => {
-                  setActiveTab(item.id);
-                  setSidebarOpen(false);
-                }}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                  isActive
-                    ? "bg-cyan-500/15 text-cyan-400 border border-cyan-500/30"
-                    : "text-slate-400 hover:bg-slate-800 hover:text-slate-200 border border-transparent"
-                }`}
-              >
+              <button key={item.id} onClick={() => { setActiveTab(item.id); setSidebarOpen(false); }} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${isActive ? "bg-cyan-500/15 text-cyan-400 border border-cyan-500/30" : "text-slate-400 hover:bg-slate-800 hover:text-slate-200 border border-transparent"}`}>
                 <Icon className="w-4 h-4 shrink-0" />
                 {item.label}
               </button>
             );
           })}
         </nav>
-
         <div className="p-3 border-t border-slate-800">
           <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-slate-900 text-xs text-slate-500">
-            <div className="flex items-center gap-2">
-              <Database className="w-3.5 h-3.5" />
-              {sites.length} sites
-            </div>
+            <div className="flex items-center gap-2"><Database className="w-3.5 h-3.5" />{sites.length} sites</div>
             {useMock && <span className="text-amber-400 text-[10px] bg-amber-500/10 px-2 py-0.5 rounded">Demo</span>}
           </div>
         </div>
@@ -3151,37 +3058,18 @@ export default function App() {
         <header className="sticky top-0 z-20 bg-slate-900/80 backdrop-blur-xl border-b border-slate-800">
           <div className="px-4 sm:px-6 py-4 flex items-center justify-between gap-4">
             <div className="flex items-center gap-3 min-w-0">
-              <button onClick={() => setSidebarOpen(true)} className="lg:hidden text-slate-400 hover:text-white">
-                <Menu className="w-5 h-5" />
-              </button>
+              <button onClick={() => setSidebarOpen(true)} className="lg:hidden text-slate-400 hover:text-white"><Menu className="w-5 h-5" /></button>
               <div className="min-w-0">
-                <h2 className="text-lg font-bold text-white truncate">
-                  {activeLabel} — {monthLabel}
-                  {isLive && <span className="ml-2 text-xs text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded">LIVE</span>}
-                </h2>
+                <h2 className="text-lg font-bold text-white truncate">{activeLabel} — {monthLabel}{isLive && <span className="ml-2 text-xs text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded">LIVE</span>}</h2>
                 <p className="text-[11px] text-slate-500 truncate flex items-center gap-2 flex-wrap">
-                  {monthLastUpdated && (
-                    <span className="text-cyan-400 font-medium">Report Updated: {monthLastUpdated}</span>
-                  )}
-                  {!monthLastUpdated && useMock && (
-                    <span className="text-cyan-400 font-medium">Report Updated: {selectedMonth === "june" ? "25-Jun-26" : "25-Jul-26"}</span>
-                  )}
+                  {monthLastUpdated && <span className="text-cyan-400 font-medium">Report Updated: {monthLastUpdated}</span>}
+                  {!monthLastUpdated && useMock && <span className="text-cyan-400 font-medium">Report Updated: {selectedMonth === "june" ? "25-Jun-26" : "25-Jul-26"}</span>}
                 </p>
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <button
-                onClick={goHome}
-                className="flex items-center gap-2 px-3.5 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm font-medium transition-colors shrink-0"
-              >
-                <span className="text-slate-400">←</span> Switch Month
-              </button>
-              <button
-                onClick={() => loadMonthData(selectedMonth as Month)}
-                className="flex items-center gap-2 px-3.5 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm font-medium transition-colors shrink-0"
-              >
-                <RefreshCw className="w-4 h-4" /> Refresh
-              </button>
+              <button onClick={goHome} className="flex items-center gap-2 px-3.5 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm font-medium transition-colors shrink-0"><span className="text-slate-400">←</span> Switch Month</button>
+              <button onClick={() => loadMonthData(selectedMonth as Month)} className="flex items-center gap-2 px-3.5 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm font-medium transition-colors shrink-0"><RefreshCw className="w-4 h-4" /> Refresh</button>
             </div>
           </div>
         </header>
@@ -3189,148 +3077,29 @@ export default function App() {
         <main className="flex-1 p-4 sm:p-6 space-y-6">
           <ErrorBoundary key={activeTab + selectedMonth}>
             <AnimatePresence mode="wait">
-              <motion.div
-                key={activeTab + selectedMonth}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                transition={{ duration: 0.2 }}
-                className="space-y-6"
-              >
+              <motion.div key={activeTab + selectedMonth} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.2 }} className="space-y-6">
                 {activeTab === "overall" && <OverallSummaryWithExport sites={sites} rawData={monthData} />}
-
-                {activeTab === "employees" && (
-                  <>
-                    <SectionBanner
-                      icon={<Users className="w-6 h-6 text-indigo-400" />}
-                      title="Employee Performance Analysis"
-                      subtitle={`${sites.filter((s) => s.currentAvb > 0).length} active sites`}
-                      gradient="from-indigo-500/10 to-purple-500/10 border-indigo-500/20"
-                    />
-                    <EmployeePerformance sites={sites} />
-                  </>
-                )}
-
-                {activeTab === "platinum-plus" && (
-                  <CategoryPage
-                    sites={sites}
-                    title="Platinum+ Sites"
-                    description={`${platinumPlusRows.length} sites in the Platinum+ category`}
-                    threshold={98.5}
-                    filterFn={(s) => s.revenueCategory === "Platinum +"}
-                    lastUpdatedDate={monthLastUpdated}
-                    lastColumnIndex={monthLastColumnIndex}
-                  />
-                )}
-
-                {activeTab === "pgs" && (
-                  <CategoryPage
-                    sites={sites}
-                    title="PGS Sites"
-                    description={`${pgsRows.length} high-priority revenue sites`}
-                    threshold={98.1}
-                    filterFn={(s) => PGS_GROUP.includes(s.revenueCategory)}
-                    lastUpdatedDate={monthLastUpdated}
-                    lastColumnIndex={monthLastColumnIndex}
-                  />
-                )}
-
-                {activeTab === "sb" && (
-                  <CategoryPage
-                    sites={sites}
-                    title="SB Sites"
-                    description={`${sbRows.length} standard-tier revenue sites`}
-                    threshold={95}
-                    filterFn={(s) => SB_GROUP.includes(s.revenueCategory)}
-                    lastUpdatedDate={monthLastUpdated}
-                    lastColumnIndex={monthLastColumnIndex}
-                  />
-                )}
-
-                {activeTab === "nps" && (
-                  <CategoryPage
-                    sites={sites}
-                    title="NPS Sites (New Physical Sites)"
-                    description={`${npsRows.length} NPS Y26 sites`}
-                    threshold={95}
-                    filterFn={(s) => isNPSSite(s)}
-                    lastUpdatedDate={monthLastUpdated}
-                    lastColumnIndex={monthLastColumnIndex}
-                  />
-                )}
-
-                {activeTab === "dg" && (
-                  <CategoryPage
-                    sites={sites}
-                    title="DG Sites (Diesel Generator Backup)"
-                    description={`${dgRows.length} sites with diesel generators`}
-                    threshold={99}
-                    filterFn={(s) => hasDG(s)}
-                    lastUpdatedDate={monthLastUpdated}
-                    lastColumnIndex={monthLastColumnIndex}
-                  />
-                )}
-
-                {activeTab === "li-ion" && (
-                  <CategoryPage
-                    sites={sites}
-                    title="Li-ion Battery Backup Sites"
-                    description={`${liIonRows.length} sites with Li-ion batteries installed`}
-                    threshold={98}
-                    filterFn={(s) => hasLiIon(s)}
-                    lastUpdatedDate={monthLastUpdated}
-                    lastColumnIndex={monthLastColumnIndex}
-                  />
-                )}
-
-                {activeTab === "below-base" && (
-                  <CategoryPage
-                    sites={sites}
-                    title="Below Base Sites"
-                    description={`${belowBaseRows.length} sites flagged below base threshold`}
-                    threshold={95}
-                    filterFn={(s) => isBelowBase(s)}
-                    lastUpdatedDate={monthLastUpdated}
-                    lastColumnIndex={monthLastColumnIndex}
-                  />
-                )}
-
-                {activeTab === "agm" && (
-                  <CategoryPage
-                    sites={sites}
-                    title="AGM Battery Backup Sites"
-                    description={`${agmRows.length} sites with AGM battery banks`}
-                    threshold={95}
-                    filterFn={(s) => hasAGM(s)}
-                    lastUpdatedDate={monthLastUpdated}
-                    lastColumnIndex={monthLastColumnIndex}
-                  />
-                )}
-
+                {activeTab === "employees" && <><SectionBanner icon={<Users className="w-6 h-6 text-indigo-400" />} title="Employee Performance Analysis" subtitle={`${sites.filter((s) => s.currentAvb > 0).length} active sites`} gradient="from-indigo-500/10 to-purple-500/10 border-indigo-500/20" /><EmployeePerformance sites={sites} /></>}
+                {activeTab === "platinum-plus" && <CategoryPage sites={sites} title="Platinum+ Sites" description={`${platinumPlusRows.length} sites in the Platinum+ category`} threshold={98.5} filterFn={(s) => s.revenueCategory === "Platinum +"} lastUpdatedDate={monthLastUpdated} lastColumnIndex={monthLastColumnIndex} />}
+                {activeTab === "pgs" && <CategoryPage sites={sites} title="PGS Sites" description={`${pgsRows.length} high-priority revenue sites`} threshold={98.1} filterFn={(s) => PGS_GROUP.includes(s.revenueCategory)} lastUpdatedDate={monthLastUpdated} lastColumnIndex={monthLastColumnIndex} />}
+                {activeTab === "sb" && <CategoryPage sites={sites} title="SB Sites" description={`${sbRows.length} standard-tier revenue sites`} threshold={95} filterFn={(s) => SB_GROUP.includes(s.revenueCategory)} lastUpdatedDate={monthLastUpdated} lastColumnIndex={monthLastColumnIndex} />}
+                {activeTab === "nps" && <CategoryPage sites={sites} title="NPS Sites (New Physical Sites)" description={`${npsRows.length} NPS Y26 sites`} threshold={95} filterFn={(s) => isNPSSite(s)} lastUpdatedDate={monthLastUpdated} lastColumnIndex={monthLastColumnIndex} />}
+                {activeTab === "dg" && <CategoryPage sites={sites} title="DG Sites (Diesel Generator Backup)" description={`${dgRows.length} sites with diesel generators`} threshold={99} filterFn={(s) => hasDG(s)} lastUpdatedDate={monthLastUpdated} lastColumnIndex={monthLastColumnIndex} />}
+                {activeTab === "li-ion" && <CategoryPage sites={sites} title="Li-ion Battery Backup Sites" description={`${liIonRows.length} sites with Li-ion batteries installed`} threshold={98} filterFn={(s) => hasLiIon(s)} lastUpdatedDate={monthLastUpdated} lastColumnIndex={monthLastColumnIndex} />}
+                {activeTab === "below-base" && <CategoryPage sites={sites} title="Below Base Sites" description={`${belowBaseRows.length} sites flagged below base threshold`} threshold={95} filterFn={(s) => isBelowBase(s)} lastUpdatedDate={monthLastUpdated} lastColumnIndex={monthLastColumnIndex} />}
+                {activeTab === "agm" && <CategoryPage sites={sites} title="AGM Battery Backup Sites" description={`${agmRows.length} sites with AGM battery banks`} threshold={95} filterFn={(s) => hasAGM(s)} lastUpdatedDate={monthLastUpdated} lastColumnIndex={monthLastColumnIndex} />}
                 {activeTab === "rca" && <RcaSummary rcaData={rcaData} />}
-
                 {activeTab === "hardware" && hardwareData && <HardwareIssues data={hardwareData} />}
-
-                {activeTab === "pre-vs-post" && (
-                  <PreVsPostAnalysis
-                    preVsPostData={preVsPostData}
-                    lastUpdatedDate={monthLastUpdated}
-                  />
-                )}
-
                 {activeTab === "query" && <SiteQuery sites={sites} />}
-
                 {activeTab === "weather" && <WeatherRadar />}
               </motion.div>
             </AnimatePresence>
           </ErrorBoundary>
-
           <footer className="text-center text-xs text-slate-600 py-4">
             {useMock ? "📊 Demo Mode - Using sample data" : `Live data from Google Sheets (${monthLabel})`} · {sites.length} sites · C1 & C6 Cell Avb Analysis
           </footer>
         </main>
       </div>
-
       <AnimatePresence>
         {selectedRow && <DetailModal row={selectedRow} onClose={() => setSelectedRow(null)} />}
       </AnimatePresence>
