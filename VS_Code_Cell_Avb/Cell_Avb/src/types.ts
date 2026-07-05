@@ -35,8 +35,15 @@ export interface SiteData {
   ca2G?: number;
   ca3G?: number;
   ca4G?: number;
-  dailyData?: Record<string, number>;   // key = date string, e.g. "23-Jun-26"
+  dailyData?: Record<string, number>;
   dailyLs?: Record<string, number>;
+
+  // ---- Pre‑Vs‑Post fields ----
+  previousMonth?: number;
+  oldCase?: string;
+  now?: string;
+  newCase?: string;
+  category?: string;
 }
 
 export interface SheetPayload {
@@ -126,6 +133,12 @@ export const COLUMN_MAP: Record<string, keyof SiteData> = {
   "TCH CA": "ca2G",
   "Cell_U CA": "ca3G",
   "Cell_EU CA": "ca4G",
+  // Pre‑Vs‑Post columns
+  "Previous Month": "previousMonth",
+  "Old Case": "oldCase",
+  "Now": "now",
+  "New case": "newCase",
+  Category: "category",
 };
 
 export function normalizeRow(raw: Record<string, string>): SiteData {
@@ -133,7 +146,6 @@ export function normalizeRow(raw: Record<string, string>): SiteData {
   const dailyData: Record<string, number> = {};
   const dailyLs: Record<string, number> = {};
 
-  // 1. Map known columns
   for (const [header, value] of Object.entries(raw)) {
     if (COLUMN_MAP[header]) {
       const field = COLUMN_MAP[header];
@@ -141,7 +153,8 @@ export function normalizeRow(raw: Record<string, string>): SiteData {
         field === "currentAvb" || field === "monthlyAvb" ||
         field === "liIonCapacity" || field === "dependentSites" ||
         field === "target" || field === "ca2G" ||
-        field === "ca3G" || field === "ca4G"
+        field === "ca3G" || field === "ca4G" ||
+        field === "previousMonth"
       ) {
         (out as Record<string, unknown>)[field] = parseFloatSafe(value);
       } else {
@@ -150,8 +163,7 @@ export function normalizeRow(raw: Record<string, string>): SiteData {
     }
   }
 
-  // 2. Detect daily columns – assume they are date strings like "23-Jun-26"
-  //    (We'll store them with the date string as key)
+  // Detect daily date columns (e.g., "23-Jun-26")
   const dateRegex = /^\d{1,2}-[A-Z][a-z]{2}-\d{2,4}$/;
   for (const [header, value] of Object.entries(raw)) {
     if (dateRegex.test(header)) {
@@ -161,8 +173,6 @@ export function normalizeRow(raw: Record<string, string>): SiteData {
       }
     }
   }
-
-  // 3. (Optional) Parse LS daily columns if you have them – adjust as needed.
 
   out.siteName = out.siteName || raw["Site ID"] || "";
   out.currentAvb = out.currentAvb ?? 0;

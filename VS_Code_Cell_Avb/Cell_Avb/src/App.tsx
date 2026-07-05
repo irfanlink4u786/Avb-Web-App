@@ -33,6 +33,7 @@ import {
   ListChecks,
   Clock,
   CheckCircle2,
+  GitCompare,
 } from "lucide-react";
 import {
   ComposedChart,
@@ -74,13 +75,11 @@ import {
 //  CONSTANTS
 // ============================================================
 
-/** Google Sheet IDs for each month */
 const SHEET_IDS = {
   june: "1Bu4lneVsXvoHdiiJtJvzKSVq0MrTHQOqvH38w7MlNPk",
   july: "1aLTAisv5jjRuIkTVa6MjWZ-QFOSYn8FvMlJ09GWUpX0",
 } as const;
 
-/** Navigation items for the sidebar */
 const NAV_ITEMS = [
   { id: "overall", label: "Overall Summary", icon: LayoutDashboard },
   { id: "employees", label: "Employees", icon: Users },
@@ -94,15 +93,17 @@ const NAV_ITEMS = [
   { id: "agm", label: "AGM BB", icon: BatteryWarning },
   { id: "rca", label: "RCA of Plat+", icon: ListChecks },
   { id: "hardware", label: "Hardware Issues", icon: Cpu },
+  { id: "pre-vs-post", label: "Pre Vs Post", icon: GitCompare },
   { id: "query", label: "Site Query", icon: Search },
   { id: "weather", label: "Weather Radar", icon: CloudRain },
 ] as const;
 
 type Month = "june" | "july";
 type AppState = "loading" | "dashboard" | "error";
+type ViewMode = "home" | "month" | "prepost";
 
 // ============================================================
-//  UTILITY FUNCTIONS (Export)
+//  UTILITY FUNCTIONS
 // ============================================================
 
 function exportToCSV(data: any[], filename: string) {
@@ -215,7 +216,7 @@ function indexToColumn(index: number): string {
 }
 
 // ============================================================
-//  MOCK DATA (for fallback)
+//  MOCK DATA (fallback)
 // ============================================================
 
 const MOCK_SITES: SiteData[] = [
@@ -339,10 +340,6 @@ function FilterSelect({
   );
 }
 
-// ============================================================
-//  EXPORT BUTTON COMPONENT
-// ============================================================
-
 function ExportButtonComponent({
   data,
   filename,
@@ -407,10 +404,6 @@ function ExportButtonComponent({
     </button>
   );
 }
-
-// ============================================================
-//  DETAIL MODAL
-// ============================================================
 
 function DetailModal({ row, onClose }: { row: SiteData; onClose: () => void }) {
   const fields: { label: string; value: string | number | undefined; type?: "ca" | "category" }[] = [
@@ -495,10 +488,6 @@ function DetailModal({ row, onClose }: { row: SiteData; onClose: () => void }) {
     </motion.div>
   );
 }
-
-// ============================================================
-//  SITE TABLE
-// ============================================================
 
 function uniqueVals(rows: SiteData[], key: keyof SiteData): string[] {
   return Array.from(
@@ -663,7 +652,7 @@ function SiteTable({ rows, onSelect }: { rows: SiteData[]; onSelect: (r: SiteDat
 }
 
 // ============================================================
-//  CATEGORY PAGE
+//  CATEGORY PAGE (unchanged)
 // ============================================================
 
 function CategoryPage({
@@ -692,7 +681,6 @@ function CategoryPage({
   const filteredSites = useMemo(() => sites.filter(filterFn), [sites, filterFn]);
   const activeSites = useMemo(() => filteredSites.filter((s) => s.currentAvb > 0), [filteredSites]);
 
-  // Export all sites in this category
   const categoryExportData = useMemo(() => {
     return filteredSites.map((s) => ({
       "Site ID": s.siteName,
@@ -738,9 +726,8 @@ function CategoryPage({
     });
   }, [activeSites, selectedEmployee, selectedLevel]);
 
-  // --- Date helpers ---
   const formatDateKey = (date: Date): string => {
-    const day = String(date.getDate()).padStart(2, "0");
+    const day = String(date.getDate());
     const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
     const month = monthNames[date.getMonth()];
     const year = String(date.getFullYear()).slice(-2);
@@ -796,7 +783,6 @@ function CategoryPage({
     });
   }, [lastUpdatedDate]);
 
-  // --- Worst 10 sites ---
   const worstSites = useMemo(() => {
     const sorted = [...employeeFilteredSites].sort((a, b) => a.currentAvb - b.currentAvb);
     const top10 = sorted.slice(0, 10);
@@ -831,7 +817,6 @@ function CategoryPage({
     });
   }, [worstSites, lastThreeDays]);
 
-  // --- Unstable sites (avg < 98%) ---
   const gridUnstableSites = useMemo(() => {
     return filteredSites.filter((s) => s.currentAvb > 0 && s.currentAvb < 98);
   }, [filteredSites]);
@@ -865,7 +850,6 @@ function CategoryPage({
     });
   }, [unstableWithDays, lastThreeDays]);
 
-  // --- Stats ---
   const stats = useMemo(() => {
     const total = filteredSites.length;
     const avgCa =
@@ -920,7 +904,6 @@ function CategoryPage({
     Status: g.avgCa >= threshold ? "Healthy" : "Critical",
   }));
 
-  // --- Render ---
   return (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="max-w-[1600px] mx-auto space-y-6">
       <div
@@ -950,7 +933,6 @@ function CategoryPage({
         </div>
       </div>
 
-      {/* Stats cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
           { icon: <MapPin className="w-5 h-5 text-blue-400" />, bg: "bg-blue-500/20", value: stats.total, label: "Total Sites" },
@@ -980,7 +962,6 @@ function CategoryPage({
         ))}
       </div>
 
-      {/* Employee filter */}
       <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-4">
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div className="flex items-center gap-3 flex-wrap">
@@ -1033,7 +1014,6 @@ function CategoryPage({
         </div>
       </div>
 
-      {/* Worst 10 */}
       <div className="bg-red-500/5 border border-red-500/30 rounded-xl p-4">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
@@ -1110,7 +1090,6 @@ function CategoryPage({
         )}
       </div>
 
-      {/* Unstable sites */}
       <div className="bg-slate-800 border border-slate-700 rounded-xl p-6">
         <div className="flex items-center justify-between mb-4">
           <div>
@@ -1176,7 +1155,6 @@ function CategoryPage({
         )}
       </div>
 
-      {/* Grid performance */}
       <div className="bg-slate-800 border border-slate-700 rounded-xl p-6">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-semibold text-white">Grid Performance Analysis - All Sites</h3>
@@ -1297,7 +1275,7 @@ function CategoryPage({
 }
 
 // ============================================================
-//  SITE QUERY
+//  SITE QUERY (unchanged)
 // ============================================================
 
 function SiteQuery({ sites }: { sites: SiteData[] }) {
@@ -1357,7 +1335,6 @@ function SiteQuery({ sites }: { sites: SiteData[] }) {
     }));
   }, [selectedSite]);
 
-  // Inner ComboChart component
   function ComboChart({ data, title }: { data: any[]; title: string }) {
     if (!data || data.length === 0) {
       return (
@@ -1717,7 +1694,7 @@ function SiteQuery({ sites }: { sites: SiteData[] }) {
 }
 
 // ============================================================
-//  RCA SUMMARY
+//  RCA SUMMARY (unchanged)
 // ============================================================
 
 interface RcaRecord {
@@ -1966,7 +1943,7 @@ function RcaSummary({ rcaData }: { rcaData: SheetPayload | null }) {
 }
 
 // ============================================================
-//  OVERALL SUMMARY WITH EXPORT
+//  OVERALL SUMMARY WITH EXPORT (unchanged)
 // ============================================================
 
 function OverallSummaryWithExport({ sites, rawData }: { sites: SiteData[]; rawData?: SheetPayload | null }) {
@@ -2089,32 +2066,782 @@ function SectionBanner({ icon, title, subtitle, gradient }: { icon: React.ReactN
 }
 
 // ============================================================
+//  Pre‑Vs‑Post Analysis Component (UPDATED WITH CORRECT STRINGS)
+// ============================================================
+
+function PreVsPostAnalysis({
+  preVsPostData,
+  lastUpdatedDate,
+}: {
+  preVsPostData: SheetPayload | null;
+  lastUpdatedDate: string;
+}) {
+  const [selectedEmployee, setSelectedEmployee] = useState<string>("all");
+  const [selectedLevel, setSelectedLevel] = useState<"zongLead" | "msGtl" | "clusterOwner">("zongLead");
+  const [expandedGrids, setExpandedGrids] = useState<Set<string>>(new Set());
+
+  const sites = useMemo(() => {
+    if (!preVsPostData || !preVsPostData.rows) return [];
+    return preVsPostData.rows.map((row: any) => {
+      const dailyData: Record<string, number> = {};
+      const dateRegex = /^\d{1,2}-[A-Z][a-z]{2}-\d{2,4}$/;
+      for (const [key, value] of Object.entries(row)) {
+        if (dateRegex.test(key)) {
+          const num = parseFloatSafe(value as string);
+          if (num > 0) dailyData[key] = num;
+        }
+      }
+
+      return {
+        siteName: row["Site ID"] || "",
+        subRegion: row["Sub-Region"] || "",
+        revenueCategory: row["Category"] || "",
+        grid: row["Grid"] || "",
+        currentAvb: parseFloatSafe(row["Current Month"]),
+        monthlyAvb: parseFloatSafe(row["Current Month"]),
+        dgStatus: "",
+        dgInstalled: "",
+        liIonInstalled: "",
+        agmBb: "",
+        belowBase: "",
+        msGtl: row["MS GTL"] || "",
+        zongLead: row["Zone Lead"] || "",
+        clusterOwner: row["Cluster Owner"] || "",
+        npsSiteDomain: "",
+        technology: "",
+        terrain: "",
+        sharingStatus: "",
+        indoorOutdoor: "",
+        hubSingle: "",
+        dependentSites: 0,
+        chronic: "",
+        dgChronic: "",
+        liIonChronic: "",
+        target: 0,
+        city: "",
+        ca2G: 0,
+        ca3G: 0,
+        ca4G: 0,
+        dailyData,
+        dailyLs: {},
+        previousMonth: parseFloatSafe(row["Previous Month"]),
+        oldCase: row["Old Case"]?.toString().trim() || "",
+        now: row["Now"]?.toString().trim() || "",
+        newCase: row["New case"]?.toString().trim() || "",
+        category: row["Category"]?.toString().trim() || "",
+      } as SiteData;
+    });
+  }, [preVsPostData]);
+
+  const employeeNames = useMemo(() => {
+    const names = new Set<string>();
+    sites.forEach((site) => {
+      const name = (site[selectedLevel] || "Unassigned").trim();
+      if (name !== "Unassigned") {
+        names.add(name);
+      }
+    });
+    return Array.from(names).sort();
+  }, [sites, selectedLevel]);
+
+  const employeeFilteredSites = useMemo(() => {
+    if (selectedEmployee === "all") {
+      return sites;
+    }
+    return sites.filter((site) => {
+      const name = (site[selectedLevel] || "Unassigned").trim();
+      return name === selectedEmployee;
+    });
+  }, [sites, selectedEmployee, selectedLevel]);
+
+  const formatDateKey = (date: Date): string => {
+    const day = String(date.getDate());
+    const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const month = monthNames[date.getMonth()];
+    const year = String(date.getFullYear()).slice(-2);
+    return `${day}-${month}-${year}`;
+  };
+
+  const getDaySuffix = (day: number): string => {
+    if (day > 3 && day < 21) return "th";
+    const r = day % 10;
+    if (r === 1) return "st";
+    if (r === 2) return "nd";
+    if (r === 3) return "rd";
+    return "th";
+  };
+
+  const lastThreeDays = useMemo(() => {
+    if (!lastUpdatedDate) return [];
+    const parts = lastUpdatedDate.split("-");
+    if (parts.length !== 3) return [];
+    const day = parseInt(parts[0], 10);
+    const monthStr = parts[1];
+    const year = parseInt(parts[2], 10) + 2000;
+    const monthMap: Record<string, number> = {
+      Jan: 0, Feb: 1, Mar: 2, Apr: 3, May: 4, Jun: 5,
+      Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11,
+    };
+    const month = monthMap[monthStr];
+    if (month === undefined) return [];
+    const baseDate = new Date(year, month, day);
+    if (isNaN(baseDate.getTime())) return [];
+
+    const dates: Date[] = [];
+    for (let i = 2; i >= 0; i--) {
+      const d = new Date(baseDate);
+      d.setDate(d.getDate() - i);
+      dates.push(d);
+    }
+
+    return dates.map((d) => {
+      const dateKey = formatDateKey(d);
+      const label = `${d.getDate()}${getDaySuffix(d.getDate())} ${d.toLocaleString("default", { month: "long" })}`;
+      return { dateKey, label };
+    });
+  }, [lastUpdatedDate]);
+
+  const worstSites = useMemo(() => {
+    const sorted = [...employeeFilteredSites].sort((a, b) => a.currentAvb - b.currentAvb);
+    const top10 = sorted.slice(0, 10);
+    return top10.map((site) => {
+      const data = site.dailyData || {};
+      const values = lastThreeDays.map(({ dateKey }) => data[dateKey] || 0);
+      const sum = values.reduce((a, b) => a + b, 0);
+      const count = values.filter((v) => v > 0).length;
+      const avg = count > 0 ? sum / count : 0;
+      return { site, values, avg };
+    });
+  }, [employeeFilteredSites, lastThreeDays]);
+
+  // ✅ UPDATED KPI CALCULATIONS WITH CORRECT STRINGS
+  const kpis = useMemo(() => {
+    const total = employeeFilteredSites.length;
+
+    const categoryCounts: Record<string, number> = {};
+    employeeFilteredSites.forEach((s) => {
+      const cat = s.category || "Unknown";
+      categoryCounts[cat] = (categoryCounts[cat] || 0) + 1;
+    });
+
+    const sitesWithPrev = employeeFilteredSites.filter(s => s.previousMonth !== undefined && s.previousMonth > 0);
+    const avgPrevMonth = sitesWithPrev.length > 0
+      ? sitesWithPrev.reduce((sum, s) => sum + (s.previousMonth || 0), 0) / sitesWithPrev.length
+      : 0;
+
+    const avgCurrent = employeeFilteredSites.length > 0
+      ? employeeFilteredSites.reduce((sum, s) => sum + s.currentAvb, 0) / employeeFilteredSites.length
+      : 0;
+
+    const unstablePrev = employeeFilteredSites.filter((s) => s.oldCase === "Unstable").length;
+    const fixedNow = employeeFilteredSites.filter((s) => s.now === "Stable").length;
+    // ✅ "Still Unstable" instead of "Unstable"
+    const stillUnstable = employeeFilteredSites.filter((s) => s.now === "Still Unstable").length;
+    // ✅ "New case" instead of "Unstable"
+    const newUnstable = employeeFilteredSites.filter((s) => s.newCase === "New case").length;
+
+    return {
+      total,
+      categoryCounts,
+      avgPrevMonth,
+      avgCurrent,
+      unstablePrev,
+      fixedNow,
+      stillUnstable,
+      newUnstable,
+    };
+  }, [employeeFilteredSites]);
+
+  // ✅ "Still Unstable" sites for grid breakdown
+  const stillUnstableSites = useMemo(() => {
+    return employeeFilteredSites.filter((s) => s.now === "Still Unstable");
+  }, [employeeFilteredSites]);
+
+  const gridBreakdown = useMemo(() => {
+    const map = new Map<string, SiteData[]>();
+    stillUnstableSites.forEach((site) => {
+      const grid = site.grid || "Unknown";
+      if (!map.has(grid)) map.set(grid, []);
+      map.get(grid)!.push(site);
+    });
+    return Array.from(map.entries())
+      .map(([grid, sites]) => ({ grid, count: sites.length, sites }))
+      .sort((a, b) => b.count - a.count);
+  }, [stillUnstableSites]);
+
+  const toggleGrid = (grid: string) => {
+    setExpandedGrids((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(grid)) newSet.delete(grid);
+      else newSet.add(grid);
+      return newSet;
+    });
+  };
+
+  const worstExportData = useMemo(() => {
+    return worstSites.map(({ site, values, avg }, i) => {
+      const row: Record<string, any> = {
+        Rank: i + 1,
+        "Site ID": site.siteName,
+        Category: site.category,
+        "Sub-Region": site.subRegion,
+        Grid: site.grid,
+        "Cluster Owner": site.clusterOwner || "-",
+        "MS GTL": site.msGtl || "-",
+        "Zone Lead": site.zongLead || "-",
+        "Prev Month CA": site.previousMonth?.toFixed(2) || "-",
+        "Old Case": site.oldCase || "-",
+        Now: site.now || "-",
+        "New Case": site.newCase || "-",
+      };
+      lastThreeDays.forEach(({ label }, idx) => {
+        row[label] = values[idx]?.toFixed(2) || "-";
+      });
+      row["Last 3 Days Avg"] = avg.toFixed(2) + "%";
+      row["Current CA%"] = site.currentAvb?.toFixed(2) || "-";
+      return row;
+    });
+  }, [worstSites, lastThreeDays]);
+
+  const allExportData = useMemo(() => {
+    return employeeFilteredSites.map((site) => ({
+      "Site ID": site.siteName,
+      Category: site.category,
+      "Sub-Region": site.subRegion,
+      Grid: site.grid,
+      "Cluster Owner": site.clusterOwner || "-",
+      "MS GTL": site.msGtl || "-",
+      "Zone Lead": site.zongLead || "-",
+      "Prev Month CA": site.previousMonth?.toFixed(2) || "-",
+      "Old Case": site.oldCase || "-",
+      Now: site.now || "-",
+      "New Case": site.newCase || "-",
+      "Current CA%": site.currentAvb?.toFixed(2) || "-",
+    }));
+  }, [employeeFilteredSites]);
+
+  const unstableGridExport = useMemo(() => {
+    return stillUnstableSites.map((site) => ({
+      "Site ID": site.siteName,
+      Grid: site.grid || "Unknown",
+      "Sub-Region": site.subRegion,
+      "Cluster Owner": site.clusterOwner || "-",
+      "MS GTL": site.msGtl || "-",
+      "Zone Lead": site.zongLead || "-",
+      "Current CA%": site.currentAvb?.toFixed(2) || "-",
+    }));
+  }, [stillUnstableSites]);
+
+  // Status badge helper for "Now"
+  const nowBadge = (value: string) => {
+    if (value === "Stable") return <span className="bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded text-xs">Stable</span>;
+    if (value === "Still Unstable") return <span className="bg-red-500/20 text-red-400 px-2 py-0.5 rounded text-xs">Still Unstable</span>;
+    return <span className="bg-slate-500/20 text-slate-400 px-2 py-0.5 rounded text-xs">{value || "-"}</span>;
+  };
+
+  const newCaseBadge = (value: string) => {
+    if (value === "New case") return <span className="bg-red-500/20 text-red-400 px-2 py-0.5 rounded text-xs">New case</span>;
+    return <span className="bg-slate-500/20 text-slate-400 px-2 py-0.5 rounded text-xs">{value || "-"}</span>;
+  };
+
+  return (
+    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="max-w-[1600px] mx-auto space-y-6">
+      <div className="bg-gradient-to-r from-purple-500/10 to-pink-500/10 border border-purple-500/20 rounded-xl p-6">
+        <div className="flex items-center justify-between flex-wrap gap-4">
+          <div>
+            <h2 className="text-2xl font-bold text-white">Pre Vs Post Analysis</h2>
+            <p className="text-slate-400 text-sm">
+              {employeeFilteredSites.length} sites in total
+            </p>
+            <p className="text-xs text-slate-500 mt-1">Comparing June (Pre) vs July (Post) performance</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <ExportButtonComponent
+              data={allExportData}
+              filename="pre_vs_post_all_sites"
+              label="Export All"
+              format="excel"
+              variant="primary"
+            />
+            <ExportButtonComponent
+              data={worstExportData}
+              filename="pre_vs_post_worst_10"
+              label="Export Worst 10"
+              format="excel"
+              variant="danger"
+            />
+            <ExportButtonComponent
+              data={unstableGridExport}
+              filename="pre_vs_post_still_unstable"
+              label="Export Unstable"
+              format="excel"
+              variant="secondary"
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-4">
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="flex items-center gap-2">
+              <Users className="w-4 h-4 text-slate-400" />
+              <span className="text-xs text-slate-400 font-medium">Filter by Employee:</span>
+            </div>
+            <div className="flex gap-1 bg-slate-900 rounded-lg p-1 border border-slate-700">
+              {[
+                { id: "zongLead" as const, label: "Zone Lead" },
+                { id: "msGtl" as const, label: "MS GTL" },
+                { id: "clusterOwner" as const, label: "Cluster Owner" },
+              ].map((lvl) => (
+                <button
+                  key={lvl.id}
+                  onClick={() => setSelectedLevel(lvl.id)}
+                  className={`px-2 py-1 rounded-md text-[10px] font-medium transition-colors ${
+                    selectedLevel === lvl.id ? "bg-purple-500/20 text-purple-400" : "text-slate-400 hover:text-slate-200"
+                  }`}
+                >
+                  {lvl.label}
+                </button>
+              ))}
+            </div>
+            <select
+              value={selectedEmployee}
+              onChange={(e) => setSelectedEmployee(e.target.value)}
+              className="px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-sm text-slate-200 focus:border-purple-500 outline-none min-w-[180px]"
+            >
+              <option value="all">All Employees ({employeeNames.length})</option>
+              {employeeNames.map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+            </select>
+            {selectedEmployee !== "all" && (
+              <button
+                onClick={() => setSelectedEmployee("all")}
+                className="flex items-center gap-1 px-2 py-1 rounded text-xs bg-red-500/10 hover:bg-red-500/20 text-red-400 transition-colors"
+              >
+                <X className="w-3 h-3" /> Clear
+              </button>
+            )}
+          </div>
+          <div className="text-xs text-slate-500">
+            Showing {employeeFilteredSites.length} sites
+            {selectedEmployee !== "all" && <span className="text-purple-400 ml-1">· Filtered: {selectedEmployee}</span>}
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {Object.entries(kpis.categoryCounts).map(([cat, count]) => (
+          <div key={cat} className="bg-slate-800 border border-slate-700 rounded-xl p-4">
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-slate-400">{cat}</span>
+              <span className="text-2xl font-bold text-white">{count}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-4">
+        <KpiCard label="Total Sites" value={kpis.total} icon={<MapPin className="w-5 h-5 text-blue-400" />} color="blue" />
+        <KpiCard
+          label="Avg Pre Month CA"
+          value={kpis.avgPrevMonth > 0 ? `${kpis.avgPrevMonth.toFixed(2)}%` : "—"}
+          icon={<TrendingDown className="w-5 h-5 text-amber-400" />}
+          color="amber"
+        />
+        <KpiCard
+          label="Avg Current CA"
+          value={kpis.avgCurrent > 0 ? `${kpis.avgCurrent.toFixed(2)}%` : "—"}
+          icon={<TrendingUp className="w-5 h-5 text-emerald-400" />}
+          color="emerald"
+        />
+        <KpiCard label="Unstable Pre Month" value={kpis.unstablePrev} icon={<AlertTriangle className="w-5 h-5 text-red-400" />} color="red" />
+        <KpiCard label="Fixed (Now Stable)" value={kpis.fixedNow} icon={<CheckCircle2 className="w-5 h-5 text-green-400" />} color="green" />
+        <KpiCard label="Still Unstable" value={kpis.stillUnstable} icon={<AlertCircle className="w-5 h-5 text-orange-400" />} color="orange" />
+        <KpiCard label="New Unstable" value={kpis.newUnstable} icon={<AlertCircle className="w-5 h-5 text-red-400" />} color="red" />
+      </div>
+
+      <div className="bg-red-500/5 border border-red-500/30 rounded-xl p-4">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-5 h-5 text-red-400" />
+            <h4 className="text-lg font-semibold text-white">Worst 10 Sites by Current CA%</h4>
+            <span className="text-xs text-slate-500">
+              ({selectedEmployee === "all" ? "All Employees" : selectedEmployee})
+            </span>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-slate-500">Sorted by CA% (Lowest to Highest)</span>
+            {worstSites.length > 0 && (
+              <ExportButtonComponent
+                data={worstExportData}
+                filename="pre_vs_post_worst_10"
+                label="Export"
+                format="excel"
+                variant="danger"
+              />
+            )}
+          </div>
+        </div>
+        {worstSites.length > 0 ? (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-red-500/30">
+                  <th className="text-center py-2 px-2 text-slate-400 font-medium">#</th>
+                  <th className="text-left py-2 px-3 text-slate-400 font-medium">Site ID</th>
+                  <th className="text-left py-2 px-3 text-slate-400 font-medium">Category</th>
+                  <th className="text-left py-2 px-3 text-slate-400 font-medium">Sub-Region</th>
+                  <th className="text-left py-2 px-3 text-slate-400 font-medium">Grid</th>
+                  <th className="text-left py-2 px-3 text-slate-400 font-medium">Cluster Owner</th>
+                  <th className="text-left py-2 px-3 text-slate-400 font-medium">MS GTL</th>
+                  <th className="text-left py-2 px-3 text-slate-400 font-medium">Zone Lead</th>
+                  <th className="text-center py-2 px-3 text-slate-400 font-medium">Prev Month</th>
+                  <th className="text-center py-2 px-3 text-slate-400 font-medium">Old Case</th>
+                  <th className="text-center py-2 px-3 text-slate-400 font-medium">Now</th>
+                  <th className="text-center py-2 px-3 text-slate-400 font-medium">New Case</th>
+                  {lastThreeDays.map(({ label }, idx) => (
+                    <th key={idx} className="text-center py-2 px-3 text-slate-400 font-medium">{label}</th>
+                  ))}
+                  <th className="text-center py-2 px-3 text-slate-400 font-medium">Last 3 Days Avg</th>
+                  <th className="text-center py-2 px-3 text-slate-400 font-medium">Current CA%</th>
+                </tr>
+              </thead>
+              <tbody>
+                {worstSites.map(({ site, values, avg }, i) => (
+                  <tr key={site.siteName} className="border-b border-slate-700/50 hover:bg-slate-800/50 transition-colors">
+                    <td className="py-2 px-2 text-center text-slate-500">{i + 1}</td>
+                    <td className="py-2 px-3 text-cyan-300 font-mono">{site.siteName}</td>
+                    <td className="py-2 px-3">
+                      <CategoryBadge category={site.category} />
+                    </td>
+                    <td className="py-2 px-3 text-slate-400">{site.subRegion}</td>
+                    <td className="py-2 px-3 text-slate-300">{site.grid}</td>
+                    <td className="py-2 px-3 text-slate-300">{site.clusterOwner || "-"}</td>
+                    <td className="py-2 px-3 text-slate-300">{site.msGtl || "-"}</td>
+                    <td className="py-2 px-3 text-slate-300">{site.zongLead || "-"}</td>
+                    <td className="py-2 px-3 text-center text-slate-300">
+                      {site.previousMonth?.toFixed(2) || "-"}
+                    </td>
+                    <td className="py-2 px-3 text-center">
+                      <span className={`text-xs px-2 py-0.5 rounded ${site.oldCase === "Stable" ? "bg-emerald-500/20 text-emerald-400" : "bg-red-500/20 text-red-400"}`}>
+                        {site.oldCase || "-"}
+                      </span>
+                    </td>
+                    <td className="py-2 px-3 text-center">
+                      {nowBadge(site.now)}
+                    </td>
+                    <td className="py-2 px-3 text-center">
+                      {newCaseBadge(site.newCase)}
+                    </td>
+                    {values.map((val, idx) => (
+                      <td key={idx} className="py-2 px-3 text-center text-slate-300">
+                        {val?.toFixed(2) || "-"}
+                      </td>
+                    ))}
+                    <td className={`py-2 px-3 text-center font-bold ${avg < 98 ? "text-red-400" : "text-amber-400"}`}>
+                      {avg.toFixed(2)}%
+                    </td>
+                    <td className="py-2 px-3 text-center text-slate-300">
+                      {site.currentAvb.toFixed(2)}%
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="text-center py-8 text-slate-500">No sites available for the selected filter.</div>
+        )}
+      </div>
+
+      <div className="bg-amber-500/5 border border-amber-500/30 rounded-xl p-4">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-5 h-5 text-amber-400" />
+            <h4 className="text-lg font-semibold text-white">Still Unstable Sites by Grid</h4>
+            <span className="text-xs text-slate-500">
+              ({stillUnstableSites.length} sites · {gridBreakdown.length} grids)
+            </span>
+          </div>
+          {stillUnstableSites.length > 0 && (
+            <ExportButtonComponent
+              data={unstableGridExport}
+              filename="pre_vs_post_still_unstable"
+              label="Export All"
+              format="excel"
+              variant="secondary"
+            />
+          )}
+        </div>
+        {stillUnstableSites.length > 0 ? (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-amber-500/30">
+                  <th className="text-left py-2 px-3 text-slate-400 font-medium">Grid</th>
+                  <th className="text-center py-2 px-3 text-slate-400 font-medium">Count</th>
+                  <th className="text-center py-2 px-3 text-slate-400 font-medium">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {gridBreakdown.map(({ grid, count, sites: gridSites }) => {
+                  const isExpanded = expandedGrids.has(grid);
+                  return (
+                    <Fragment key={grid}>
+                      <tr className="border-b border-slate-700/50 hover:bg-slate-800/30 transition-colors">
+                        <td className="py-2 px-3 text-slate-200 font-medium">{grid}</td>
+                        <td className="py-2 px-3 text-center text-slate-300">{count}</td>
+                        <td className="py-2 px-3 text-center">
+                          <button
+                            onClick={() => toggleGrid(grid)}
+                            className="inline-flex items-center gap-1 px-3 py-1 rounded bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 text-xs transition-colors"
+                          >
+                            {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                            {isExpanded ? "Hide" : "View"}
+                          </button>
+                        </td>
+                      </tr>
+                      {isExpanded && (
+                        <tr>
+                          <td colSpan={3} className="px-3 py-2 bg-slate-900/40">
+                            <div className="overflow-x-auto">
+                              <table className="w-full text-xs">
+                                <thead>
+                                  <tr className="border-b border-slate-700">
+                                    <th className="text-left py-1 px-2 text-slate-500">Site ID</th>
+                                    <th className="text-left py-1 px-2 text-slate-500">Sub-Region</th>
+                                    <th className="text-left py-1 px-2 text-slate-500">Cluster Owner</th>
+                                    <th className="text-left py-1 px-2 text-slate-500">MS GTL</th>
+                                    <th className="text-left py-1 px-2 text-slate-500">Zone Lead</th>
+                                    <th className="text-center py-1 px-2 text-slate-500">Current CA%</th>
+                                    <th className="text-center py-1 px-2 text-slate-500">Prev Month</th>
+                                    <th className="text-center py-1 px-2 text-slate-500">Old Case</th>
+                                    <th className="text-center py-1 px-2 text-slate-500">Now</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {gridSites.map((site) => (
+                                    <tr key={site.siteName} className="border-b border-slate-800">
+                                      <td className="py-1 px-2 text-cyan-300 font-mono">{site.siteName}</td>
+                                      <td className="py-1 px-2 text-slate-300">{site.subRegion}</td>
+                                      <td className="py-1 px-2 text-slate-300">{site.clusterOwner || "-"}</td>
+                                      <td className="py-1 px-2 text-slate-300">{site.msGtl || "-"}</td>
+                                      <td className="py-1 px-2 text-slate-300">{site.zongLead || "-"}</td>
+                                      <td className="py-1 px-2 text-center text-red-400 font-medium">
+                                        {site.currentAvb.toFixed(2)}%
+                                      </td>
+                                      <td className="py-1 px-2 text-center text-slate-300">
+                                        {site.previousMonth?.toFixed(2) || "-"}
+                                      </td>
+                                      <td className="py-1 px-2 text-center">
+                                        <span className="text-xs px-2 py-0.5 rounded bg-red-500/20 text-red-400">
+                                          Unstable
+                                        </span>
+                                      </td>
+                                      <td className="py-1 px-2 text-center">
+                                        {nowBadge(site.now)}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="text-center py-8 text-slate-500">
+            <CheckCircle2 className="w-8 h-8 mx-auto mb-2 opacity-50 text-emerald-400" />
+            <p>All unstable sites have been fixed! 🎉</p>
+          </div>
+        )}
+      </div>
+    </motion.div>
+  );
+}
+
+function KpiCard({ label, value, icon, color }: { label: string; value: string | number; icon: React.ReactNode; color: string }) {
+  const colorMap: Record<string, string> = {
+    blue: "bg-blue-500/20 text-blue-400",
+    amber: "bg-amber-500/20 text-amber-400",
+    emerald: "bg-emerald-500/20 text-emerald-400",
+    red: "bg-red-500/20 text-red-400",
+    green: "bg-green-500/20 text-green-400",
+    orange: "bg-orange-500/20 text-orange-400",
+  };
+  return (
+    <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
+      <div className="flex items-center gap-3">
+        <div className={`w-10 h-10 rounded-lg ${colorMap[color]} flex items-center justify-center`}>
+          {icon}
+        </div>
+        <div>
+          <div className="text-2xl font-bold text-white">{value}</div>
+          <div className="text-xs text-slate-400">{label}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function parseFloatSafe(v: string | undefined): number {
+  if (!v) return 0;
+  const cleaned = v.toString().replace(/[^0-9.]/g, "");
+  const n = parseFloat(cleaned);
+  return isNaN(n) ? 0 : n;
+}
+
+// ============================================================
+//  LOGIN SCREEN (NEW)
+// ============================================================
+
+function LoginScreen({ onLogin }: { onLogin: (success: boolean) => void }) {
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    if (username.trim() === "" || password.trim() === "") {
+      setError("Please fill in all fields");
+      return;
+    }
+    setLoading(true);
+    // Simulate a short network delay
+    setTimeout(() => {
+      if (username === "c1nar" && password === "irfan123") {
+        onLogin(true);
+      } else {
+        setError("Invalid username or password");
+        setLoading(false);
+      }
+    }, 600);
+  };
+
+  return (
+    <div className="min-h-screen relative flex items-center justify-center overflow-hidden">
+      <div
+        className="absolute inset-0 z-0"
+        style={{
+          backgroundImage: `url('/zong 5G.png')`,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+        }}
+      />
+      <div className="absolute inset-0 z-1 bg-black/70" />
+      <motion.div
+        initial={{ opacity: 0, y: -30 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5, ease: "easeOut" }}
+        className="relative z-10 w-full max-w-md px-6"
+      >
+        <div className="bg-slate-800/90 backdrop-blur-xl border border-slate-700/60 rounded-2xl p-8 shadow-2xl">
+          <div className="text-center mb-8">
+            <h2 className="text-3xl font-bold text-white">Welcome Back</h2>
+            <p className="text-slate-400 text-sm mt-2">Sign in to access the C1 & C6 Dashboard</p>
+          </div>
+          <form onSubmit={handleSubmit} className="space-y-5">
+            <div>
+              <label className="block text-sm font-medium text-slate-300 mb-1.5">Username</label>
+              <input
+                type="text"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                placeholder="Enter your username"
+                className="w-full px-4 py-3 rounded-lg bg-slate-900/60 border border-slate-700 focus:border-cyan-500 outline-none text-white placeholder:text-slate-500 transition-colors"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-300 mb-1.5">Password</label>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Enter your password"
+                className="w-full px-4 py-3 rounded-lg bg-slate-900/60 border border-slate-700 focus:border-cyan-500 outline-none text-white placeholder:text-slate-500 transition-colors"
+              />
+            </div>
+            {error && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                className="bg-red-500/10 border border-red-500/30 text-red-400 text-sm px-4 py-2.5 rounded-lg"
+              >
+                {error}
+              </motion.div>
+            )}
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full py-3.5 rounded-lg bg-gradient-to-r from-cyan-500 to-blue-500 hover:opacity-90 text-white font-bold text-lg transition-all shadow-lg shadow-cyan-500/20 disabled:opacity-50 flex items-center justify-center"
+            >
+              {loading ? (
+                <RefreshCw className="w-5 h-5 animate-spin" />
+              ) : (
+                "Sign In"
+              )}
+            </button>
+          </form>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
+// ============================================================
 //  MAIN APP
 // ============================================================
 
 export default function App() {
-  // Month selection state
+  // 🛡️ Authentication State
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+
+  // Check sessionStorage on mount
+  useEffect(() => {
+    const auth = sessionStorage.getItem("c1_auth");
+    if (auth === "true") {
+      setIsAuthenticated(true);
+    }
+  }, []);
+
+  const handleLogin = (success: boolean) => {
+    if (success) {
+      sessionStorage.setItem("c1_auth", "true");
+      setIsAuthenticated(true);
+    }
+  };
+
+  // --- App state (month, view, etc.) ---
+  const [viewMode, setViewMode] = useState<ViewMode>("home");
   const [selectedMonth, setSelectedMonth] = useState<Month | null>(null);
   const [appState, setAppState] = useState<AppState>("dashboard");
   const [errorMsg, setErrorMsg] = useState("");
 
-  // Data state for the selected month
   const [monthData, setMonthData] = useState<SheetPayload | null>(null);
   const [monthHardware, setMonthHardware] = useState<SheetPayload | null>(null);
   const [monthRca, setMonthRca] = useState<SheetPayload | null>(null);
+  const [preVsPostData, setPreVsPostData] = useState<SheetPayload | null>(null);
   const [monthLastUpdated, setMonthLastUpdated] = useState("");
   const [monthLastColumnIndex, setMonthLastColumnIndex] = useState(0);
   const [useMock, setUseMock] = useState(false);
 
-  // UI state
   const [activeTab, setActiveTab] = useState<string>("overall");
   const [selectedRow, setSelectedRow] = useState<SiteData | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  // ------------------------------------------------------------------
-  //  Data fetching
-  // ------------------------------------------------------------------
-
+  // --- Loading functions (unchanged) ---
   const loadMonthData = async (month: Month) => {
     setAppState("loading");
     setErrorMsg("");
@@ -2136,10 +2863,10 @@ export default function App() {
       }
       setUseMock(false);
       setSelectedMonth(month);
+      setViewMode("month");
       setAppState("dashboard");
     } catch (error) {
       console.error(`Error loading ${month} data:`, error);
-      // Fallback to mock
       setMonthData(null);
       setMonthHardware(null);
       setMonthRca(null);
@@ -2147,23 +2874,44 @@ export default function App() {
       setMonthLastColumnIndex(74);
       setUseMock(true);
       setSelectedMonth(month);
+      setViewMode("month");
       setAppState("dashboard");
     }
   };
 
-  const goToMonthSelection = () => {
+  const loadPreVsPost = async () => {
+    setAppState("loading");
+    setErrorMsg("");
+    try {
+      const sheetId = SHEET_IDS.july;
+      const data = await fetchGoogleSheet(sheetId, "Pre Vs Post");
+      setPreVsPostData(data);
+      const dateData = await fetchGoogleSheet(sheetId, "Updated Date");
+      if (dateData && dateData.rows && dateData.rows.length > 0) {
+        const row = dateData.rows[0];
+        setMonthLastUpdated(row["Last Updated"] || row["Date"] || row["Last Date"] || "25-Jul-26");
+      } else {
+        setMonthLastUpdated("25-Jul-26");
+      }
+      setViewMode("prepost");
+      setAppState("dashboard");
+    } catch (error) {
+      console.error("Error loading Pre Vs Post:", error);
+      setErrorMsg("Failed to load Pre Vs Post data. Please try again.");
+      setAppState("error");
+    }
+  };
+
+  const goHome = () => {
+    setViewMode("home");
     setSelectedMonth(null);
-    setAppState("dashboard");
     setActiveTab("overall");
-    // Optionally clear data to free memory
     setMonthData(null);
     setMonthHardware(null);
     setMonthRca(null);
+    setPreVsPostData(null);
+    setAppState("dashboard");
   };
-
-  // ------------------------------------------------------------------
-  //  Derived data
-  // ------------------------------------------------------------------
 
   const sites: SiteData[] = useMemo(() => {
     if (useMock) return MOCK_SITES;
@@ -2192,7 +2940,6 @@ export default function App() {
 
   const rcaData = monthRca;
 
-  // Filtered lists for tabs
   const platinumPlusRows = useMemo(() => sites.filter((s) => s.revenueCategory === "Platinum +"), [sites]);
   const pgsRows = useMemo(() => sites.filter((s) => PGS_GROUP.includes(s.revenueCategory)), [sites]);
   const sbRows = useMemo(() => sites.filter((s) => SB_GROUP.includes(s.revenueCategory)), [sites]);
@@ -2204,91 +2951,155 @@ export default function App() {
 
   const activeLabel = NAV_ITEMS.find((item) => item.id === activeTab)?.label ?? "";
 
-  // ------------------------------------------------------------------
-  //  Render
-  // ------------------------------------------------------------------
-
+  // --- Render Loading / Error ---
   if (appState === "loading") return <LoadingScreen />;
-  if (appState === "error") return <ErrorScreen message={errorMsg} onRetry={() => loadMonthData(selectedMonth || "june")} />;
+  if (appState === "error") return <ErrorScreen message={errorMsg} onRetry={viewMode === "prepost" ? loadPreVsPost : () => loadMonthData(selectedMonth || "june")} />;
 
-  // ============================================================
-//  LANDING PAGE – WITH ZONG 5G BACKGROUND
-// ============================================================
-if (!selectedMonth) {
-  return (
-    <div className="min-h-screen relative flex items-center justify-center overflow-hidden">
-      {/* Background image – ZONG 5G */}
-      <div
-        className="absolute inset-0 z-0"
-        style={{
-          backgroundImage: `url('/zong 5G.png')`,
-          backgroundSize: 'cover',
-          backgroundPosition: 'center',
-        }}
-      />
-      {/* Dark overlay with blur – reduces opacity to let the image shine */}
-      <div className="absolute inset-0 z-1 bg-black/40" />
+  // 🔐 AUTH GATE: If not logged in, show Login Screen
+  if (!isAuthenticated) {
+    return <LoginScreen onLogin={handleLogin} />;
+  }
 
-      <div className="relative z-10 max-w-4xl w-full px-6 text-center">
-        {/* 5G Badge – you can keep or remove */}
-        <div className="inline-block mb-6 px-6 py-2 rounded-full bg-cyan-500/20 border border-cyan-400/30 backdrop-blur-sm">
-          <span className="text-cyan-300 font-bold tracking-widest text-sm">📶 ZONG 5G</span>
-        </div>
+  // ----- HOME SCREEN (Redesigned) -----
+  if (viewMode === "home") {
+    return (
+      <div className="min-h-screen relative flex items-center justify-center overflow-hidden">
+        <div
+          className="absolute inset-0 z-0"
+          style={{
+            backgroundImage: `url('/zong 5G.png')`,
+            backgroundSize: 'cover',
+            backgroundPosition: 'center',
+          }}
+        />
+        <div className="absolute inset-0 z-1 bg-black/60" />
 
-        <h1 className="text-5xl md:text-7xl font-extrabold text-white leading-tight mb-4 drop-shadow-lg">
-          C1 & C6 <br />
-          <span className="bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">
-            Cell Avb Analysis
-          </span>
-        </h1>
-      
-
-        <div className="flex flex-col sm:flex-row justify-center gap-6">
-          {/* June Button */}
-          <button
-            onClick={() => loadMonthData("june")}
-            className="group relative px-10 py-5 rounded-2xl bg-gradient-to-br from-slate-800/80 to-slate-900/80 border border-slate-600/50 hover:border-cyan-400 transition-all duration-300 shadow-xl hover:shadow-cyan-500/20 backdrop-blur-sm overflow-hidden"
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.8, ease: "easeOut" }}
+          className="relative z-10 max-w-5xl w-full px-6 text-center"
+        >
+          <motion.div
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{ delay: 0.2, duration: 0.5 }}
+            className="inline-block mb-8 px-8 py-3 rounded-full bg-cyan-500/10 border border-cyan-400/30 backdrop-blur-sm"
           >
-            <span className="absolute inset-0 bg-gradient-to-r from-cyan-500/10 to-blue-500/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-            <div className="relative flex items-center gap-4">
-              <span className="text-5xl group-hover:scale-110 transition-transform">📅</span>
-              <div className="text-left">
+            <span className="text-cyan-300 font-bold tracking-widest text-sm">📶 ZONG 5G</span>
+          </motion.div>
+
+          <h1 className="text-5xl md:text-7xl font-extrabold text-white leading-tight mb-6 drop-shadow-lg">
+            C1 & C6 <br />
+            <span className="bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">
+              Cell Avb Analysis
+            </span>
+          </h1>
+
+          <motion.div
+            variants={{
+              hidden: { opacity: 0 },
+              show: {
+                opacity: 1,
+                transition: { staggerChildren: 0.15 },
+              },
+            }}
+            initial="hidden"
+            animate="show"
+            className="flex flex-col sm:flex-row justify-center items-stretch gap-6 mt-8"
+          >
+            <motion.button
+              variants={{
+                hidden: { opacity: 0, y: 30 },
+                show: { opacity: 1, y: 0 },
+              }}
+              whileHover={{ scale: 1.03, boxShadow: "0 0 40px rgba(6, 182, 212, 0.25)" }}
+              whileTap={{ scale: 0.98 }}
+              onClick={() => loadMonthData("june")}
+              className="group relative flex-1 min-w-[200px] px-8 py-7 rounded-2xl bg-gradient-to-br from-slate-800/90 to-slate-900/90 border border-slate-600/50 hover:border-cyan-400 transition-all duration-300 shadow-xl backdrop-blur-sm overflow-hidden"
+            >
+              <span className="absolute inset-0 bg-gradient-to-r from-cyan-500/10 to-blue-500/10 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+              <div className="relative text-center">
                 <span className="block text-2xl font-bold text-white">June 2026</span>
                 <span className="text-slate-400 text-sm">Final data · 30 days</span>
               </div>
-              <span className="ml-4 text-cyan-400 group-hover:translate-x-2 transition-transform">→</span>
-            </div>
-          </button>
+            </motion.button>
 
-          {/* July Button */}
-          <button
-            onClick={() => loadMonthData("july")}
-            className="group relative px-10 py-5 rounded-2xl bg-gradient-to-br from-cyan-500/20 to-blue-500/20 border border-cyan-400/30 hover:border-cyan-300 transition-all duration-300 shadow-xl hover:shadow-cyan-500/40 backdrop-blur-sm overflow-hidden"
-          >
-            <span className="absolute inset-0 bg-gradient-to-r from-cyan-400/20 to-blue-400/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-            <div className="relative flex items-center gap-4">
-              <span className="text-5xl group-hover:scale-110 transition-transform">📊</span>
-              <div className="text-left">
+            <motion.button
+              variants={{
+                hidden: { opacity: 0, y: 30 },
+                show: { opacity: 1, y: 0 },
+              }}
+              whileHover={{ scale: 1.03, boxShadow: "0 0 40px rgba(6, 182, 212, 0.25)" }}
+              whileTap={{ scale: 0.98 }}
+              onClick={() => loadMonthData("july")}
+              className="group relative flex-1 min-w-[200px] px-8 py-7 rounded-2xl bg-gradient-to-br from-cyan-500/20 to-blue-500/20 border border-cyan-400/30 hover:border-cyan-300 transition-all duration-300 shadow-xl hover:shadow-cyan-500/40 backdrop-blur-sm overflow-hidden"
+            >
+              <span className="absolute inset-0 bg-gradient-to-r from-cyan-400/20 to-blue-400/20 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+              <div className="relative text-center">
                 <span className="block text-2xl font-bold text-white">July 2026</span>
                 <span className="text-slate-300 text-sm">Live updates · Progressive</span>
               </div>
-              <span className="ml-4 text-cyan-300 group-hover:translate-x-2 transition-transform">→</span>
-            </div>
-          </button>
-        </div>
+            </motion.button>
 
-        {/* Footer */}
-        <div className="mt-12 text-slate-500 text-sm flex items-center justify-center gap-2">
-          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-          <span>Real-time data from Google Sheets</span>
+            <motion.button
+              variants={{
+                hidden: { opacity: 0, y: 30 },
+                show: { opacity: 1, y: 0 },
+              }}
+              whileHover={{ scale: 1.03, boxShadow: "0 0 40px rgba(168, 85, 247, 0.25)" }}
+              whileTap={{ scale: 0.98 }}
+              onClick={loadPreVsPost}
+              className="group relative flex-1 min-w-[260px] px-8 py-7 rounded-2xl bg-gradient-to-br from-purple-500/20 to-pink-500/20 border border-purple-400/30 hover:border-purple-300 transition-all duration-300 shadow-xl hover:shadow-purple-500/40 backdrop-blur-sm overflow-hidden"
+            >
+              <span className="absolute inset-0 bg-gradient-to-r from-purple-400/20 to-pink-400/20 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+              <div className="relative text-center">
+                <span className="block text-2xl font-bold text-white">
+                  Plat+ & DG Pre vs Post Analysis
+                </span>
+                <span className="text-slate-300 text-sm">June vs July comparison</span>
+              </div>
+            </motion.button>
+          </motion.div>
+
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.6 }}
+            className="mt-12 text-slate-400 text-sm flex items-center justify-center gap-2"
+          >
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            <span>Real-time data from Google Sheets</span>
+          </motion.div>
+        </motion.div>
+      </div>
+    );
+  }
+
+  // ----- PRE‑VS‑POST FULL PAGE (no sidebar) -----
+  if (viewMode === "prepost") {
+    return (
+      <div className="min-h-screen bg-slate-900 text-slate-100">
+        <RainAlertWidget />
+        <div className="p-4 sm:p-6">
+          <div className="flex items-center justify-between mb-4">
+            <button
+              onClick={goHome}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm font-medium transition-colors"
+            >
+              <span className="text-slate-400">←</span> Back to Home
+            </button>
+            <div className="text-xs text-slate-500">
+              Data updated: {monthLastUpdated || "25-Jul-26"}
+            </div>
+          </div>
+          <PreVsPostAnalysis preVsPostData={preVsPostData} lastUpdatedDate={monthLastUpdated} />
         </div>
       </div>
-    </div>
-  );
-}
-  // ============================================================
-  //  DASHBOARD (unchanged)
-  // ============================================================
+    );
+  }
+
+  // ----- MONTH DASHBOARD (with sidebar) -----
   const monthLabel = selectedMonth === "june" ? "June 2026" : "July 2026";
   const isLive = selectedMonth === "july";
 
@@ -2296,7 +3107,6 @@ if (!selectedMonth) {
     <div className="min-h-screen bg-slate-900 text-slate-100 flex">
       <RainAlertWidget />
 
-      {/* Sidebar */}
       <aside
         className={`fixed lg:sticky top-0 z-40 h-screen w-64 bg-slate-950 border-r border-slate-800 flex flex-col transition-transform ${
           sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
@@ -2349,7 +3159,6 @@ if (!selectedMonth) {
         </div>
       </aside>
 
-      {/* Main */}
       <div className="flex-1 min-w-0 flex flex-col">
         <header className="sticky top-0 z-20 bg-slate-900/80 backdrop-blur-xl border-b border-slate-800">
           <div className="px-4 sm:px-6 py-4 flex items-center justify-between gap-4">
@@ -2374,13 +3183,13 @@ if (!selectedMonth) {
             </div>
             <div className="flex items-center gap-2">
               <button
-                onClick={goToMonthSelection}
+                onClick={goHome}
                 className="flex items-center gap-2 px-3.5 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm font-medium transition-colors shrink-0"
               >
                 <span className="text-slate-400">←</span> Switch Month
               </button>
               <button
-                onClick={() => loadMonthData(selectedMonth)}
+                onClick={() => loadMonthData(selectedMonth as Month)}
                 className="flex items-center gap-2 px-3.5 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm font-medium transition-colors shrink-0"
               >
                 <RefreshCw className="w-4 h-4" /> Refresh
@@ -2513,6 +3322,13 @@ if (!selectedMonth) {
                 {activeTab === "rca" && <RcaSummary rcaData={rcaData} />}
 
                 {activeTab === "hardware" && hardwareData && <HardwareIssues data={hardwareData} />}
+
+                {activeTab === "pre-vs-post" && (
+                  <PreVsPostAnalysis
+                    preVsPostData={preVsPostData}
+                    lastUpdatedDate={monthLastUpdated}
+                  />
+                )}
 
                 {activeTab === "query" && <SiteQuery sites={sites} />}
 
