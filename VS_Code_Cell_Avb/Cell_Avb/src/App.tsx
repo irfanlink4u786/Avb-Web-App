@@ -476,7 +476,7 @@ function DetailModal({ row, onClose }: { row: SiteData; onClose: () => void }) {
                 {f.type === "ca" && typeof f.value === "number" && f.value > 0 ? (
                   <CaBadge value={f.value} threshold={95} />
                 ) : f.type === "category" ? (
-                  <CategoryBadge category={String(f.value)} />
+                  <CategoryBadge category={String(f.value || "Unknown")} />
                 ) : (
                   <span className="break-words">{f.value || "—"}</span>
                 )}
@@ -598,7 +598,7 @@ function SiteTable({ rows, onSelect }: { rows: SiteData[]; onSelect: (r: SiteDat
               >
                 <td className="px-3 py-2.5 font-mono text-cyan-300 whitespace-nowrap">{row.siteName}</td>
                 <td className="px-3 py-2.5">
-                  <CategoryBadge category={row.revenueCategory} />
+                  <CategoryBadge category={String(row.revenueCategory || "Unknown")} />
                 </td>
                 <td className="px-3 py-2.5">
                   {row.currentAvb > 0 ? <CaBadge value={row.currentAvb} threshold={95} /> : <span className="text-slate-600">—</span>}
@@ -1062,7 +1062,7 @@ function CategoryPage({
                     <td className="py-2 px-2 text-center text-slate-500">{i + 1}</td>
                     <td className="py-2 px-3 text-cyan-300 font-mono">{site.siteName}</td>
                     <td className="py-2 px-3">
-                      <CategoryBadge category={site.revenueCategory} />
+                      <CategoryBadge category={String(site.revenueCategory || "Unknown")} />
                     </td>
                     <td className="py-2 px-3 text-slate-400">{site.subRegion}</td>
                     <td className="py-2 px-3 text-slate-300">{site.grid}</td>
@@ -1078,7 +1078,7 @@ function CategoryPage({
                       {avg.toFixed(2)}%
                     </td>
                     <td className="py-2 px-3 text-center text-slate-300">
-                      {site.currentAvb.toFixed(2)}%
+                      {site.currentAvb?.toFixed(2) || "-"}
                     </td>
                   </tr>
                 ))}
@@ -1129,7 +1129,7 @@ function CategoryPage({
                   <tr key={site.siteName} className="border-b border-slate-700/50 hover:bg-slate-700/30 transition-colors">
                     <td className="py-2 px-3 text-cyan-300 font-mono">{site.siteName}</td>
                     <td className="py-2 px-3">
-                      <CategoryBadge category={site.revenueCategory} />
+                      <CategoryBadge category={String(site.revenueCategory || "Unknown")} />
                     </td>
                     <td className="py-2 px-3 text-slate-300">{site.clusterOwner || "-"}</td>
                     <td className="py-2 px-3 text-slate-300">{site.msGtl || "-"}</td>
@@ -2066,7 +2066,7 @@ function SectionBanner({ icon, title, subtitle, gradient }: { icon: React.ReactN
 }
 
 // ============================================================
-//  Pre‑Vs‑Post Analysis Component (UPDATED WITH CORRECT STRINGS)
+//  Pre‑Vs‑Post Analysis Component (UPDATED WITH SAFE DEFAULTS)
 // ============================================================
 
 function PreVsPostAnalysis({
@@ -2214,7 +2214,6 @@ function PreVsPostAnalysis({
     });
   }, [employeeFilteredSites, lastThreeDays]);
 
-  // ✅ UPDATED KPI CALCULATIONS WITH CORRECT STRINGS
   const kpis = useMemo(() => {
     const total = employeeFilteredSites.length;
 
@@ -2235,9 +2234,7 @@ function PreVsPostAnalysis({
 
     const unstablePrev = employeeFilteredSites.filter((s) => s.oldCase === "Unstable").length;
     const fixedNow = employeeFilteredSites.filter((s) => s.now === "Stable").length;
-    // ✅ "Still Unstable" instead of "Unstable"
     const stillUnstable = employeeFilteredSites.filter((s) => s.now === "Still Unstable").length;
-    // ✅ "New case" instead of "Unstable"
     const newUnstable = employeeFilteredSites.filter((s) => s.newCase === "New case").length;
 
     return {
@@ -2252,7 +2249,6 @@ function PreVsPostAnalysis({
     };
   }, [employeeFilteredSites]);
 
-  // ✅ "Still Unstable" sites for grid breakdown
   const stillUnstableSites = useMemo(() => {
     return employeeFilteredSites.filter((s) => s.now === "Still Unstable");
   }, [employeeFilteredSites]);
@@ -2332,17 +2328,19 @@ function PreVsPostAnalysis({
     }));
   }, [stillUnstableSites]);
 
-  // Status badge helper for "Now"
-  const nowBadge = (value: string) => {
-    if (value === "Stable") return <span className="bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded text-xs">Stable</span>;
-    if (value === "Still Unstable") return <span className="bg-red-500/20 text-red-400 px-2 py-0.5 rounded text-xs">Still Unstable</span>;
-    return <span className="bg-slate-500/20 text-slate-400 px-2 py-0.5 rounded text-xs">{value || "-"}</span>;
-  };
+  // Safe badge renderers – ensure string
+  const nowBadge = (value: string | undefined) => {
+  const v = value || "";
+  if (v === "Stable") return <span className="bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded text-xs">Stable</span>;
+  if (v === "Still Unstable") return <span className="bg-red-500/20 text-red-400 px-2 py-0.5 rounded text-xs">Still Unstable</span>;
+  return <span className="bg-slate-500/20 text-slate-400 px-2 py-0.5 rounded text-xs">{v || "-"}</span>;
+};
 
-  const newCaseBadge = (value: string) => {
-    if (value === "New case") return <span className="bg-red-500/20 text-red-400 px-2 py-0.5 rounded text-xs">New case</span>;
-    return <span className="bg-slate-500/20 text-slate-400 px-2 py-0.5 rounded text-xs">{value || "-"}</span>;
-  };
+  const newCaseBadge = (value: string | undefined) => {
+  const v = value || "";
+  if (v === "New case") return <span className="bg-red-500/20 text-red-400 px-2 py-0.5 rounded text-xs">New case</span>;
+  return <span className="bg-slate-500/20 text-slate-400 px-2 py-0.5 rounded text-xs">{v || "-"}</span>;
+};
 
   return (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="max-w-[1600px] mx-auto space-y-6">
@@ -2516,7 +2514,7 @@ function PreVsPostAnalysis({
                     <td className="py-2 px-2 text-center text-slate-500">{i + 1}</td>
                     <td className="py-2 px-3 text-cyan-300 font-mono">{site.siteName}</td>
                     <td className="py-2 px-3">
-                      <CategoryBadge category={site.category} />
+                      <CategoryBadge category={String(site.category || "Unknown")} />
                     </td>
                     <td className="py-2 px-3 text-slate-400">{site.subRegion}</td>
                     <td className="py-2 px-3 text-slate-300">{site.grid}</td>
@@ -2546,7 +2544,7 @@ function PreVsPostAnalysis({
                       {avg.toFixed(2)}%
                     </td>
                     <td className="py-2 px-3 text-center text-slate-300">
-                      {site.currentAvb.toFixed(2)}%
+                      {site.currentAvb?.toFixed(2) || "-"}
                     </td>
                   </tr>
                 ))}
@@ -2632,7 +2630,7 @@ function PreVsPostAnalysis({
                                       <td className="py-1 px-2 text-slate-300">{site.msGtl || "-"}</td>
                                       <td className="py-1 px-2 text-slate-300">{site.zongLead || "-"}</td>
                                       <td className="py-1 px-2 text-center text-red-400 font-medium">
-                                        {site.currentAvb.toFixed(2)}%
+                                        {site.currentAvb?.toFixed(2) || "-"}
                                       </td>
                                       <td className="py-1 px-2 text-center text-slate-300">
                                         {site.previousMonth?.toFixed(2) || "-"}
@@ -2719,7 +2717,6 @@ function LoginScreen({ onLogin }: { onLogin: (success: boolean) => void }) {
       return;
     }
     setLoading(true);
-    // Simulate a short network delay
     setTimeout(() => {
       if (username === "c1nar" && password === "irfan123") {
         onLogin(true);
@@ -2805,10 +2802,8 @@ function LoginScreen({ onLogin }: { onLogin: (success: boolean) => void }) {
 // ============================================================
 
 export default function App() {
-  // 🛡️ Authentication State
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
 
-  // Check sessionStorage on mount
   useEffect(() => {
     const auth = sessionStorage.getItem("c1_auth");
     if (auth === "true") {
@@ -2823,7 +2818,6 @@ export default function App() {
     }
   };
 
-  // --- App state (month, view, etc.) ---
   const [viewMode, setViewMode] = useState<ViewMode>("home");
   const [selectedMonth, setSelectedMonth] = useState<Month | null>(null);
   const [appState, setAppState] = useState<AppState>("dashboard");
@@ -2841,7 +2835,6 @@ export default function App() {
   const [selectedRow, setSelectedRow] = useState<SiteData | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  // --- Loading functions (unchanged) ---
   const loadMonthData = async (month: Month) => {
     setAppState("loading");
     setErrorMsg("");
@@ -2951,16 +2944,13 @@ export default function App() {
 
   const activeLabel = NAV_ITEMS.find((item) => item.id === activeTab)?.label ?? "";
 
-  // --- Render Loading / Error ---
   if (appState === "loading") return <LoadingScreen />;
   if (appState === "error") return <ErrorScreen message={errorMsg} onRetry={viewMode === "prepost" ? loadPreVsPost : () => loadMonthData(selectedMonth || "june")} />;
 
-  // 🔐 AUTH GATE: If not logged in, show Login Screen
   if (!isAuthenticated) {
     return <LoginScreen onLogin={handleLogin} />;
   }
 
-  // ----- HOME SCREEN (Redesigned) -----
   if (viewMode === "home") {
     return (
       <div className="min-h-screen relative flex items-center justify-center overflow-hidden">
@@ -3076,7 +3066,6 @@ export default function App() {
     );
   }
 
-  // ----- PRE‑VS‑POST FULL PAGE (no sidebar) -----
   if (viewMode === "prepost") {
     return (
       <div className="min-h-screen bg-slate-900 text-slate-100">
@@ -3099,7 +3088,6 @@ export default function App() {
     );
   }
 
-  // ----- MONTH DASHBOARD (with sidebar) -----
   const monthLabel = selectedMonth === "june" ? "June 2026" : "July 2026";
   const isLive = selectedMonth === "july";
 
