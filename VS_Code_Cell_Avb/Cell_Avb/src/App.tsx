@@ -2710,6 +2710,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<string>("overall");
   const [selectedRow, setSelectedRow] = useState<SiteData | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [prePostSidebarOpen, setPrePostSidebarOpen] = useState(false);
   const [prePostSubView, setPrePostSubView] = useState<PrePostSubView>("analysis");
 
   const parsePrePostRows = (rows: Record<string, string>[]): SiteData[] => {
@@ -2943,59 +2944,88 @@ export default function App() {
   }
 
   // ----- PRE‑VS‑POST FULL PAGE WITH SIDEBAR -----
-  if (viewMode === "prepost") {
-    const prePostNav = [
-      { id: "analysis", label: "Pre Vs Post", icon: GitCompare },
-      { id: "query", label: "Site Query", icon: Search },
-    ] as const;
+ if (viewMode === "prepost") {
+  const prePostNav = [
+    { id: "analysis", label: "Pre Vs Post", icon: GitCompare },
+    { id: "query", label: "Site Query", icon: Search },
+  ] as const;
 
-    return (
-      <div className="min-h-screen bg-slate-900 text-slate-100 flex">
-        <RainAlertWidget />
-        <aside className="fixed lg:sticky top-0 z-40 h-screen w-64 bg-slate-950 border-r border-slate-800 flex flex-col">
-          <div className="p-5 border-b border-slate-800">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-pink-600 flex items-center justify-center shadow-lg shadow-purple-500/20">
-                <GitCompare className="w-5 h-5 text-white" />
-              </div>
-              <div>
-                <h1 className="text-sm font-bold text-white leading-tight">Pre Vs Post</h1>
-                <p className="text-[10px] text-slate-500">July 2026</p>
-              </div>
+  return (
+    <div className="min-h-screen bg-slate-900 text-slate-100 flex">
+      <RainAlertWidget />
+
+      {/* Sidebar */}
+      <aside className={`fixed lg:sticky top-0 z-40 h-screen w-64 bg-slate-950 border-r border-slate-800 flex flex-col transition-transform duration-300 ${prePostSidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}`}>
+        <div className="p-5 border-b border-slate-800">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-pink-600 flex items-center justify-center shadow-lg shadow-purple-500/20">
+              <GitCompare className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <h1 className="text-sm font-bold text-white leading-tight">Pre Vs Post</h1>
+              <p className="text-[10px] text-slate-500">July 2026</p>
             </div>
           </div>
-          <nav className="flex-1 overflow-y-auto p-3 space-y-1">
-            {prePostNav.map((item) => {
-              const Icon = item.icon;
-              const isActive = prePostSubView === item.id;
-              return (
-                <button key={item.id} onClick={() => setPrePostSubView(item.id as PrePostSubView)} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${isActive ? "bg-purple-500/15 text-purple-400 border border-purple-500/30" : "text-slate-400 hover:bg-slate-800 hover:text-slate-200 border border-transparent"}`}>
-                  <Icon className="w-4 h-4 shrink-0" />
-                  {item.label}
-                </button>
-              );
-            })}
-          </nav>
-          <div className="p-3 border-t border-slate-800">
-            <button onClick={goHome} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm font-medium transition-colors w-full">
-              <span className="text-slate-400">←</span> Back to Home
-            </button>
-          </div>
-        </aside>
-        <div className="flex-1 min-w-0 flex flex-col">
-          <header className="sticky top-0 z-20 bg-slate-900/80 backdrop-blur-xl border-b border-slate-800">
-            <div className="px-4 sm:px-6 py-4 flex items-center justify-between">
-              <h2 className="text-lg font-bold text-white">{prePostSubView === "analysis" ? "Pre Vs Post Analysis" : "Site Query"}</h2>
-              <div className="text-xs text-slate-500">Data updated: {prePostLastUpdated || "25-Jul-26"}</div>
-            </div>
-          </header>
-          <main className="flex-1 p-4 sm:p-6">
-            {prePostSubView === "analysis" ? <PreVsPostAnalysis sites={prePostSites} lastUpdatedDate={prePostLastUpdated} /> : <SiteQuery sites={prePostSites} />}
-          </main>
         </div>
+        <nav className="flex-1 overflow-y-auto p-3 space-y-1">
+          {prePostNav.map((item) => {
+            const Icon = item.icon;
+            const isActive = prePostSubView === item.id;
+            return (
+              <button
+                key={item.id}
+                onClick={() => {
+                  setPrePostSubView(item.id as PrePostSubView);
+                  setPrePostSidebarOpen(false);
+                }}
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                  isActive ? "bg-purple-500/15 text-purple-400 border border-purple-500/30" : "text-slate-400 hover:bg-slate-800 hover:text-slate-200 border border-transparent"
+                }`}
+              >
+                <Icon className="w-4 h-4 shrink-0" />
+                {item.label}
+              </button>
+            );
+          })}
+        </nav>
+        <div className="p-3 border-t border-slate-800">
+          <button onClick={goHome} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm font-medium transition-colors w-full">
+            <span className="text-slate-400">←</span> Back to Home
+          </button>
+        </div>
+      </aside>
+
+      {/* Backdrop overlay */}
+      {prePostSidebarOpen && (
+        <div className="fixed inset-0 z-30 bg-black/50 lg:hidden" onClick={() => setPrePostSidebarOpen(false)} />
+      )}
+
+      {/* Main content */}
+      <div className="flex-1 min-w-0 flex flex-col">
+        <header className="sticky top-0 z-20 bg-slate-900/80 backdrop-blur-xl border-b border-slate-800">
+          <div className="px-4 sm:px-6 py-4 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <button onClick={() => setPrePostSidebarOpen(true)} className="lg:hidden text-slate-400 hover:text-white">
+                <Menu className="w-5 h-5" />
+              </button>
+              <h2 className="text-lg font-bold text-white">
+                {prePostSubView === "analysis" ? "Pre Vs Post Analysis" : "Site Query"}
+              </h2>
+            </div>
+            <div className="text-xs text-slate-500">Data updated: {prePostLastUpdated || "25-Jul-26"}</div>
+          </div>
+        </header>
+        <main className="flex-1 p-4 sm:p-6">
+          {prePostSubView === "analysis" ? (
+            <PreVsPostAnalysis sites={prePostSites} lastUpdatedDate={prePostLastUpdated} />
+          ) : (
+            <SiteQuery sites={prePostSites} />
+          )}
+        </main>
       </div>
-    );
-  }
+    </div>
+  );
+}
 
   // ----- HARDWARE ISSUES FULL PAGE -----
   if (viewMode === "hardware") {
