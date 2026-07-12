@@ -700,14 +700,14 @@ function generateRegionRecs(regionSites: SiteData[], regionName: string): Rec[] 
   // DG Recommendations
   const dgSites = active.filter(hasDG);
   const dgCa = dgSites.length > 0 ? dgSites.reduce((s, r) => s + r.currentAvb, 0) / dgSites.length : 0;
-  const dgCritical = dgSites.filter((s) => s.currentAvb < 99);
+  const dgCritical = dgSites.filter((s) => s.currentAvb < 98.5);
   
-  if (dgSites.length > 0 && dgCritical.length > 0 && dgCa < 99) {
+  if (dgSites.length > 0 && dgCritical.length > 0 && dgCa < 98.5) {
     recs.push({
       icon: "🔧",
       priority: "MEDIUM",
       category: "DG Sites",
-      text: `DG Site Underperformance (${dgCa.toFixed(2)}%): ${dgCritical.length} of ${dgSites.length} DG-equipped sites below 99% threshold. Review DG maintenance schedules and fuel availability.`,
+      text: `DG Site Underperformance (${dgCa.toFixed(2)}%): ${dgCritical.length} of ${dgSites.length} DG-equipped sites below 98.5% threshold. Review DG maintenance schedules and fuel availability.`,
       impact: `Focus on ${dgCritical.length} critical DG sites`,
       sites: dgCritical,
     });
@@ -846,7 +846,7 @@ export default function OverallSummary({ sites }: { sites: SiteData[] }) {
           iconBg: "bg-orange-500/20",
           iconColor: "text-orange-400",
           filter: hasDG,
-          threshold: 99,
+          threshold: 98.5,
         },
         {
           label: "Li-ion BB",
