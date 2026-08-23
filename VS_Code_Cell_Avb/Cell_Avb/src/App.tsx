@@ -2310,7 +2310,7 @@ function PreVsPostAnalysis({
           <div>
             <h2 className="text-2xl font-bold text-white">Pre Vs Post Analysis</h2>
             <p className="text-slate-400 text-sm">{employeeFilteredSites.length} sites in total</p>
-            <p className="text-xs text-slate-500 mt-1">Comparing June (Pre) vs July (Post) performance</p>
+            <p className="text-xs text-slate-500 mt-1">Comparing July (Pre) vs August (Post) performance</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <ExportButtonComponent data={allExportData} filename="pre_vs_post_all_sites" label="Export All" format="excel" variant="primary" />
@@ -2812,7 +2812,7 @@ export default function App() {
     setAppState("loading");
     setErrorMsg("");
     try {
-      const sheetId = SHEET_IDS.july;
+      const sheetId = SHEET_IDS.august;
       const data = await fetchGoogleSheet(sheetId, "Pre Vs Post");
       if (data && data.rows) {
         const parsed = parsePrePostRows(data.rows);
@@ -2938,7 +2938,7 @@ export default function App() {
             </motion.button>
             <motion.button variants={{ hidden: { opacity: 0, y: 30 }, show: { opacity: 1, y: 0 } }} whileHover={{ scale: 1.03, boxShadow: "0 0 40px rgba(168, 85, 247, 0.25)" }} whileTap={{ scale: 0.98 }} onClick={loadPreVsPost} className="group relative flex-1 min-w-[200px] px-8 py-7 rounded-2xl bg-gradient-to-br from-purple-500/20 to-pink-500/20 border border-purple-400/30 hover:border-purple-300 transition-all duration-300 shadow-xl hover:shadow-purple-500/40 backdrop-blur-sm overflow-hidden">
               <span className="absolute inset-0 bg-gradient-to-r from-purple-400/20 to-pink-400/20 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-              <div className="relative text-center"><span className="block text-2xl font-bold text-white">Pre Vs Post</span><span className="text-slate-300 text-sm">June vs July comparison</span></div>
+              <div className="relative text-center"><span className="block text-2xl font-bold text-white">Pre Vs Post</span><span className="text-slate-300 text-sm">July vs August comparison</span></div>
             </motion.button>
             <motion.button variants={{ hidden: { opacity: 0, y: 30 }, show: { opacity: 1, y: 0 } }} whileHover={{ scale: 1.03, boxShadow: "0 0 40px rgba(245, 158, 11, 0.25)" }} whileTap={{ scale: 0.98 }} onClick={loadHardwareIssues} className="group relative flex-1 min-w-[180px] px-8 py-7 rounded-2xl bg-gradient-to-br from-amber-500/20 to-yellow-500/20 border border-amber-400/30 hover:border-amber-300 transition-all duration-300 shadow-xl hover:shadow-amber-500/40 backdrop-blur-sm overflow-hidden">
               <span className="absolute inset-0 bg-gradient-to-r from-amber-400/20 to-yellow-400/20 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
