@@ -89,6 +89,7 @@ const NAV_ITEMS = [
   { id: "pgs", label: "PGS Sites", icon: TrendingUp },
   { id: "sb", label: "SB Sites", icon: TrendingDown },
   { id: "nps", label: "NPS Sites", icon: Sparkles },
+  { id: "5g", label: "5G Sites", icon: Radio },
   { id: "dg", label: "DG Sites", icon: Zap },
   { id: "li-ion", label: "Li-ion BB", icon: Battery },
   { id: "below-base", label: "Below Base", icon: AlertTriangle },
@@ -2584,6 +2585,52 @@ function PreVsPostAnalysis({
   );
 }
 
+
+// ============================================================
+//  5G SITES PAGE
+//  Uses the same full analysis as Platinum+ / PGS
+// ============================================================
+
+function FiveGPage({
+  data,
+  lastUpdatedDate,
+  lastColumnIndex = 0,
+}: {
+  data: SheetPayload | null;
+  lastUpdatedDate: string;
+  lastColumnIndex?: number;
+}) {
+  const fiveGSites = useMemo<SiteData[]>(() => {
+    if (!data || !data.rows) return [];
+    return data.rows.map(normalizeRow);
+  }, [data]);
+
+  if (!data) {
+    return (
+      <div className="bg-slate-800 border border-slate-700 rounded-xl p-10 text-center">
+        <Radio className="w-10 h-10 text-slate-500 mx-auto mb-3" />
+        <h3 className="text-lg font-semibold text-white">5G Data Not Available</h3>
+        <p className="text-sm text-slate-400 mt-1">
+          The 5G worksheet could not be loaded from the August 2026 workbook.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <CategoryPage
+      sites={fiveGSites}
+      title="5G Sites"
+      description={`${fiveGSites.length} sites available in the 5G worksheet`}
+      threshold={98}
+      color="#06b6d4"
+      filterFn={() => true}
+      lastUpdatedDate={lastUpdatedDate}
+      lastColumnIndex={lastColumnIndex}
+    />
+  );
+}
+
 // ============================================================
 //  KPI CARD HELPER
 // ============================================================
@@ -2701,6 +2748,7 @@ export default function App() {
   const [monthData, setMonthData] = useState<SheetPayload | null>(null);
   const [monthHardware, setMonthHardware] = useState<SheetPayload | null>(null);
   const [monthRca, setMonthRca] = useState<SheetPayload | null>(null);
+  const [month5G, setMonth5G] = useState<SheetPayload | null>(null);
   const [preVsPostData, setPreVsPostData] = useState<SheetPayload | null>(null);
   const [prePostSites, setPrePostSites] = useState<SiteData[]>([]);
   const [prePostLastUpdated, setPrePostLastUpdated] = useState("");
@@ -2770,15 +2818,22 @@ export default function App() {
     setErrorMsg("");
     const sheetId = SHEET_IDS[month];
     try {
-      const [data, hwData, dateData, rcaSheet] = await Promise.all([
+      const [data, hwData, dateData, rcaSheet, fiveGSheet] = await Promise.all([
         fetchGoogleSheet(sheetId),
         fetchGoogleSheet(sheetId, "Hardware issues"),
         fetchGoogleSheet(sheetId, "Updated Date"),
         fetchGoogleSheet(sheetId, "RCA of Plat +"),
+        month === "august"
+          ? fetchGoogleSheet(sheetId, "5G").catch((error) => {
+              console.warn("5G sheet could not be loaded:", error);
+              return null;
+            })
+          : Promise.resolve(null),
       ]);
       setMonthData(data);
       setMonthHardware(hwData);
       setMonthRca(rcaSheet);
+      setMonth5G(fiveGSheet);
       if (dateData && dateData.rows && dateData.rows.length > 0) {
         const row = dateData.rows[0];
         setMonthLastUpdated(row["Last Updated"] || row["Date"] || row["Last Date"] || "");
@@ -2793,6 +2848,7 @@ export default function App() {
       setMonthData(null);
       setMonthHardware(null);
       setMonthRca(null);
+      setMonth5G(null);
       setMonthLastUpdated(
         month === "june"
           ? "30-Jun-26"
@@ -2805,6 +2861,53 @@ export default function App() {
       setSelectedMonth(month);
       setViewMode("month");
       setAppState("dashboard");
+    }
+  };
+
+
+  const load5GPage = async () => {
+    setAppState("loading");
+    setErrorMsg("");
+
+    try {
+      const sheetId = SHEET_IDS.august;
+
+      const [data, fiveGSheet, dateData] = await Promise.all([
+        fetchGoogleSheet(sheetId),
+        fetchGoogleSheet(sheetId, "5G"),
+        fetchGoogleSheet(sheetId, "Updated Date"),
+      ]);
+
+      setMonthData(data);
+      setMonth5G(fiveGSheet);
+      setSelectedMonth("august");
+      setUseMock(false);
+
+      if (dateData && dateData.rows && dateData.rows.length > 0) {
+        const row = dateData.rows[0];
+        setMonthLastUpdated(
+          row["Last Updated"] ||
+          row["Date"] ||
+          row["Last Date"] ||
+          ""
+        );
+        setMonthLastColumnIndex(
+          parseInt(
+            row["Column Index"] ||
+            row["Column"] ||
+            row["Index"] ||
+            "0"
+          )
+        );
+      }
+
+      setActiveTab("5g");
+      setViewMode("month");
+      setAppState("dashboard");
+    } catch (error) {
+      console.error("Error loading 5G data:", error);
+      setErrorMsg("Failed to load 5G data. Please try again.");
+      setAppState("error");
     }
   };
 
@@ -2868,6 +2971,7 @@ export default function App() {
     setMonthData(null);
     setMonthHardware(null);
     setMonthRca(null);
+    setMonth5G(null);
     setPreVsPostData(null);
     setPrePostSites([]);
     setAppState("dashboard");
@@ -2939,6 +3043,20 @@ export default function App() {
               <span className="absolute inset-0 bg-gradient-to-r from-emerald-400/20 to-green-400/20 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
               <div className="relative text-center"><span className="block text-2xl font-bold text-white">August 2026</span><span className="text-slate-300 text-sm">Live updates · Progressive</span></div>
             </motion.button>
+            <motion.button
+              variants={{ hidden: { opacity: 0, y: 30 }, show: { opacity: 1, y: 0 } }}
+              whileHover={{ scale: 1.03, boxShadow: "0 0 40px rgba(14, 165, 233, 0.35)" }}
+              whileTap={{ scale: 0.98 }}
+              onClick={load5GPage}
+              className="group relative flex-1 min-w-[180px] px-8 py-7 rounded-2xl bg-gradient-to-br from-cyan-500/20 to-blue-500/20 border border-cyan-400/30 hover:border-cyan-300 transition-all duration-300 shadow-xl hover:shadow-cyan-500/40 backdrop-blur-sm overflow-hidden"
+            >
+              <span className="absolute inset-0 bg-gradient-to-r from-cyan-400/20 to-blue-400/20 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+              <div className="relative text-center">
+                <span className="block text-2xl font-bold text-white">5G Sites</span>
+                <span className="text-slate-300 text-sm">August 2026 · KPI Dashboard</span>
+              </div>
+            </motion.button>
+
             <motion.button variants={{ hidden: { opacity: 0, y: 30 }, show: { opacity: 1, y: 0 } }} whileHover={{ scale: 1.03, boxShadow: "0 0 40px rgba(168, 85, 247, 0.25)" }} whileTap={{ scale: 0.98 }} onClick={loadPreVsPost} className="group relative flex-1 min-w-[200px] px-8 py-7 rounded-2xl bg-gradient-to-br from-purple-500/20 to-pink-500/20 border border-purple-400/30 hover:border-purple-300 transition-all duration-300 shadow-xl hover:shadow-purple-500/40 backdrop-blur-sm overflow-hidden">
               <span className="absolute inset-0 bg-gradient-to-r from-purple-400/20 to-pink-400/20 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
               <div className="relative text-center"><span className="block text-2xl font-bold text-white">Plat+ & DG Pre Vs Post</span><span className="text-slate-300 text-sm">July vs August comparison</span></div>
@@ -3084,7 +3202,7 @@ export default function App() {
           </div>
         </div>
         <nav className="flex-1 overflow-y-auto p-3 space-y-1">
-          {NAV_ITEMS.map((item) => {
+          {NAV_ITEMS.filter((item) => item.id !== "5g" || selectedMonth === "august").map((item) => {
             const Icon = item.icon;
             const isActive = activeTab === item.id;
             return (
@@ -3133,6 +3251,7 @@ export default function App() {
                 {activeTab === "pgs" && <CategoryPage sites={sites} title="PGS Sites" description={`${pgsRows.length} high-priority revenue sites`} threshold={98.1} filterFn={(s) => PGS_GROUP.includes(s.revenueCategory)} lastUpdatedDate={monthLastUpdated} lastColumnIndex={monthLastColumnIndex} />}
                 {activeTab === "sb" && <CategoryPage sites={sites} title="SB Sites" description={`${sbRows.length} standard-tier revenue sites`} threshold={95} filterFn={(s) => SB_GROUP.includes(s.revenueCategory)} lastUpdatedDate={monthLastUpdated} lastColumnIndex={monthLastColumnIndex} />}
                 {activeTab === "nps" && <CategoryPage sites={sites} title="NPS Sites (New Physical Sites)" description={`${npsRows.length} NPS Y26 sites`} threshold={95} filterFn={(s) => isNPSSite(s)} lastUpdatedDate={monthLastUpdated} lastColumnIndex={monthLastColumnIndex} />}
+                {activeTab === "5g" && <FiveGPage data={month5G} lastUpdatedDate={monthLastUpdated} lastColumnIndex={monthLastColumnIndex} />}
                 {activeTab === "dg" && <CategoryPage sites={sites} title="DG Sites (Diesel Generator Backup)" description={`${dgRows.length} sites with diesel generators`} threshold={98.5} filterFn={(s) => hasDG(s)} lastUpdatedDate={monthLastUpdated} lastColumnIndex={monthLastColumnIndex} />}
                 {activeTab === "li-ion" && <CategoryPage sites={sites} title="Li-ion Battery Backup Sites" description={`${liIonRows.length} sites with Li-ion batteries installed`} threshold={98} filterFn={(s) => hasLiIon(s)} lastUpdatedDate={monthLastUpdated} lastColumnIndex={monthLastColumnIndex} />}
                 {activeTab === "below-base" && <CategoryPage sites={sites} title="Below Base Sites" description={`${belowBaseRows.length} sites flagged below base threshold`} threshold={95} filterFn={(s) => isBelowBase(s)} lastUpdatedDate={monthLastUpdated} lastColumnIndex={monthLastColumnIndex} />}
