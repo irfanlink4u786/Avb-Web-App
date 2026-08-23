@@ -2813,7 +2813,10 @@ export default function App() {
     setErrorMsg("");
     try {
       const sheetId = SHEET_IDS.august;
-      const data = await fetchGoogleSheet(sheetId, "Pre Vs Post");
+      const data = await fetchGoogleSheet(
+  sheetId,
+  "Plat+ and DG sites Pre vs Post"
+);
       if (data && data.rows) {
         const parsed = parsePrePostRows(data.rows);
         setPrePostSites(parsed);
