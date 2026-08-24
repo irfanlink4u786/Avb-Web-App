@@ -2276,18 +2276,31 @@ function PreVsPostAnalysis({
   }, [employeeFilteredSites]);
 
   const stillUnstableExport = useMemo(() => {
-    return stillUnstableSites.map((site) => ({
-      "Site ID": site.siteName,
-      Grid: site.grid || "Unknown",
-      "Sub-Region": site.subRegion,
-      "Cluster Owner": site.clusterOwner || "-",
-      "MS GTL": site.msGtl || "-",
-      "Zone Lead": site.zongLead || "-",
-      "Current CA%": site.currentAvb?.toFixed(2) || "-",
-      "Prev Month": site.previousMonth?.toFixed(2) || "-",
-      "Old Case": site.oldCase || "-",
-    }));
-  }, [stillUnstableSites]);
+    return stillUnstableSites
+      .slice()
+      .sort((a, b) => a.currentAvb - b.currentAvb)
+      .map((site) => {
+        const row: Record<string, any> = {
+          "Site ID": site.siteName,
+          Grid: site.grid || "Unknown",
+          "Sub-Region": site.subRegion,
+          "Cluster Owner": site.clusterOwner || "-",
+          "MS GTL": site.msGtl || "-",
+          "Zone Lead": site.zongLead || "-",
+          "Current CA%": site.currentAvb?.toFixed(2) || "-",
+        };
+
+        lastThreeDays.forEach(({ label, dateKey }) => {
+          const value = site.dailyData?.[dateKey] || 0;
+          row[label] = value > 0 ? value.toFixed(2) : "-";
+        });
+
+        row["Prev Month"] = site.previousMonth?.toFixed(2) || "-";
+        row["Old Case"] = site.oldCase || "-";
+        row["Now"] = site.now || "-";
+        return row;
+      });
+  }, [stillUnstableSites, lastThreeDays]);
 
   const newCaseExport = useMemo(() => {
     return newCaseSites.map((site) => ({
@@ -2460,7 +2473,7 @@ function PreVsPostAnalysis({
           <div className="flex items-center gap-2">
             <AlertCircle className="w-5 h-5 text-amber-400" />
             <h4 className="text-lg font-semibold text-white">Still Unstable Sites by Grid</h4>
-            <span className="text-xs text-slate-500">({stillUnstableSites.length} sites · {stillUnstableGridBreakdown.length} grids)</span>
+            <span className="text-xs text-slate-500">({stillUnstableSites.length} sites · {stillUnstableGridBreakdown.length} grids · Worst CA shown first)</span>
           </div>
           {stillUnstableSites.length > 0 && <ExportButtonComponent data={stillUnstableExport} filename="pre_vs_post_still_unstable" label="Export All" format="excel" variant="secondary" />}
         </div>
@@ -2487,21 +2500,66 @@ function PreVsPostAnalysis({
                         <tr><td colSpan={3} className="px-3 py-2 bg-slate-900/40">
                           <div className="overflow-x-auto">
                             <table className="w-full text-xs">
-                              <thead><tr className="border-b border-slate-700"><th className="text-left py-1 px-2 text-slate-500">Site ID</th><th className="text-left py-1 px-2 text-slate-500">Sub-Region</th><th className="text-left py-1 px-2 text-slate-500">Cluster Owner</th><th className="text-left py-1 px-2 text-slate-500">MS GTL</th><th className="text-left py-1 px-2 text-slate-500">Zone Lead</th><th className="text-center py-1 px-2 text-slate-500">Current CA%</th><th className="text-center py-1 px-2 text-slate-500">Prev Month</th><th className="text-center py-1 px-2 text-slate-500">Old Case</th><th className="text-center py-1 px-2 text-slate-500">Now</th></tr></thead>
+                              <thead>
+                                <tr className="border-b border-slate-700">
+                                  <th className="text-left py-1 px-2 text-slate-500">Site ID</th>
+                                  <th className="text-left py-1 px-2 text-slate-500">Sub-Region</th>
+                                  <th className="text-left py-1 px-2 text-slate-500">Cluster Owner</th>
+                                  <th className="text-left py-1 px-2 text-slate-500">MS GTL</th>
+                                  <th className="text-left py-1 px-2 text-slate-500">Zone Lead</th>
+                                  <th className="text-center py-1 px-2 text-slate-500">Current CA%</th>
+                                  {lastThreeDays.map(({ label }) => (
+                                    <th key={label} className="text-center py-1 px-2 text-slate-500 whitespace-nowrap">
+                                      {label}
+                                    </th>
+                                  ))}
+                                  <th className="text-center py-1 px-2 text-slate-500">Prev Month</th>
+                                  <th className="text-center py-1 px-2 text-slate-500">Old Case</th>
+                                  <th className="text-center py-1 px-2 text-slate-500">Now</th>
+                                </tr>
+                              </thead>
                               <tbody>
-                                {gridSites.map((site) => (
-                                  <tr key={site.siteName} className="border-b border-slate-800">
-                                    <td className="py-1 px-2 text-cyan-300 font-mono">{site.siteName}</td>
-                                    <td className="py-1 px-2 text-slate-300">{site.subRegion}</td>
-                                    <td className="py-1 px-2 text-slate-300">{site.clusterOwner || "-"}</td>
-                                    <td className="py-1 px-2 text-slate-300">{site.msGtl || "-"}</td>
-                                    <td className="py-1 px-2 text-slate-300">{site.zongLead || "-"}</td>
-                                    <td className="py-1 px-2 text-center text-red-400 font-medium">{site.currentAvb.toFixed(2)}%</td>
-                                    <td className="py-1 px-2 text-center text-slate-300">{site.previousMonth?.toFixed(2) || "-"}</td>
-                                    <td className="py-1 px-2 text-center"><span className="text-xs px-2 py-0.5 rounded bg-red-500/20 text-red-400">Unstable</span></td>
-                                    <td className="py-1 px-2 text-center">{nowBadge(site.now)}</td>
-                                  </tr>
-                                ))}
+                                {gridSites
+                                  .slice()
+                                  .sort((a, b) => a.currentAvb - b.currentAvb)
+                                  .map((site) => (
+                                    <tr key={site.siteName} className="border-b border-slate-800">
+                                      <td className="py-1 px-2 text-cyan-300 font-mono">{site.siteName}</td>
+                                      <td className="py-1 px-2 text-slate-300">{site.subRegion}</td>
+                                      <td className="py-1 px-2 text-slate-300">{site.clusterOwner || "-"}</td>
+                                      <td className="py-1 px-2 text-slate-300">{site.msGtl || "-"}</td>
+                                      <td className="py-1 px-2 text-slate-300">{site.zongLead || "-"}</td>
+                                      <td className="py-1 px-2 text-center text-red-400 font-bold">
+                                        {site.currentAvb.toFixed(2)}%
+                                      </td>
+                                      {lastThreeDays.map(({ dateKey }) => {
+                                        const value = site.dailyData?.[dateKey] || 0;
+                                        return (
+                                          <td
+                                            key={dateKey}
+                                            className={`py-1 px-2 text-center font-medium ${
+                                              value > 0 && value < 98
+                                                ? "text-red-400"
+                                                : value >= 98
+                                                  ? "text-emerald-400"
+                                                  : "text-slate-600"
+                                            }`}
+                                          >
+                                            {value > 0 ? `${value.toFixed(2)}%` : "-"}
+                                          </td>
+                                        );
+                                      })}
+                                      <td className="py-1 px-2 text-center text-slate-300">
+                                        {site.previousMonth?.toFixed(2) || "-"}
+                                      </td>
+                                      <td className="py-1 px-2 text-center">
+                                        <span className="text-xs px-2 py-0.5 rounded bg-red-500/20 text-red-400">
+                                          Unstable
+                                        </span>
+                                      </td>
+                                      <td className="py-1 px-2 text-center">{nowBadge(site.now)}</td>
+                                    </tr>
+                                  ))}
                               </tbody>
                             </table>
                           </div>
@@ -3144,7 +3202,7 @@ export default function App() {
                 {prePostSubView === "analysis" ? "Plat+ and DG Sites Pre Vs Post Analysis" : "Site Query"}
               </h2>
             </div>
-            <div className="text-xs text-slate-500">Data updated: {prePostLastUpdated || "25-Jul-26"}</div>
+            <div className="text-xs text-slate-500">Data updated: {prePostLastUpdated || "23-Aug-26"}</div>
           </div>
         </header>
         <main className="flex-1 p-4 sm:p-6">
@@ -3274,5 +3332,4 @@ export default function App() {
     </div>
   );
 }
-
 
