@@ -1966,6 +1966,11 @@ type GridKpiConfig = {
   maxScore: number;
 };
 
+type LatestDayValue = {
+  label: string;
+  value: number;
+};
+
 type GridPerformanceSite = {
   siteId: string;
   grid: string;
@@ -1976,6 +1981,7 @@ type GridPerformanceSite = {
   currentMonth: number;
   clusterOwner: string;
   msGtl: string;
+  latestDays: LatestDayValue[];
 };
 
 type GridKpiResult = {
@@ -1984,6 +1990,8 @@ type GridKpiResult = {
   score: number;
   sites: GridPerformanceSite[];
   validSiteCount: number;
+  belowBaseCount: number;
+  belowTargetCount: number;
   belowStretchCount: number;
 };
 
@@ -2039,6 +2047,22 @@ function getRawValue(row: Record<string, any>, ...possibleHeaders: string[]): an
   return "";
 }
 
+function parseSheetDateHeader(header: string): Date | null {
+  const clean = header.trim();
+  const match = clean.match(/^(\d{1,2})[-\s](Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[-\s](\d{2}|\d{4})$/i);
+  if (!match) return null;
+  const months: Record<string, number> = {
+    jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
+    jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11,
+  };
+  const day = Number(match[1]);
+  const month = months[match[2].toLowerCase()];
+  let year = Number(match[3]);
+  if (year < 100) year += 2000;
+  const date = new Date(year, month, day);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
 function scoreGridKpi(value: number | null, config: GridKpiConfig): number {
   if (value === null || !Number.isFinite(value) || value < config.base) return 0;
 
@@ -2080,6 +2104,17 @@ function GridPerformanceScorecard({ rawData }: { rawData?: SheetPayload | null }
   const [selectedKpi, setSelectedKpi] = useState<GridKpiKey | null>(null);
   const [expandedPlanGrid, setExpandedPlanGrid] = useState<string | null>(null);
 
+  const latestDateHeaders = useMemo(() => {
+    if (!rawData?.headers?.length) return [] as string[];
+    return rawData.headers
+      .map((header: string) => ({ header, date: parseSheetDateHeader(header) }))
+      .filter((item): item is { header: string; date: Date } => item.date !== null)
+      .sort((a, b) => b.date.getTime() - a.date.getTime())
+      .slice(0, 3)
+      .reverse()
+      .map((item) => item.header);
+  }, [rawData]);
+
   const sourceSites = useMemo<GridPerformanceSite[]>(() => {
     if (!rawData?.rows?.length) return [];
 
@@ -2098,60 +2133,116 @@ function GridPerformanceScorecard({ rawData }: { rawData?: SheetPayload | null }
           currentMonth,
           clusterOwner: normalizeText(getRawValue(row, "Cluster Owner", "CO")),
           msGtl: normalizeText(getRawValue(row, "MS GTL", "GTL")),
+          latestDays: latestDateHeaders.map((header) => ({ label: header, value: parseGridCa(getRawValue(row, header)) })),
         };
       })
       .filter((site) => site.grid && !EXCLUDED_GRID_PERFORMANCE.has(site.grid.toUpperCase()));
-  }, [rawData]);
+  }, [rawData, latestDateHeaders]);
+
+  const buildKpiResult = (sites: GridPerformanceSite[], config: GridKpiConfig): GridKpiResult => {
+    const selectedSites = sites.filter((site) => {
+      if (site.currentMonth <= 0) return false;
+      if (config.key === "dg") return normalizeKey(site.dgStatus) === "operational";
+      return normalizeKey(site.group) === normalizeKey(config.group || "");
+    });
+
+    const avg = averageCa(selectedSites);
+    return {
+      config,
+      average: avg,
+      score: scoreGridKpi(avg, config),
+      sites: selectedSites,
+      validSiteCount: selectedSites.length,
+      belowBaseCount: selectedSites.filter((site) => site.currentMonth < config.base).length,
+      belowTargetCount: selectedSites.filter((site) => site.currentMonth < config.target).length,
+      belowStretchCount: selectedSites.filter((site) => site.currentMonth < config.stretch).length,
+    };
+  };
 
   const gridRows = useMemo<GridPerformanceRow[]>(() => {
-    const gridOrder: string[] = [];
     const gridMap = new Map<string, GridPerformanceSite[]>();
 
     sourceSites.forEach((site) => {
-      if (!gridMap.has(site.grid)) {
-        gridMap.set(site.grid, []);
-        gridOrder.push(site.grid);
-      }
+      if (!gridMap.has(site.grid)) gridMap.set(site.grid, []);
       gridMap.get(site.grid)!.push(site);
     });
 
-    return gridOrder.map((grid) => {
-      const gridSites = gridMap.get(grid) || [];
-      const zoneLead = gridSites.map((site) => site.zoneLead).find(Boolean) || "—";
+    return Array.from(gridMap.entries())
+      .map(([grid, gridSites]) => {
+        const zoneLead = gridSites.map((site) => site.zoneLead).find(Boolean) || "—";
+        const results = GRID_KPI_CONFIG.reduce<Record<GridKpiKey, GridKpiResult>>((acc, config) => {
+          acc[config.key] = buildKpiResult(gridSites, config);
+          return acc;
+        }, {} as Record<GridKpiKey, GridKpiResult>);
 
-      const buildResult = (config: GridKpiConfig): GridKpiResult => {
-        const selectedSites = gridSites.filter((site) => {
-          if (site.currentMonth <= 0) return false;
-          if (config.key === "dg") return normalizeKey(site.dgStatus) === "operational";
-          return normalizeKey(site.group) === normalizeKey(config.group || "");
-        });
-
-        const avg = averageCa(selectedSites);
         return {
-          config,
-          average: avg,
-          score: scoreGridKpi(avg, config),
-          sites: selectedSites,
-          validSiteCount: selectedSites.length,
-          belowStretchCount: selectedSites.filter((site) => site.currentMonth < config.stretch).length,
+          grid,
+          cmpakGtl: zoneLead,
+          platinum: results.platinum,
+          pgs: results.pgs,
+          sb: results.sb,
+          dg: results.dg,
+          totalScore: results.platinum.score + results.pgs.score + results.sb.score + results.dg.score,
         };
-      };
+      })
+      .sort((a, b) => a.totalScore - b.totalScore || a.grid.localeCompare(b.grid));
+  }, [sourceSites]);
 
+  const subRegionCards = useMemo(() => {
+    return [
+      { key: "C-1", prefix: "C1" },
+      { key: "C-6", prefix: "C6" },
+    ].map(({ key, prefix }) => {
+      const sites = sourceSites.filter((site) => site.grid.toUpperCase().startsWith(prefix));
       const results = GRID_KPI_CONFIG.reduce<Record<GridKpiKey, GridKpiResult>>((acc, config) => {
-        acc[config.key] = buildResult(config);
+        acc[config.key] = buildKpiResult(sites, config);
         return acc;
       }, {} as Record<GridKpiKey, GridKpiResult>);
-
       return {
-        grid,
-        cmpakGtl: zoneLead,
-        platinum: results.platinum,
-        pgs: results.pgs,
-        sb: results.sb,
-        dg: results.dg,
+        key,
+        ...results,
         totalScore: results.platinum.score + results.pgs.score + results.sb.score + results.dg.score,
       };
     });
+  }, [sourceSites]);
+
+  const exportGroups = useMemo(() => {
+    const makeRows = (config: GridKpiConfig, threshold: "base" | "target" | "stretch") => {
+      const limit = config[threshold];
+      return sourceSites
+        .filter((site) => {
+          if (site.currentMonth <= 0) return false;
+          const inCategory = config.key === "dg"
+            ? normalizeKey(site.dgStatus) === "operational"
+            : normalizeKey(site.group) === normalizeKey(config.group || "");
+          return inCategory && site.currentMonth < limit;
+        })
+        .sort((a, b) => a.currentMonth - b.currentMonth)
+        .map((site) => {
+          const row: Record<string, any> = {
+            "Site ID": site.siteId,
+            Grid: site.grid,
+            "CMPAK GTL": site.zoneLead || "-",
+            Category: config.label,
+            "Current Month": site.currentMonth.toFixed(2),
+            [`${threshold[0].toUpperCase()}${threshold.slice(1)} Threshold`]: limit.toFixed(2),
+            Gap: Math.max(0, limit - site.currentMonth).toFixed(2),
+            Group: site.group || "-",
+            "DG Status": site.dgStatus || "-",
+            "Cluster Owner": site.clusterOwner || "-",
+            "MS GTL": site.msGtl || "-",
+          };
+          site.latestDays.forEach((d) => { row[d.label] = d.value > 0 ? d.value.toFixed(2) : "-"; });
+          return row;
+        });
+    };
+
+    return GRID_KPI_CONFIG.map((config) => ({
+      config,
+      base: makeRows(config, "base"),
+      target: makeRows(config, "target"),
+      stretch: makeRows(config, "stretch"),
+    }));
   }, [sourceSites]);
 
   const selectedResult = selectedGrid && selectedKpi ? selectedGrid[selectedKpi] : null;
@@ -2161,10 +2252,7 @@ function GridPerformanceScorecard({ rawData }: { rawData?: SheetPayload | null }
     return gridRows.reduce((best, row) => (row.totalScore > best.totalScore ? row : best), gridRows[0]);
   }, [gridRows]);
 
-  const lowestGrid = useMemo(() => {
-    if (!gridRows.length) return null;
-    return gridRows.reduce((worst, row) => (row.totalScore < worst.totalScore ? row : worst), gridRows[0]);
-  }, [gridRows]);
+  const lowestGrid = gridRows.length ? gridRows[0] : null;
 
   const avgScore = useMemo(() => {
     if (!gridRows.length) return 0;
@@ -2172,12 +2260,8 @@ function GridPerformanceScorecard({ rawData }: { rawData?: SheetPayload | null }
   }, [gridRows]);
 
   const totalBelowStretch = useMemo(
-    () =>
-      gridRows.reduce(
-        (sum, row) => sum + row.platinum.belowStretchCount + row.pgs.belowStretchCount + row.sb.belowStretchCount + row.dg.belowStretchCount,
-        0
-      ),
-    [gridRows]
+    () => exportGroups.reduce((sum, group) => sum + group.stretch.length, 0),
+    [exportGroups]
   );
 
   const openSites = (row: GridPerformanceRow, key: GridKpiKey) => {
@@ -2215,7 +2299,7 @@ function GridPerformanceScorecard({ rawData }: { rawData?: SheetPayload | null }
   if (!rawData?.rows?.length) {
     return (
       <div className="rounded-xl border border-slate-700 bg-slate-800 p-6">
-        <h3 className="text-lg font-semibold text-white">Overall Grid Performance</h3>
+        <h3 className="text-lg font-semibold text-white">Grid Performance</h3>
         <p className="mt-2 text-sm text-slate-400">Grid Performance requires the Sheet1 raw data so Group and DG Status can be evaluated.</p>
       </div>
     );
@@ -2226,7 +2310,7 @@ function GridPerformanceScorecard({ rawData }: { rawData?: SheetPayload | null }
       <div className="rounded-xl border border-cyan-500/30 bg-gradient-to-r from-cyan-500/10 to-transparent p-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <h2 className="text-2xl font-bold text-white">Overall Grid Performance</h2>
+            <h2 className="text-2xl font-bold text-white">Grid Performance</h2>
             <p className="mt-1 text-sm text-slate-400">
               Monthly CA scorecard for Platinum+, PGS, SB and Operational DG sites. C2006 and C2009 are excluded as boundary grids.
             </p>
@@ -2238,54 +2322,104 @@ function GridPerformanceScorecard({ rawData }: { rawData?: SheetPayload | null }
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <div className="rounded-xl border border-slate-700 bg-slate-800 p-5">
-          <div className="text-xs uppercase tracking-wide text-slate-500">Best Grid</div>
-          <div className="mt-1 text-xl font-bold text-emerald-400">{bestGrid?.grid || "—"}</div>
-          <div className="text-sm text-slate-400">{bestGrid ? `${bestGrid.totalScore.toFixed(2)} / 43` : "—"}</div>
+      {/* C-1 / C-6 overall score cards */}
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+        {subRegionCards.map((region) => (
+          <div key={region.key} className="rounded-xl border border-slate-700 bg-slate-800 p-5">
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <div className="text-xs uppercase tracking-wider text-slate-500">Sub-Region Overall</div>
+                <h3 className="text-xl font-bold text-white">{region.key} Grid KPI Score</h3>
+              </div>
+              <div className="text-right">
+                <div className="text-3xl font-bold text-cyan-400">{region.totalScore.toFixed(2)}</div>
+                <div className="text-xs text-slate-500">out of 43</div>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+              {([region.platinum, region.pgs, region.sb, region.dg] as GridKpiResult[]).map((result) => (
+                <div key={result.config.key} className="rounded-lg border border-slate-700 bg-slate-900/60 p-3">
+                  <div className="text-xs font-medium text-slate-400">{result.config.label}</div>
+                  <div className="mt-1 text-lg font-bold text-white">{result.average === null ? "—" : `${result.average.toFixed(2)}%`}</div>
+                  <div className="mt-1 text-xs text-cyan-400">Score {result.score.toFixed(2)} / {result.config.maxScore}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Category-wise exports irrespective of Grid */}
+      <div className="rounded-xl border border-slate-700 bg-slate-800 p-5">
+        <div className="mb-4">
+          <h3 className="text-lg font-semibold text-white">Category-wise Performance Exceptions</h3>
+          <p className="mt-1 text-xs text-slate-400">Export sites not achieving Base, Target or Stretch irrespective of Grid.</p>
         </div>
-        <div className="rounded-xl border border-slate-700 bg-slate-800 p-5">
-          <div className="text-xs uppercase tracking-wide text-slate-500">Lowest Grid</div>
-          <div className="mt-1 text-xl font-bold text-red-400">{lowestGrid?.grid || "—"}</div>
-          <div className="text-sm text-slate-400">{lowestGrid ? `${lowestGrid.totalScore.toFixed(2)} / 43` : "—"}</div>
-        </div>
-        <div className="rounded-xl border border-slate-700 bg-slate-800 p-5">
-          <div className="text-xs uppercase tracking-wide text-slate-500">Average Grid Score</div>
-          <div className="mt-1 text-xl font-bold text-amber-400">{avgScore.toFixed(2)}</div>
-          <div className="text-sm text-slate-400">out of 43</div>
-        </div>
-        <div className="rounded-xl border border-slate-700 bg-slate-800 p-5">
-          <div className="text-xs uppercase tracking-wide text-slate-500">Below Stretch Sites</div>
-          <div className="mt-1 text-xl font-bold text-orange-400">{totalBelowStretch}</div>
-          <div className="text-sm text-slate-400">across all four KPIs</div>
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-4">
+          {exportGroups.map(({ config, base, target, stretch }) => (
+            <div key={config.key} className="rounded-lg border border-slate-700 bg-slate-900/50 p-4">
+              <div className="mb-3 flex items-center justify-between">
+                <span className="font-semibold text-white">{config.label}</span>
+                <span className="text-[10px] text-slate-500">Valid CA only</span>
+              </div>
+              <div className="space-y-2">
+                <ExportButtonComponent data={base} filename={`${config.key}_below_base`} label={`Below Base (${base.length})`} format="excel" variant="danger" />
+                <ExportButtonComponent data={target} filename={`${config.key}_below_target`} label={`Below Target (${target.length})`} format="excel" variant="secondary" />
+                <ExportButtonComponent data={stretch} filename={`${config.key}_below_stretch`} label={`Below Stretch (${stretch.length})`} format="excel" variant="primary" />
+              </div>
+            </div>
+          ))}
         </div>
       </div>
 
-      <div className="overflow-hidden rounded-xl border border-slate-700 bg-slate-800">
-        <div className="border-b border-slate-700 p-5">
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <div className="rounded-xl border border-slate-700 bg-slate-800 p-4">
+          <div className="text-[10px] uppercase text-slate-500">Worst Grid</div>
+          <div className="mt-1 text-xl font-bold text-red-400">{lowestGrid?.grid || "—"}</div>
+          <div className="text-xs text-slate-400">{lowestGrid ? `${lowestGrid.totalScore.toFixed(2)} / 43` : "No data"}</div>
+        </div>
+        <div className="rounded-xl border border-slate-700 bg-slate-800 p-4">
+          <div className="text-[10px] uppercase text-slate-500">Best Grid</div>
+          <div className="mt-1 text-xl font-bold text-emerald-400">{bestGrid?.grid || "—"}</div>
+          <div className="text-xs text-slate-400">{bestGrid ? `${bestGrid.totalScore.toFixed(2)} / 43` : "No data"}</div>
+        </div>
+        <div className="rounded-xl border border-slate-700 bg-slate-800 p-4">
+          <div className="text-[10px] uppercase text-slate-500">Average Grid Score</div>
+          <div className="mt-1 text-xl font-bold text-cyan-400">{avgScore.toFixed(2)}</div>
+          <div className="text-xs text-slate-400">Across {gridRows.length} grids</div>
+        </div>
+        <div className="rounded-xl border border-slate-700 bg-slate-800 p-4">
+          <div className="text-[10px] uppercase text-slate-500">Sites Below Stretch</div>
+          <div className="mt-1 text-xl font-bold text-amber-400">{totalBelowStretch}</div>
+          <div className="text-xs text-slate-400">All four categories</div>
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-slate-700 bg-slate-800 p-5">
+        <div className="mb-4">
           <h3 className="text-lg font-semibold text-white">Grid Performance Scorecard</h3>
-          <p className="mt-1 text-xs text-slate-400">Grid sequence follows Sheet1 order. No score-based sorting is applied.</p>
+          <p className="text-xs text-slate-400">Worst performing Grid shown first · Score is based on monthly Grid average.</p>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1180px] text-sm">
-            <thead className="bg-slate-900/70">
-              <tr>
-                <th className="px-3 py-3 text-left text-xs font-semibold text-slate-400">Grid</th>
-                <th className="px-3 py-3 text-left text-xs font-semibold text-slate-400">CMPAK GTL</th>
-                <th className="px-3 py-3 text-center text-xs font-semibold text-slate-400">Platinum+</th>
-                <th className="px-3 py-3 text-center text-xs font-semibold text-slate-400">Plat+ Score</th>
-                <th className="px-3 py-3 text-center text-xs font-semibold text-slate-400">PGS</th>
-                <th className="px-3 py-3 text-center text-xs font-semibold text-slate-400">PGS Score</th>
-                <th className="px-3 py-3 text-center text-xs font-semibold text-slate-400">SB</th>
-                <th className="px-3 py-3 text-center text-xs font-semibold text-slate-400">SB Score</th>
-                <th className="px-3 py-3 text-center text-xs font-semibold text-slate-400">DG</th>
-                <th className="px-3 py-3 text-center text-xs font-semibold text-slate-400">DG Score</th>
-                <th className="px-3 py-3 text-center text-xs font-semibold text-slate-400">Total Score</th>
+          <table className="w-full min-w-[1250px] text-sm">
+            <thead>
+              <tr className="border-b border-slate-700 bg-slate-900/40">
+                <th className="px-3 py-3 text-left text-xs font-semibold text-slate-500">Grid</th>
+                <th className="px-3 py-3 text-left text-xs font-semibold text-slate-500">CMPAK GTL</th>
+                <th className="px-3 py-3 text-center text-xs font-semibold text-slate-500">Platinum+</th>
+                <th className="px-3 py-3 text-center text-xs font-semibold text-slate-500">Plat+ Score</th>
+                <th className="px-3 py-3 text-center text-xs font-semibold text-slate-500">PGS</th>
+                <th className="px-3 py-3 text-center text-xs font-semibold text-slate-500">PGS Score</th>
+                <th className="px-3 py-3 text-center text-xs font-semibold text-slate-500">SB</th>
+                <th className="px-3 py-3 text-center text-xs font-semibold text-slate-500">SB Score</th>
+                <th className="px-3 py-3 text-center text-xs font-semibold text-slate-500">DG</th>
+                <th className="px-3 py-3 text-center text-xs font-semibold text-slate-500">DG Score</th>
+                <th className="px-3 py-3 text-center text-xs font-semibold text-slate-500">Total Score</th>
               </tr>
             </thead>
             <tbody>
               {gridRows.map((row) => (
-                <tr key={row.grid} className="border-t border-slate-700/60 hover:bg-slate-700/20">
+                <tr key={row.grid} className="border-b border-slate-700/60 hover:bg-slate-700/20">
                   <td className="px-3 py-3 font-bold text-cyan-300">{row.grid}</td>
                   <td className="px-3 py-3 text-slate-300">{row.cmpakGtl}</td>
                   <td className="px-3 py-3 text-center">{kpiCell(row, row.platinum)}</td>
@@ -2296,11 +2430,7 @@ function GridPerformanceScorecard({ rawData }: { rawData?: SheetPayload | null }
                   <td className="px-3 py-3 text-center"><GridScoreBadge score={row.sb.score} max={7} /></td>
                   <td className="px-3 py-3 text-center">{kpiCell(row, row.dg)}</td>
                   <td className="px-3 py-3 text-center"><GridScoreBadge score={row.dg.score} max={12} /></td>
-                  <td className="px-3 py-3 text-center">
-                    <span className={`inline-flex min-w-[72px] justify-center rounded-lg px-3 py-1.5 font-bold ${row.totalScore >= 38 ? "bg-emerald-500/20 text-emerald-400" : row.totalScore >= 28 ? "bg-amber-500/20 text-amber-400" : "bg-red-500/20 text-red-400"}`}>
-                      {row.totalScore.toFixed(2)}
-                    </span>
-                  </td>
+                  <td className="px-3 py-3 text-center"><GridScoreBadge score={row.totalScore} max={43} /></td>
                 </tr>
               ))}
             </tbody>
@@ -2309,36 +2439,27 @@ function GridPerformanceScorecard({ rawData }: { rawData?: SheetPayload | null }
       </div>
 
       <div className="rounded-xl border border-slate-700 bg-slate-800 p-5">
-        <div className="mb-4">
-          <h3 className="text-lg font-semibold text-white">Improvement Plan to Achieve Stretch</h3>
-          <p className="mt-1 text-xs text-slate-400">
-            Focus is generated from the actual Monthly CA gap. Open each grid to see the weak category and lowest-performing sites first.
-          </p>
-        </div>
-        <div className="space-y-3">
+        <h3 className="text-lg font-semibold text-white">Stretch Achievement Improvement Plan</h3>
+        <p className="mt-1 text-xs text-slate-400">Focuses on categories where the Grid average has not yet achieved Stretch.</p>
+        <div className="mt-4 space-y-3">
           {gridRows.map((row) => {
             const items = improvementItems(row);
-            const expanded = expandedPlanGrid === row.grid;
-            const allStretch = items.length === 0;
+            const open = expandedPlanGrid === row.grid;
             return (
-              <div key={row.grid} className={`overflow-hidden rounded-lg border ${allStretch ? "border-emerald-500/30 bg-emerald-500/5" : "border-slate-700 bg-slate-900/30"}`}>
-                <button
-                  onClick={() => setExpandedPlanGrid(expanded ? null : row.grid)}
-                  className="flex w-full items-center justify-between gap-4 px-4 py-3 text-left hover:bg-slate-700/20"
-                >
+              <div key={`plan-${row.grid}`} className="overflow-hidden rounded-lg border border-slate-700 bg-slate-900/40">
+                <button onClick={() => setExpandedPlanGrid(open ? null : row.grid)} className="flex w-full items-center justify-between px-4 py-3 text-left hover:bg-slate-800/60">
                   <div>
-                    <div className="font-semibold text-white">{row.grid} · {row.cmpakGtl}</div>
-                    <div className="mt-0.5 text-xs text-slate-400">
-                      {allStretch ? "All available KPIs have achieved Stretch." : `${items.length} KPI${items.length > 1 ? "s" : ""} below Stretch · Total score ${row.totalScore.toFixed(2)} / 43`}
-                    </div>
+                    <span className="font-bold text-cyan-300">{row.grid}</span>
+                    <span className="ml-3 text-xs text-slate-400">{items.length === 0 ? "All categories at Stretch" : `${items.length} categories require improvement`}</span>
                   </div>
-                  {expanded ? <ChevronUp className="h-4 w-4 text-slate-400" /> : <ChevronDown className="h-4 w-4 text-slate-400" />}
+                  {open ? <ChevronUp className="h-4 w-4 text-slate-400" /> : <ChevronDown className="h-4 w-4 text-slate-400" />}
                 </button>
-
-                {expanded && !allStretch && (
+                {open && (
                   <div className="space-y-3 border-t border-slate-700 p-4">
-                    {items.map(({ result, avgGap, prioritySites }) => (
-                      <div key={result.config.key} className="rounded-lg border border-slate-700 bg-slate-800/70 p-4">
+                    {items.length === 0 ? (
+                      <div className="text-sm text-emerald-400">All four categories have achieved Stretch.</div>
+                    ) : items.map(({ result, avgGap, prioritySites }) => (
+                      <div key={`${row.grid}-${result.config.key}`} className="rounded-lg border border-slate-700 bg-slate-800/60 p-4">
                         <div className="flex flex-wrap items-center justify-between gap-3">
                           <div>
                             <div className="font-semibold text-white">{result.config.label}</div>
@@ -2395,25 +2516,64 @@ function GridPerformanceScorecard({ rawData }: { rawData?: SheetPayload | null }
               animate={{ scale: 1, y: 0 }}
               exit={{ scale: 0.96, y: 15 }}
               onClick={(event) => event.stopPropagation()}
-              className="flex max-h-[88vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-slate-600 bg-slate-900 shadow-2xl"
+              className="flex max-h-[88vh] w-full max-w-7xl flex-col overflow-hidden rounded-2xl border border-slate-600 bg-slate-900 shadow-2xl"
             >
-              <div className="flex items-center justify-between border-b border-slate-700 p-5">
+              <div className="flex items-center justify-between gap-4 border-b border-slate-700 p-5">
                 <div>
                   <h3 className="text-xl font-bold text-white">{selectedGrid.grid} · {selectedResult.config.label} Sites</h3>
                   <p className="mt-1 text-xs text-slate-400">
                     Grid Avg {selectedResult.average === null ? "—" : `${selectedResult.average.toFixed(2)}%`} · Stretch {selectedResult.config.stretch.toFixed(2)}% · {selectedResult.sites.length} valid sites
                   </p>
                 </div>
-                <button onClick={() => { setSelectedGrid(null); setSelectedKpi(null); }} className="rounded-md p-2 text-slate-400 hover:bg-slate-800 hover:text-white">
-                  <X className="h-5 w-5" />
-                </button>
+                <div className="flex items-center gap-2">
+                  <ExportButtonComponent
+                    data={[...selectedResult.sites]
+                      .sort((a, b) => a.currentMonth - b.currentMonth)
+                      .map((site) => {
+                        const gap = Math.max(0, selectedResult.config.stretch - site.currentMonth);
+                        const status = site.currentMonth >= selectedResult.config.stretch
+                          ? "Stretch Achieved"
+                          : site.currentMonth >= selectedResult.config.target
+                            ? "Target to Stretch"
+                            : site.currentMonth >= selectedResult.config.base
+                              ? "Base to Target"
+                              : "Below Base";
+                        const exportRow: Record<string, any> = {
+                          "Site ID": site.siteId,
+                          Grid: selectedGrid.grid,
+                          "CMPAK GTL": selectedGrid.cmpakGtl,
+                          Category: selectedResult.config.label,
+                          "Current Month": site.currentMonth.toFixed(2),
+                        };
+                        site.latestDays.forEach((day) => {
+                          exportRow[day.label] = day.value > 0 ? day.value.toFixed(2) : "";
+                        });
+                        exportRow["Gap to Stretch"] = gap.toFixed(2);
+                        exportRow.Status = status;
+                        exportRow.Group = site.group || "";
+                        exportRow["Revenue Category"] = site.revenueCategory || "";
+                        exportRow["DG Status"] = site.dgStatus || "";
+                        exportRow["Cluster Owner"] = site.clusterOwner || "";
+                        exportRow["MS GTL"] = site.msGtl || "";
+                        return exportRow;
+                      })}
+                    filename={`${selectedGrid.grid}_${selectedResult.config.key}_all_sites`}
+                    label={`Export All ${selectedResult.sites.length} Sites`}
+                    format="excel"
+                    variant="primary"
+                  />
+                  <button onClick={() => { setSelectedGrid(null); setSelectedKpi(null); }} className="rounded-md p-2 text-slate-400 hover:bg-slate-800 hover:text-white">
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
               </div>
               <div className="overflow-auto p-5">
-                <table className="w-full min-w-[900px] text-sm">
+                <table className="w-full min-w-[1200px] text-sm">
                   <thead>
                     <tr className="border-b border-slate-700 text-left">
                       <th className="px-3 py-2 text-xs text-slate-500">Site ID</th>
                       <th className="px-3 py-2 text-xs text-slate-500">Current Month</th>
+                      {latestDateHeaders.map((header) => <th key={header} className="px-3 py-2 text-center text-xs text-slate-500">{header}</th>)}
                       <th className="px-3 py-2 text-xs text-slate-500">Gap to Stretch</th>
                       <th className="px-3 py-2 text-xs text-slate-500">Status</th>
                       <th className="px-3 py-2 text-xs text-slate-500">Group</th>
@@ -2433,6 +2593,11 @@ function GridPerformanceScorecard({ rawData }: { rawData?: SheetPayload | null }
                           <tr key={`${selectedKpi}-${site.siteId}`} className="border-b border-slate-800 hover:bg-slate-800/50">
                             <td className="px-3 py-2 font-mono font-semibold text-cyan-300">{site.siteId || "—"}</td>
                             <td className={`px-3 py-2 font-semibold ${site.currentMonth >= selectedResult.config.stretch ? "text-emerald-400" : "text-slate-200"}`}>{site.currentMonth.toFixed(2)}%</td>
+                            {site.latestDays.map((day) => (
+                              <td key={`${site.siteId}-${day.label}`} className={`px-3 py-2 text-center font-medium ${day.value > 0 && day.value < selectedResult.config.base ? "text-red-400" : day.value > 0 ? "text-slate-200" : "text-slate-600"}`}>
+                                {day.value > 0 ? `${day.value.toFixed(2)}%` : "—"}
+                              </td>
+                            ))}
                             <td className={`px-3 py-2 ${gap > 0 ? "text-red-400" : "text-emerald-400"}`}>{gap.toFixed(2)}%</td>
                             <td className="px-3 py-2">
                               <span className={`rounded px-2 py-1 text-[10px] font-semibold ${status === "Stretch Achieved" ? "bg-emerald-500/15 text-emerald-400" : status === "Target to Stretch" ? "bg-cyan-500/15 text-cyan-400" : status === "Base to Target" ? "bg-amber-500/15 text-amber-400" : "bg-red-500/15 text-red-400"}`}>{status}</span>
