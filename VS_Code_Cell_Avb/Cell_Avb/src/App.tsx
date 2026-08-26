@@ -84,6 +84,7 @@ const SHEET_IDS = {
 // Month dashboard sidebar – Pre‑Vs‑Post and Hardware Issues are removed
 const NAV_ITEMS = [
   { id: "overall", label: "Overall Summary", icon: LayoutDashboard },
+  { id: "grid-performance", label: "Grid Performance", icon: Award },
   { id: "employees", label: "Employees", icon: Users },
   { id: "platinum-plus", label: "Platinum+", icon: Crown },
   { id: "pgs", label: "PGS Sites", icon: TrendingUp },
@@ -1944,6 +1945,517 @@ function RcaSummary({ rcaData }: { rcaData: SheetPayload | null }) {
   );
 }
 
+
+// ============================================================
+//  GRID PERFORMANCE SCORECARD
+//  Platinum+ / PGS / SB from Sheet1 -> Group
+//  DG from Sheet1 -> DG Status = Operational
+//  Boundary grids C2006 and C2009 are intentionally excluded.
+// ============================================================
+
+type GridKpiKey = "platinum" | "pgs" | "sb" | "dg";
+
+type GridKpiConfig = {
+  key: GridKpiKey;
+  label: string;
+  group?: string;
+  weightage: number;
+  base: number;
+  target: number;
+  stretch: number;
+  maxScore: number;
+};
+
+type GridPerformanceSite = {
+  siteId: string;
+  grid: string;
+  zoneLead: string;
+  group: string;
+  revenueCategory: string;
+  dgStatus: string;
+  currentMonth: number;
+  clusterOwner: string;
+  msGtl: string;
+};
+
+type GridKpiResult = {
+  config: GridKpiConfig;
+  average: number | null;
+  score: number;
+  sites: GridPerformanceSite[];
+  validSiteCount: number;
+  belowStretchCount: number;
+};
+
+type GridPerformanceRow = {
+  grid: string;
+  cmpakGtl: string;
+  platinum: GridKpiResult;
+  pgs: GridKpiResult;
+  sb: GridKpiResult;
+  dg: GridKpiResult;
+  totalScore: number;
+};
+
+const GRID_KPI_CONFIG: GridKpiConfig[] = [
+  { key: "platinum", label: "Platinum+", group: "Platinum +", weightage: 10, base: 97.75, target: 98.3, stretch: 98.7, maxScore: 12 },
+  { key: "pgs", label: "PGS", group: "PGS", weightage: 10, base: 97.5, target: 98.1, stretch: 98.4, maxScore: 12 },
+  { key: "sb", label: "SB", group: "SB", weightage: 5, base: 94.75, target: 95, stretch: 96.5, maxScore: 7 },
+  { key: "dg", label: "DG", weightage: 10, base: 98, target: 98.5, stretch: 99.2, maxScore: 12 },
+];
+
+const EXCLUDED_GRID_PERFORMANCE = new Set(["C2006", "C2009"]);
+
+function normalizeText(value: unknown): string {
+  return String(value ?? "").trim();
+}
+
+function normalizeKey(value: unknown): string {
+  return normalizeText(value).toLowerCase().replace(/\s+/g, " ");
+}
+
+function parseGridCa(value: unknown): number {
+  if (value === null || value === undefined) return 0;
+  const cleaned = String(value).replace(/%/g, "").replace(/,/g, "").trim();
+  if (!cleaned) return 0;
+  const parsed = Number.parseFloat(cleaned);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+}
+
+function getRawValue(row: Record<string, any>, ...possibleHeaders: string[]): any {
+  for (const header of possibleHeaders) {
+    if (Object.prototype.hasOwnProperty.call(row, header)) return row[header];
+  }
+
+  const normalizedHeaders = Object.keys(row).reduce<Record<string, string>>((acc, key) => {
+    acc[normalizeKey(key)] = key;
+    return acc;
+  }, {});
+
+  for (const header of possibleHeaders) {
+    const actual = normalizedHeaders[normalizeKey(header)];
+    if (actual) return row[actual];
+  }
+  return "";
+}
+
+function scoreGridKpi(value: number | null, config: GridKpiConfig): number {
+  if (value === null || !Number.isFinite(value) || value < config.base) return 0;
+
+  const halfWeightage = config.weightage / 2;
+
+  if (value < config.target) {
+    const progress = (value - config.base) / (config.target - config.base);
+    return halfWeightage + halfWeightage * Math.max(0, Math.min(1, progress));
+  }
+
+  if (value < config.stretch) {
+    const progress = (value - config.target) / (config.stretch - config.target);
+    return config.weightage + 2 * Math.max(0, Math.min(1, progress));
+  }
+
+  return config.maxScore;
+}
+
+function averageCa(sites: GridPerformanceSite[]): number | null {
+  const values = sites.map((site) => site.currentMonth).filter((value) => Number.isFinite(value) && value > 0);
+  if (values.length === 0) return null;
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+function GridScoreBadge({ score, max }: { score: number; max: number }) {
+  const ratio = max > 0 ? score / max : 0;
+  const cls =
+    ratio >= 0.9
+      ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
+      : ratio >= 0.65
+      ? "bg-amber-500/15 text-amber-400 border-amber-500/30"
+      : "bg-red-500/15 text-red-400 border-red-500/30";
+
+  return <span className={`inline-flex min-w-[58px] justify-center rounded-md border px-2 py-1 text-xs font-bold ${cls}`}>{score.toFixed(2)}</span>;
+}
+
+function GridPerformanceScorecard({ rawData }: { rawData?: SheetPayload | null }) {
+  const [selectedGrid, setSelectedGrid] = useState<GridPerformanceRow | null>(null);
+  const [selectedKpi, setSelectedKpi] = useState<GridKpiKey | null>(null);
+  const [expandedPlanGrid, setExpandedPlanGrid] = useState<string | null>(null);
+
+  const sourceSites = useMemo<GridPerformanceSite[]>(() => {
+    if (!rawData?.rows?.length) return [];
+
+    return rawData.rows
+      .map((row: Record<string, any>) => {
+        const grid = normalizeText(getRawValue(row, "Grid"));
+        const currentMonth = parseGridCa(getRawValue(row, "Current Month", "Current Month CA", "Monthly AVB", "Current CA%"));
+
+        return {
+          siteId: normalizeText(getRawValue(row, "Site ID", "SiteID", "Site Id")),
+          grid,
+          zoneLead: normalizeText(getRawValue(row, "Zone Lead", "Zong Lead", "CMPAK GTL")),
+          group: normalizeText(getRawValue(row, "Group")),
+          revenueCategory: normalizeText(getRawValue(row, "Revenue Category", "Category")),
+          dgStatus: normalizeText(getRawValue(row, "DG Status", "DG Installed")),
+          currentMonth,
+          clusterOwner: normalizeText(getRawValue(row, "Cluster Owner", "CO")),
+          msGtl: normalizeText(getRawValue(row, "MS GTL", "GTL")),
+        };
+      })
+      .filter((site) => site.grid && !EXCLUDED_GRID_PERFORMANCE.has(site.grid.toUpperCase()));
+  }, [rawData]);
+
+  const gridRows = useMemo<GridPerformanceRow[]>(() => {
+    const gridOrder: string[] = [];
+    const gridMap = new Map<string, GridPerformanceSite[]>();
+
+    sourceSites.forEach((site) => {
+      if (!gridMap.has(site.grid)) {
+        gridMap.set(site.grid, []);
+        gridOrder.push(site.grid);
+      }
+      gridMap.get(site.grid)!.push(site);
+    });
+
+    return gridOrder.map((grid) => {
+      const gridSites = gridMap.get(grid) || [];
+      const zoneLead = gridSites.map((site) => site.zoneLead).find(Boolean) || "—";
+
+      const buildResult = (config: GridKpiConfig): GridKpiResult => {
+        const selectedSites = gridSites.filter((site) => {
+          if (site.currentMonth <= 0) return false;
+          if (config.key === "dg") return normalizeKey(site.dgStatus) === "operational";
+          return normalizeKey(site.group) === normalizeKey(config.group || "");
+        });
+
+        const avg = averageCa(selectedSites);
+        return {
+          config,
+          average: avg,
+          score: scoreGridKpi(avg, config),
+          sites: selectedSites,
+          validSiteCount: selectedSites.length,
+          belowStretchCount: selectedSites.filter((site) => site.currentMonth < config.stretch).length,
+        };
+      };
+
+      const results = GRID_KPI_CONFIG.reduce<Record<GridKpiKey, GridKpiResult>>((acc, config) => {
+        acc[config.key] = buildResult(config);
+        return acc;
+      }, {} as Record<GridKpiKey, GridKpiResult>);
+
+      return {
+        grid,
+        cmpakGtl: zoneLead,
+        platinum: results.platinum,
+        pgs: results.pgs,
+        sb: results.sb,
+        dg: results.dg,
+        totalScore: results.platinum.score + results.pgs.score + results.sb.score + results.dg.score,
+      };
+    });
+  }, [sourceSites]);
+
+  const selectedResult = selectedGrid && selectedKpi ? selectedGrid[selectedKpi] : null;
+
+  const bestGrid = useMemo(() => {
+    if (!gridRows.length) return null;
+    return gridRows.reduce((best, row) => (row.totalScore > best.totalScore ? row : best), gridRows[0]);
+  }, [gridRows]);
+
+  const lowestGrid = useMemo(() => {
+    if (!gridRows.length) return null;
+    return gridRows.reduce((worst, row) => (row.totalScore < worst.totalScore ? row : worst), gridRows[0]);
+  }, [gridRows]);
+
+  const avgScore = useMemo(() => {
+    if (!gridRows.length) return 0;
+    return gridRows.reduce((sum, row) => sum + row.totalScore, 0) / gridRows.length;
+  }, [gridRows]);
+
+  const totalBelowStretch = useMemo(
+    () =>
+      gridRows.reduce(
+        (sum, row) => sum + row.platinum.belowStretchCount + row.pgs.belowStretchCount + row.sb.belowStretchCount + row.dg.belowStretchCount,
+        0
+      ),
+    [gridRows]
+  );
+
+  const openSites = (row: GridPerformanceRow, key: GridKpiKey) => {
+    setSelectedGrid(row);
+    setSelectedKpi(key);
+  };
+
+  const kpiCell = (row: GridPerformanceRow, result: GridKpiResult) => {
+    const achievedStretch = result.average !== null && result.average >= result.config.stretch;
+    return (
+      <div className="flex items-center justify-center gap-2 whitespace-nowrap">
+        <span className={`font-semibold ${result.average === null ? "text-slate-600" : achievedStretch ? "text-emerald-400" : "text-slate-200"}`}>
+          {result.average === null ? "—" : result.average.toFixed(2)}
+        </span>
+        <button
+          onClick={() => openSites(row, result.config.key)}
+          disabled={result.sites.length === 0}
+          className="rounded-md border border-slate-600 bg-slate-800 px-2 py-1 text-[10px] font-medium text-cyan-400 transition-colors hover:border-cyan-500 hover:bg-cyan-500/10 disabled:cursor-not-allowed disabled:opacity-30"
+        >
+          View {result.sites.length}
+        </button>
+      </div>
+    );
+  };
+
+  const improvementItems = (row: GridPerformanceRow) =>
+    ([row.platinum, row.pgs, row.sb, row.dg] as GridKpiResult[])
+      .filter((result) => result.average === null || result.average < result.config.stretch)
+      .map((result) => {
+        const avgGap = result.average === null ? null : Math.max(0, result.config.stretch - result.average);
+        const prioritySites = [...result.sites].filter((site) => site.currentMonth < result.config.stretch).sort((a, b) => a.currentMonth - b.currentMonth);
+        return { result, avgGap, prioritySites };
+      });
+
+  if (!rawData?.rows?.length) {
+    return (
+      <div className="rounded-xl border border-slate-700 bg-slate-800 p-6">
+        <h3 className="text-lg font-semibold text-white">Overall Grid Performance</h3>
+        <p className="mt-2 text-sm text-slate-400">Grid Performance requires the Sheet1 raw data so Group and DG Status can be evaluated.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="rounded-xl border border-cyan-500/30 bg-gradient-to-r from-cyan-500/10 to-transparent p-6">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h2 className="text-2xl font-bold text-white">Overall Grid Performance</h2>
+            <p className="mt-1 text-sm text-slate-400">
+              Monthly CA scorecard for Platinum+, PGS, SB and Operational DG sites. C2006 and C2009 are excluded as boundary grids.
+            </p>
+          </div>
+          <div className="rounded-lg border border-slate-700 bg-slate-900/60 px-4 py-2 text-right">
+            <div className="text-[10px] uppercase tracking-wide text-slate-500">Maximum Score</div>
+            <div className="text-xl font-bold text-cyan-400">43.00</div>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <div className="rounded-xl border border-slate-700 bg-slate-800 p-5">
+          <div className="text-xs uppercase tracking-wide text-slate-500">Best Grid</div>
+          <div className="mt-1 text-xl font-bold text-emerald-400">{bestGrid?.grid || "—"}</div>
+          <div className="text-sm text-slate-400">{bestGrid ? `${bestGrid.totalScore.toFixed(2)} / 43` : "—"}</div>
+        </div>
+        <div className="rounded-xl border border-slate-700 bg-slate-800 p-5">
+          <div className="text-xs uppercase tracking-wide text-slate-500">Lowest Grid</div>
+          <div className="mt-1 text-xl font-bold text-red-400">{lowestGrid?.grid || "—"}</div>
+          <div className="text-sm text-slate-400">{lowestGrid ? `${lowestGrid.totalScore.toFixed(2)} / 43` : "—"}</div>
+        </div>
+        <div className="rounded-xl border border-slate-700 bg-slate-800 p-5">
+          <div className="text-xs uppercase tracking-wide text-slate-500">Average Grid Score</div>
+          <div className="mt-1 text-xl font-bold text-amber-400">{avgScore.toFixed(2)}</div>
+          <div className="text-sm text-slate-400">out of 43</div>
+        </div>
+        <div className="rounded-xl border border-slate-700 bg-slate-800 p-5">
+          <div className="text-xs uppercase tracking-wide text-slate-500">Below Stretch Sites</div>
+          <div className="mt-1 text-xl font-bold text-orange-400">{totalBelowStretch}</div>
+          <div className="text-sm text-slate-400">across all four KPIs</div>
+        </div>
+      </div>
+
+      <div className="overflow-hidden rounded-xl border border-slate-700 bg-slate-800">
+        <div className="border-b border-slate-700 p-5">
+          <h3 className="text-lg font-semibold text-white">Grid Performance Scorecard</h3>
+          <p className="mt-1 text-xs text-slate-400">Grid sequence follows Sheet1 order. No score-based sorting is applied.</p>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[1180px] text-sm">
+            <thead className="bg-slate-900/70">
+              <tr>
+                <th className="px-3 py-3 text-left text-xs font-semibold text-slate-400">Grid</th>
+                <th className="px-3 py-3 text-left text-xs font-semibold text-slate-400">CMPAK GTL</th>
+                <th className="px-3 py-3 text-center text-xs font-semibold text-slate-400">Platinum+</th>
+                <th className="px-3 py-3 text-center text-xs font-semibold text-slate-400">Plat+ Score</th>
+                <th className="px-3 py-3 text-center text-xs font-semibold text-slate-400">PGS</th>
+                <th className="px-3 py-3 text-center text-xs font-semibold text-slate-400">PGS Score</th>
+                <th className="px-3 py-3 text-center text-xs font-semibold text-slate-400">SB</th>
+                <th className="px-3 py-3 text-center text-xs font-semibold text-slate-400">SB Score</th>
+                <th className="px-3 py-3 text-center text-xs font-semibold text-slate-400">DG</th>
+                <th className="px-3 py-3 text-center text-xs font-semibold text-slate-400">DG Score</th>
+                <th className="px-3 py-3 text-center text-xs font-semibold text-slate-400">Total Score</th>
+              </tr>
+            </thead>
+            <tbody>
+              {gridRows.map((row) => (
+                <tr key={row.grid} className="border-t border-slate-700/60 hover:bg-slate-700/20">
+                  <td className="px-3 py-3 font-bold text-cyan-300">{row.grid}</td>
+                  <td className="px-3 py-3 text-slate-300">{row.cmpakGtl}</td>
+                  <td className="px-3 py-3 text-center">{kpiCell(row, row.platinum)}</td>
+                  <td className="px-3 py-3 text-center"><GridScoreBadge score={row.platinum.score} max={12} /></td>
+                  <td className="px-3 py-3 text-center">{kpiCell(row, row.pgs)}</td>
+                  <td className="px-3 py-3 text-center"><GridScoreBadge score={row.pgs.score} max={12} /></td>
+                  <td className="px-3 py-3 text-center">{kpiCell(row, row.sb)}</td>
+                  <td className="px-3 py-3 text-center"><GridScoreBadge score={row.sb.score} max={7} /></td>
+                  <td className="px-3 py-3 text-center">{kpiCell(row, row.dg)}</td>
+                  <td className="px-3 py-3 text-center"><GridScoreBadge score={row.dg.score} max={12} /></td>
+                  <td className="px-3 py-3 text-center">
+                    <span className={`inline-flex min-w-[72px] justify-center rounded-lg px-3 py-1.5 font-bold ${row.totalScore >= 38 ? "bg-emerald-500/20 text-emerald-400" : row.totalScore >= 28 ? "bg-amber-500/20 text-amber-400" : "bg-red-500/20 text-red-400"}`}>
+                      {row.totalScore.toFixed(2)}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-slate-700 bg-slate-800 p-5">
+        <div className="mb-4">
+          <h3 className="text-lg font-semibold text-white">Improvement Plan to Achieve Stretch</h3>
+          <p className="mt-1 text-xs text-slate-400">
+            Focus is generated from the actual Monthly CA gap. Open each grid to see the weak category and lowest-performing sites first.
+          </p>
+        </div>
+        <div className="space-y-3">
+          {gridRows.map((row) => {
+            const items = improvementItems(row);
+            const expanded = expandedPlanGrid === row.grid;
+            const allStretch = items.length === 0;
+            return (
+              <div key={row.grid} className={`overflow-hidden rounded-lg border ${allStretch ? "border-emerald-500/30 bg-emerald-500/5" : "border-slate-700 bg-slate-900/30"}`}>
+                <button
+                  onClick={() => setExpandedPlanGrid(expanded ? null : row.grid)}
+                  className="flex w-full items-center justify-between gap-4 px-4 py-3 text-left hover:bg-slate-700/20"
+                >
+                  <div>
+                    <div className="font-semibold text-white">{row.grid} · {row.cmpakGtl}</div>
+                    <div className="mt-0.5 text-xs text-slate-400">
+                      {allStretch ? "All available KPIs have achieved Stretch." : `${items.length} KPI${items.length > 1 ? "s" : ""} below Stretch · Total score ${row.totalScore.toFixed(2)} / 43`}
+                    </div>
+                  </div>
+                  {expanded ? <ChevronUp className="h-4 w-4 text-slate-400" /> : <ChevronDown className="h-4 w-4 text-slate-400" />}
+                </button>
+
+                {expanded && !allStretch && (
+                  <div className="space-y-3 border-t border-slate-700 p-4">
+                    {items.map(({ result, avgGap, prioritySites }) => (
+                      <div key={result.config.key} className="rounded-lg border border-slate-700 bg-slate-800/70 p-4">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div>
+                            <div className="font-semibold text-white">{result.config.label}</div>
+                            <div className="mt-1 text-xs text-slate-400">
+                              Grid Avg: <span className="font-semibold text-slate-200">{result.average === null ? "No valid CA" : `${result.average.toFixed(2)}%`}</span>
+                              {result.average !== null && <> · Stretch: <span className="font-semibold text-emerald-400">{result.config.stretch.toFixed(2)}%</span> · Gap: <span className="font-semibold text-red-400">{avgGap?.toFixed(2)}%</span></>}
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => openSites(row, result.config.key)}
+                            disabled={result.sites.length === 0}
+                            className="rounded-md bg-cyan-500/15 px-3 py-1.5 text-xs font-semibold text-cyan-400 hover:bg-cyan-500/25 disabled:opacity-30"
+                          >
+                            View {result.sites.length} Sites
+                          </button>
+                        </div>
+
+                        {result.sites.length === 0 ? (
+                          <p className="mt-3 text-xs text-amber-400">No valid Monthly CA records are available for this KPI.</p>
+                        ) : prioritySites.length === 0 ? (
+                          <p className="mt-3 text-xs text-slate-400">Individual sites are at Stretch, but verify source data if the calculated Grid average is still below target.</p>
+                        ) : (
+                          <div className="mt-3 text-xs text-slate-300">
+                            Priority: improve the lowest CA sites first. {prioritySites.length} site{prioritySites.length > 1 ? "s are" : " is"} below Stretch.
+                            <span className="ml-1 text-red-400">
+                              Worst: {prioritySites.slice(0, 5).map((site) => `${site.siteId} (${site.currentMonth.toFixed(2)}%)`).join(", ")}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <AnimatePresence>
+        {selectedGrid && selectedResult && selectedKpi && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[70] flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm"
+            onClick={() => {
+              setSelectedGrid(null);
+              setSelectedKpi(null);
+            }}
+          >
+            <motion.div
+              initial={{ scale: 0.96, y: 15 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.96, y: 15 }}
+              onClick={(event) => event.stopPropagation()}
+              className="flex max-h-[88vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-slate-600 bg-slate-900 shadow-2xl"
+            >
+              <div className="flex items-center justify-between border-b border-slate-700 p-5">
+                <div>
+                  <h3 className="text-xl font-bold text-white">{selectedGrid.grid} · {selectedResult.config.label} Sites</h3>
+                  <p className="mt-1 text-xs text-slate-400">
+                    Grid Avg {selectedResult.average === null ? "—" : `${selectedResult.average.toFixed(2)}%`} · Stretch {selectedResult.config.stretch.toFixed(2)}% · {selectedResult.sites.length} valid sites
+                  </p>
+                </div>
+                <button onClick={() => { setSelectedGrid(null); setSelectedKpi(null); }} className="rounded-md p-2 text-slate-400 hover:bg-slate-800 hover:text-white">
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+              <div className="overflow-auto p-5">
+                <table className="w-full min-w-[900px] text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-700 text-left">
+                      <th className="px-3 py-2 text-xs text-slate-500">Site ID</th>
+                      <th className="px-3 py-2 text-xs text-slate-500">Current Month</th>
+                      <th className="px-3 py-2 text-xs text-slate-500">Gap to Stretch</th>
+                      <th className="px-3 py-2 text-xs text-slate-500">Status</th>
+                      <th className="px-3 py-2 text-xs text-slate-500">Group</th>
+                      <th className="px-3 py-2 text-xs text-slate-500">Revenue Category</th>
+                      <th className="px-3 py-2 text-xs text-slate-500">DG Status</th>
+                      <th className="px-3 py-2 text-xs text-slate-500">Cluster Owner</th>
+                      <th className="px-3 py-2 text-xs text-slate-500">MS GTL</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[...selectedResult.sites]
+                      .sort((a, b) => a.currentMonth - b.currentMonth)
+                      .map((site) => {
+                        const gap = Math.max(0, selectedResult.config.stretch - site.currentMonth);
+                        const status = site.currentMonth >= selectedResult.config.stretch ? "Stretch Achieved" : site.currentMonth >= selectedResult.config.target ? "Target to Stretch" : site.currentMonth >= selectedResult.config.base ? "Base to Target" : "Below Base";
+                        return (
+                          <tr key={`${selectedKpi}-${site.siteId}`} className="border-b border-slate-800 hover:bg-slate-800/50">
+                            <td className="px-3 py-2 font-mono font-semibold text-cyan-300">{site.siteId || "—"}</td>
+                            <td className={`px-3 py-2 font-semibold ${site.currentMonth >= selectedResult.config.stretch ? "text-emerald-400" : "text-slate-200"}`}>{site.currentMonth.toFixed(2)}%</td>
+                            <td className={`px-3 py-2 ${gap > 0 ? "text-red-400" : "text-emerald-400"}`}>{gap.toFixed(2)}%</td>
+                            <td className="px-3 py-2">
+                              <span className={`rounded px-2 py-1 text-[10px] font-semibold ${status === "Stretch Achieved" ? "bg-emerald-500/15 text-emerald-400" : status === "Target to Stretch" ? "bg-cyan-500/15 text-cyan-400" : status === "Base to Target" ? "bg-amber-500/15 text-amber-400" : "bg-red-500/15 text-red-400"}`}>{status}</span>
+                            </td>
+                            <td className="px-3 py-2 text-slate-300">{site.group || "—"}</td>
+                            <td className="px-3 py-2 text-slate-300">{site.revenueCategory || "—"}</td>
+                            <td className="px-3 py-2 text-slate-300">{site.dgStatus || "—"}</td>
+                            <td className="px-3 py-2 text-slate-300">{site.clusterOwner || "—"}</td>
+                            <td className="px-3 py-2 text-slate-300">{site.msGtl || "—"}</td>
+                          </tr>
+                        );
+                      })}
+                  </tbody>
+                </table>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
 // ============================================================
 //  OVERALL SUMMARY WITH EXPORT (unchanged)
 // ============================================================
@@ -2008,7 +2520,9 @@ function OverallSummaryWithExport({ sites, rawData }: { sites: SiteData[]; rawDa
           <ExportButtonComponent data={fullExportData} filename="all_sites_full_data" label="CSV" format="csv" variant="secondary" />
         </div>
       </div>
+      {/* Keep every existing Overall Summary component. Remove only its old AI section inside components/OverallSummary.tsx. */}
       <OverallSummaryComponent sites={sites} />
+
     </div>
   );
 }
@@ -3304,6 +3818,7 @@ export default function App() {
             <AnimatePresence mode="wait">
               <motion.div key={activeTab + selectedMonth} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.2 }} className="space-y-6">
                 {activeTab === "overall" && <OverallSummaryWithExport sites={sites} rawData={monthData} />}
+                {activeTab === "grid-performance" && <GridPerformanceScorecard rawData={monthData} />}
                 {activeTab === "employees" && <><SectionBanner icon={<Users className="w-6 h-6 text-indigo-400" />} title="Employee Performance Analysis" subtitle={`${sites.filter((s) => s.currentAvb > 0).length} active sites`} gradient="from-indigo-500/10 to-purple-500/10 border-indigo-500/20" /><EmployeePerformance sites={sites} /></>}
                 {activeTab === "platinum-plus" && <CategoryPage sites={sites} title="Platinum+ Sites" description={`${platinumPlusRows.length} sites in the Platinum+ category`} threshold={98.5} filterFn={(s) => s.revenueCategory === "Platinum +"} lastUpdatedDate={monthLastUpdated} lastColumnIndex={monthLastColumnIndex} />}
                 {activeTab === "pgs" && <CategoryPage sites={sites} title="PGS Sites" description={`${pgsRows.length} high-priority revenue sites`} threshold={98.1} filterFn={(s) => PGS_GROUP.includes(s.revenueCategory)} lastUpdatedDate={monthLastUpdated} lastColumnIndex={monthLastColumnIndex} />}
