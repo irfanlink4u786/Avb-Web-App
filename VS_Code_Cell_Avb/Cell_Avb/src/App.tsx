@@ -2099,21 +2099,61 @@ function GridScoreBadge({ score, max }: { score: number; max: number }) {
   return <span className={`inline-flex min-w-[58px] justify-center rounded-md border px-2 py-1 text-xs font-bold ${cls}`}>{score.toFixed(2)}</span>;
 }
 
-function GridPerformanceScorecard({ rawData }: { rawData?: SheetPayload | null }) {
+function GridPerformanceScorecard({
+  rawData,
+  lastUpdatedDate,
+}: {
+  rawData?: SheetPayload | null;
+  lastUpdatedDate: string;
+}) {
   const [selectedGrid, setSelectedGrid] = useState<GridPerformanceRow | null>(null);
   const [selectedKpi, setSelectedKpi] = useState<GridKpiKey | null>(null);
   const [expandedPlanGrid, setExpandedPlanGrid] = useState<string | null>(null);
+  const [employeeLevel, setEmployeeLevel] = useState<"zoneLead" | "msGtl" | "clusterOwner">("zoneLead");
+  const [selectedEmployee, setSelectedEmployee] = useState<string>("all");
 
+  // Use the exact same latest-3-days logic as the other monthly tabs.
+  // Example: Report Updated = 25-Aug-26 => 23-Aug-26, 24-Aug-26, 25-Aug-26.
   const latestDateHeaders = useMemo(() => {
-    if (!rawData?.headers?.length) return [] as string[];
-    return rawData.headers
-      .map((header: string) => ({ header, date: parseSheetDateHeader(header) }))
-      .filter((item): item is { header: string; date: Date } => item.date !== null)
-      .sort((a, b) => b.date.getTime() - a.date.getTime())
-      .slice(0, 3)
-      .reverse()
-      .map((item) => item.header);
-  }, [rawData]);
+    if (!lastUpdatedDate) return [] as string[];
+
+    const parts = lastUpdatedDate.split("-");
+    if (parts.length !== 3) return [] as string[];
+
+    const day = parseInt(parts[0], 10);
+    const monthStr = parts[1];
+    let year = parseInt(parts[2], 10);
+    if (year < 100) year += 2000;
+
+    const monthMap: Record<string, number> = {
+      Jan: 0, Feb: 1, Mar: 2, Apr: 3, May: 4, Jun: 5,
+      Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11,
+    };
+    const month = monthMap[monthStr];
+    if (month === undefined) return [] as string[];
+
+    const baseDate = new Date(year, month, day);
+    if (Number.isNaN(baseDate.getTime())) return [] as string[];
+
+    const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const formatDateKey = (date: Date) =>
+      `${date.getDate()}-${monthNames[date.getMonth()]}-${String(date.getFullYear()).slice(-2)}`;
+
+    const expectedHeaders: string[] = [];
+    for (let i = 2; i >= 0; i--) {
+      const d = new Date(baseDate);
+      d.setDate(d.getDate() - i);
+      expectedHeaders.push(formatDateKey(d));
+    }
+
+    // Resolve against actual Google Sheet headers case-insensitively so the
+    // displayed columns use the sheet's exact header text.
+    const headerMap = new Map(
+      (rawData?.headers || []).map((header: string) => [header.trim().toLowerCase(), header])
+    );
+
+    return expectedHeaders.map((header) => headerMap.get(header.toLowerCase()) || header);
+  }, [rawData, lastUpdatedDate]);
 
   const sourceSites = useMemo<GridPerformanceSite[]>(() => {
     if (!rawData?.rows?.length) return [];
@@ -2139,6 +2179,27 @@ function GridPerformanceScorecard({ rawData }: { rawData?: SheetPayload | null }
       .filter((site) => site.grid && !EXCLUDED_GRID_PERFORMANCE.has(site.grid.toUpperCase()));
   }, [rawData, latestDateHeaders]);
 
+  const employeeNames = useMemo(() => {
+    const names = new Set<string>();
+    sourceSites.forEach((site) => {
+      const value = normalizeText(site[employeeLevel]);
+      if (value) names.add(value);
+    });
+    return Array.from(names).sort((a, b) => a.localeCompare(b));
+  }, [sourceSites, employeeLevel]);
+
+  useEffect(() => {
+    setSelectedEmployee("all");
+    setSelectedGrid(null);
+    setSelectedKpi(null);
+    setExpandedPlanGrid(null);
+  }, [employeeLevel]);
+
+  const filteredSourceSites = useMemo(() => {
+    if (selectedEmployee === "all") return sourceSites;
+    return sourceSites.filter((site) => normalizeText(site[employeeLevel]) === selectedEmployee);
+  }, [sourceSites, employeeLevel, selectedEmployee]);
+
   const buildKpiResult = (sites: GridPerformanceSite[], config: GridKpiConfig): GridKpiResult => {
     const selectedSites = sites.filter((site) => {
       if (site.currentMonth <= 0) return false;
@@ -2162,7 +2223,7 @@ function GridPerformanceScorecard({ rawData }: { rawData?: SheetPayload | null }
   const gridRows = useMemo<GridPerformanceRow[]>(() => {
     const gridMap = new Map<string, GridPerformanceSite[]>();
 
-    sourceSites.forEach((site) => {
+    filteredSourceSites.forEach((site) => {
       if (!gridMap.has(site.grid)) gridMap.set(site.grid, []);
       gridMap.get(site.grid)!.push(site);
     });
@@ -2186,14 +2247,14 @@ function GridPerformanceScorecard({ rawData }: { rawData?: SheetPayload | null }
         };
       })
       .sort((a, b) => a.totalScore - b.totalScore || a.grid.localeCompare(b.grid));
-  }, [sourceSites]);
+  }, [filteredSourceSites]);
 
   const subRegionCards = useMemo(() => {
     return [
       { key: "C-1", prefix: "C1" },
       { key: "C-6", prefix: "C6" },
     ].map(({ key, prefix }) => {
-      const sites = sourceSites.filter((site) => site.grid.toUpperCase().startsWith(prefix));
+      const sites = filteredSourceSites.filter((site) => site.grid.toUpperCase().startsWith(prefix));
       const results = GRID_KPI_CONFIG.reduce<Record<GridKpiKey, GridKpiResult>>((acc, config) => {
         acc[config.key] = buildKpiResult(sites, config);
         return acc;
@@ -2204,12 +2265,12 @@ function GridPerformanceScorecard({ rawData }: { rawData?: SheetPayload | null }
         totalScore: results.platinum.score + results.pgs.score + results.sb.score + results.dg.score,
       };
     });
-  }, [sourceSites]);
+  }, [filteredSourceSites]);
 
   const exportGroups = useMemo(() => {
     const makeRows = (config: GridKpiConfig, threshold: "base" | "target" | "stretch") => {
       const limit = config[threshold];
-      return sourceSites
+      return filteredSourceSites
         .filter((site) => {
           if (site.currentMonth <= 0) return false;
           const inCategory = config.key === "dg"
@@ -2243,7 +2304,7 @@ function GridPerformanceScorecard({ rawData }: { rawData?: SheetPayload | null }
       target: makeRows(config, "target"),
       stretch: makeRows(config, "stretch"),
     }));
-  }, [sourceSites]);
+  }, [filteredSourceSites]);
 
   const selectedResult = selectedGrid && selectedKpi ? selectedGrid[selectedKpi] : null;
 
@@ -2319,6 +2380,71 @@ function GridPerformanceScorecard({ rawData }: { rawData?: SheetPayload | null }
             <div className="text-[10px] uppercase tracking-wide text-slate-500">Maximum Score</div>
             <div className="text-xl font-bold text-cyan-400">43.00</div>
           </div>
+        </div>
+      </div>
+
+      {/* Employee filter - same pattern as Employee Performance tab */}
+      <div className="rounded-xl border border-slate-700 bg-slate-800/70 p-4">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="mr-1 text-xs font-medium text-slate-400">Employee Level:</span>
+            {[
+              { key: "zoneLead" as const, label: "Zone Lead" },
+              { key: "msGtl" as const, label: "MS GTL" },
+              { key: "clusterOwner" as const, label: "Cluster Owner" },
+            ].map((level) => (
+              <button
+                key={level.key}
+                onClick={() => setEmployeeLevel(level.key)}
+                className={`rounded-lg border px-3 py-2 text-xs font-semibold transition-colors ${
+                  employeeLevel === level.key
+                    ? "border-cyan-500/50 bg-cyan-500/15 text-cyan-400"
+                    : "border-slate-600 bg-slate-900/50 text-slate-400 hover:border-slate-500 hover:text-slate-200"
+                }`}
+              >
+                {level.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex min-w-0 flex-1 items-center gap-3 lg:max-w-xl">
+            <Users className="h-4 w-4 shrink-0 text-slate-500" />
+            <select
+              value={selectedEmployee}
+              onChange={(event) => {
+                setSelectedEmployee(event.target.value);
+                setSelectedGrid(null);
+                setSelectedKpi(null);
+                setExpandedPlanGrid(null);
+              }}
+              className="w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-slate-200 outline-none transition-colors focus:border-cyan-500"
+            >
+              <option value="all">All Employees ({employeeNames.length})</option>
+              {employeeNames.map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+            </select>
+            {selectedEmployee !== "all" && (
+              <button
+                onClick={() => setSelectedEmployee("all")}
+                className="shrink-0 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs font-medium text-red-400 hover:bg-red-500/20"
+              >
+                Clear
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-700 pt-3 text-xs text-slate-400">
+          <span>
+            Showing <span className="font-semibold text-white">{filteredSourceSites.length}</span> sites
+            {selectedEmployee !== "all" && (
+              <> for <span className="font-semibold text-cyan-400">{selectedEmployee}</span></>
+            )}
+          </span>
+          <span>Grid scores, C-1/C-6 cards, exception exports and View Sites all follow this filter.</span>
         </div>
       </div>
 
@@ -3983,7 +4109,7 @@ export default function App() {
             <AnimatePresence mode="wait">
               <motion.div key={activeTab + selectedMonth} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.2 }} className="space-y-6">
                 {activeTab === "overall" && <OverallSummaryWithExport sites={sites} rawData={monthData} />}
-                {activeTab === "grid-performance" && <GridPerformanceScorecard rawData={monthData} />}
+                {activeTab === "grid-performance" && <GridPerformanceScorecard rawData={monthData} lastUpdatedDate={monthLastUpdated} />}
                 {activeTab === "employees" && <><SectionBanner icon={<Users className="w-6 h-6 text-indigo-400" />} title="Employee Performance Analysis" subtitle={`${sites.filter((s) => s.currentAvb > 0).length} active sites`} gradient="from-indigo-500/10 to-purple-500/10 border-indigo-500/20" /><EmployeePerformance sites={sites} /></>}
                 {activeTab === "platinum-plus" && <CategoryPage sites={sites} title="Platinum+ Sites" description={`${platinumPlusRows.length} sites in the Platinum+ category`} threshold={98.5} filterFn={(s) => s.revenueCategory === "Platinum +"} lastUpdatedDate={monthLastUpdated} lastColumnIndex={monthLastColumnIndex} />}
                 {activeTab === "pgs" && <CategoryPage sites={sites} title="PGS Sites" description={`${pgsRows.length} high-priority revenue sites`} threshold={98.1} filterFn={(s) => PGS_GROUP.includes(s.revenueCategory)} lastUpdatedDate={monthLastUpdated} lastColumnIndex={monthLastColumnIndex} />}
