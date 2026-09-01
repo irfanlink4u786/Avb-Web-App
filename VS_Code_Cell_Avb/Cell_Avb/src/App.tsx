@@ -79,6 +79,7 @@ const SHEET_IDS = {
   june: "1Bu4lneVsXvoHdiiJtJvzKSVq0MrTHQOqvH38w7MlNPk",
   july: "1aLTAisv5jjRuIkTVa6MjWZ-QFOSYn8FvMlJ09GWUpX0",
   august: "1ds17me8tjnsV-JoQnx6SThCSGM3AkULPsnqP3H0M30w",
+  september: "1vyHPFzh28wf0a4b__Cv65bcuFh-pylnkGRcUuX1XpEA",
 } as const;
 
 // Month dashboard sidebar – Pre‑Vs‑Post and Hardware Issues are removed
@@ -100,7 +101,7 @@ const NAV_ITEMS = [
   { id: "weather", label: "Weather Radar", icon: CloudRain },
 ] as const;
 
-type Month = "june" | "july" | "august";
+type Month = "june" | "july" | "august" | "september";
 type AppState = "loading" | "dashboard" | "error";
 type ViewMode = "home" | "month" | "prepost" | "hardware";
 type PrePostSubView = "analysis" | "query";
@@ -3474,7 +3475,7 @@ function FiveGPage({
         <Radio className="w-10 h-10 text-slate-500 mx-auto mb-3" />
         <h3 className="text-lg font-semibold text-white">5G Data Not Available</h3>
         <p className="text-sm text-slate-400 mt-1">
-          The 5G worksheet could not be loaded from the August 2026 workbook.
+          The 5G worksheet could not be loaded from the September 2026 workbook.
         </p>
       </div>
     );
@@ -3686,7 +3687,7 @@ export default function App() {
         fetchGoogleSheet(sheetId, "Hardware issues"),
         fetchGoogleSheet(sheetId, "Updated Date"),
         fetchGoogleSheet(sheetId, "RCA of Plat +"),
-        month === "august"
+        (month === "august" || month === "september")
           ? fetchGoogleSheet(sheetId, "5G").catch((error) => {
               console.warn("5G sheet could not be loaded:", error);
               return null;
@@ -3717,7 +3718,9 @@ export default function App() {
           ? "30-Jun-26"
           : month === "july"
             ? "31-Jul-26"
-            : "1-Aug-26"
+            : month === "august"
+              ? "31-Aug-26"
+              : "1-Sep-26"
       );
       setMonthLastColumnIndex(74);
       setUseMock(true);
@@ -3733,7 +3736,7 @@ export default function App() {
     setErrorMsg("");
 
     try {
-      const sheetId = SHEET_IDS.august;
+      const sheetId = SHEET_IDS.september;
 
       const [data, fiveGSheet, dateData] = await Promise.all([
         fetchGoogleSheet(sheetId),
@@ -3743,7 +3746,7 @@ export default function App() {
 
       setMonthData(data);
       setMonth5G(fiveGSheet);
-      setSelectedMonth("august");
+      setSelectedMonth("september");
       setUseMock(false);
 
       if (dateData && dateData.rows && dateData.rows.length > 0) {
@@ -3808,15 +3811,15 @@ export default function App() {
     setAppState("loading");
     setErrorMsg("");
     try {
-      const sheetId = SHEET_IDS.august;
+      const sheetId = SHEET_IDS.september;
       const data = await fetchGoogleSheet(sheetId, "Hardware issues");
       setMonthHardware(data);
       const dateData = await fetchGoogleSheet(sheetId, "Updated Date");
       if (dateData && dateData.rows && dateData.rows.length > 0) {
         const row = dateData.rows[0];
-        setMonthLastUpdated(row["Last Updated"] || row["Date"] || row["Last Date"] || "1-Aug-26");
+        setMonthLastUpdated(row["Last Updated"] || row["Date"] || row["Last Date"] || "1-Sep-26");
       } else {
-        setMonthLastUpdated("1-Aug-26");
+        setMonthLastUpdated("1-Sep-26");
       }
       setViewMode("hardware");
       setAppState("dashboard");
@@ -3902,9 +3905,13 @@ export default function App() {
               <span className="absolute inset-0 bg-gradient-to-r from-cyan-500/10 to-blue-500/10 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
               <div className="relative text-center"><span className="block text-2xl font-bold text-white">July 2026</span><span className="text-slate-400 text-sm">Final data · 31 days</span></div>
             </motion.button>
-            <motion.button variants={{ hidden: { opacity: 0, y: 30 }, show: { opacity: 1, y: 0 } }} whileHover={{ scale: 1.03, boxShadow: "0 0 40px rgba(16, 185, 129, 0.35)" }} whileTap={{ scale: 0.98 }} onClick={() => loadMonthData("august")} className="group relative flex-1 min-w-[180px] px-8 py-7 rounded-2xl bg-gradient-to-br from-emerald-500/20 to-green-500/20 border border-emerald-400/30 hover:border-emerald-300 transition-all duration-300 shadow-xl hover:shadow-emerald-500/40 backdrop-blur-sm overflow-hidden">
+            <motion.button variants={{ hidden: { opacity: 0, y: 30 }, show: { opacity: 1, y: 0 } }} whileHover={{ scale: 1.03, boxShadow: "0 0 40px rgba(6, 182, 212, 0.25)" }} whileTap={{ scale: 0.98 }} onClick={() => loadMonthData("august")} className="group relative flex-1 min-w-[180px] px-8 py-7 rounded-2xl bg-gradient-to-br from-slate-800/90 to-slate-900/90 border border-slate-600/50 hover:border-cyan-400 transition-all duration-300 shadow-xl backdrop-blur-sm overflow-hidden">
+              <span className="absolute inset-0 bg-gradient-to-r from-cyan-500/10 to-blue-500/10 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+              <div className="relative text-center"><span className="block text-2xl font-bold text-white">August 2026</span><span className="text-slate-400 text-sm">Final data · 31 days</span></div>
+            </motion.button>
+            <motion.button variants={{ hidden: { opacity: 0, y: 30 }, show: { opacity: 1, y: 0 } }} whileHover={{ scale: 1.03, boxShadow: "0 0 40px rgba(16, 185, 129, 0.35)" }} whileTap={{ scale: 0.98 }} onClick={() => loadMonthData("september")} className="group relative flex-1 min-w-[180px] px-8 py-7 rounded-2xl bg-gradient-to-br from-emerald-500/20 to-green-500/20 border border-emerald-400/30 hover:border-emerald-300 transition-all duration-300 shadow-xl hover:shadow-emerald-500/40 backdrop-blur-sm overflow-hidden">
               <span className="absolute inset-0 bg-gradient-to-r from-emerald-400/20 to-green-400/20 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-              <div className="relative text-center"><span className="block text-2xl font-bold text-white">August 2026</span><span className="text-slate-300 text-sm">Live updates · Progressive</span></div>
+              <div className="relative text-center"><span className="block text-2xl font-bold text-white">September 2026</span><span className="text-slate-300 text-sm">Live updates · Progressive</span></div>
             </motion.button>
             <motion.button
               variants={{ hidden: { opacity: 0, y: 30 }, show: { opacity: 1, y: 0 } }}
@@ -3916,7 +3923,7 @@ export default function App() {
               <span className="absolute inset-0 bg-gradient-to-r from-cyan-400/20 to-blue-400/20 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
               <div className="relative text-center">
                 <span className="block text-2xl font-bold text-white">5G Sites</span>
-                <span className="text-slate-300 text-sm">August 2026 · KPI Dashboard</span>
+                <span className="text-slate-300 text-sm">September 2026 · KPI Dashboard</span>
               </div>
             </motion.button>
 
@@ -4032,7 +4039,7 @@ export default function App() {
             <button onClick={goHome} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm font-medium transition-colors">
               <span className="text-slate-400">←</span> Back to Home
             </button>
-            <div className="text-xs text-slate-500">Data updated: {monthLastUpdated || "1-Aug-26"}</div>
+            <div className="text-xs text-slate-500">Data updated: {monthLastUpdated || "1-Sep-26"}</div>
           </div>
           {hardwareData ? <HardwareIssues data={hardwareData} /> : <div className="bg-slate-800 border border-slate-700 rounded-xl p-12 text-center text-slate-400">No hardware issues data available.</div>}
         </div>
@@ -4046,8 +4053,10 @@ export default function App() {
       ? "June 2026"
       : selectedMonth === "july"
         ? "July 2026"
-        : "August 2026";
-  const isLive = selectedMonth === "august";
+        : selectedMonth === "august"
+          ? "August 2026"
+          : "September 2026";
+  const isLive = selectedMonth === "september";
 
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100 flex">
@@ -4065,7 +4074,7 @@ export default function App() {
           </div>
         </div>
         <nav className="flex-1 overflow-y-auto p-3 space-y-1">
-          {NAV_ITEMS.filter((item) => item.id !== "5g" || selectedMonth === "august").map((item) => {
+          {NAV_ITEMS.filter((item) => item.id !== "5g" || selectedMonth === "august" || selectedMonth === "september").map((item) => {
             const Icon = item.icon;
             const isActive = activeTab === item.id;
             return (
@@ -4093,7 +4102,7 @@ export default function App() {
                 <h2 className="text-lg font-bold text-white truncate">{activeLabel} — {monthLabel}{isLive && <span className="ml-2 text-xs text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded">LIVE</span>}</h2>
                 <p className="text-[11px] text-slate-500 truncate flex items-center gap-2 flex-wrap">
                   {monthLastUpdated && <span className="text-cyan-400 font-medium">Report Updated: {monthLastUpdated}</span>}
-                  {!monthLastUpdated && useMock && <span className="text-cyan-400 font-medium">Report Updated: {selectedMonth === "june" ? "30-Jun-26" : selectedMonth === "july" ? "31-Jul-26" : "1-Aug-26"}</span>}
+                  {!monthLastUpdated && useMock && <span className="text-cyan-400 font-medium">Report Updated: {selectedMonth === "june" ? "30-Jun-26" : selectedMonth === "july" ? "31-Jul-26" : selectedMonth === "august" ? "31-Aug-26" : "1-Sep-26"}</span>}
                 </p>
               </div>
             </div>
