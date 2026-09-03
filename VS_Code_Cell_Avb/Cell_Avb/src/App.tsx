@@ -86,6 +86,7 @@ const SHEET_IDS = {
 const NAV_ITEMS = [
   { id: "overall", label: "Overall Summary", icon: LayoutDashboard },
   { id: "grid-performance", label: "Grid Performance", icon: Award },
+  { id: "recurring", label: "Recurring Sites", icon: RefreshCw },
   { id: "employees", label: "Employees", icon: Users },
   { id: "platinum-plus", label: "Platinum+", icon: Crown },
   { id: "pgs", label: "PGS Sites", icon: TrendingUp },
@@ -1305,10 +1306,343 @@ function CategoryPage({
 }
 
 // ============================================================
+//  RECURRING SITES — LAST 3 MONTHS Y-26
+// ============================================================
+
+type RecurringGroup = "all" | "platinum" | "pgs" | "sb" | "dg" | "liion" | "agm";
+
+type RecurringSiteRow = {
+  site: SiteData;
+  monthValues: Record<string, number>;
+  recurringMonths: number;
+  threeMonthAvg: number;
+  regionalHit: number;
+  impactShare: number;
+  batteryType: string;
+};
+
+function RecurringSitesPage({
+  sites,
+  historyData,
+}: {
+  sites: SiteData[];
+  historyData: SheetPayload | null;
+}) {
+  const [subRegion, setSubRegion] = useState("__all");
+  const [group, setGroup] = useState<RecurringGroup>("all");
+  const [grid, setGrid] = useState("__all");
+  const [owner, setOwner] = useState("__all");
+  const [battery, setBattery] = useState("__all");
+  const [threshold, setThreshold] = useState(98);
+  const [minimumRecurringMonths, setMinimumRecurringMonths] = useState<2 | 3>(2);
+  const [search, setSearch] = useState("");
+
+  const normalize = (v: any) =>
+    String(v ?? "")
+      .trim()
+      .toLowerCase()
+      .replace(/[’‘`]/g, "'")
+      .replace(/[_\s-]+/g, " ");
+
+  const parseCa = (value: any) => {
+    if (value === null || value === undefined || value === "") return 0;
+    const n = Number.parseFloat(String(value).replace(/%/g, "").replace(/,/g, "").trim());
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  };
+
+  const parseMonth = (raw: any): { key: string; label: string; timestamp: number } | null => {
+    if (raw === null || raw === undefined) return null;
+    const original = String(raw).trim();
+    if (!original) return null;
+
+    const cleaned = original
+      .replace(/\s+(?:cell[_\s-]*a(?:vb)?|cell\s+availability|avb)(?:\s*%?)?.*$/i, "")
+      .trim();
+
+    const monthMap: Record<string, number> = {
+      jan: 0, january: 0, feb: 1, february: 1, mar: 2, march: 2,
+      apr: 3, april: 3, may: 4, jun: 5, june: 5, jul: 6, july: 6,
+      aug: 7, august: 7, sep: 8, sept: 8, september: 8,
+      oct: 9, october: 9, nov: 10, november: 10, dec: 11, december: 11,
+    };
+
+    let m = cleaned.match(/^(\d{1,2})[-\/\s]([A-Za-z]{3,9})[-\/\s']?(\d{2}|\d{4})$/i);
+    if (m) {
+      const mi = monthMap[m[2].toLowerCase()];
+      const year = Number(m[3].length === 2 ? `20${m[3]}` : m[3]);
+      if (mi !== undefined && year === 2026) {
+        const d = new Date(2026, mi, 1);
+        return { key: `${2026}-${String(mi + 1).padStart(2, "0")}`, label: d.toLocaleString("default", { month: "short", year: "2-digit" }), timestamp: d.getTime() };
+      }
+    }
+
+    m = cleaned.match(/^([A-Za-z]{3,9})\s*[-\/\s']?\s*(\d{2}|\d{4})$/i);
+    if (m) {
+      const mi = monthMap[m[1].toLowerCase()];
+      const year = Number(m[2].length === 2 ? `20${m[2]}` : m[2]);
+      if (mi !== undefined && year === 2026) {
+        const d = new Date(2026, mi, 1);
+        return { key: `${2026}-${String(mi + 1).padStart(2, "0")}`, label: d.toLocaleString("default", { month: "short", year: "2-digit" }), timestamp: d.getTime() };
+      }
+    }
+
+    const parsed = new Date(cleaned);
+    if (!Number.isNaN(parsed.getTime()) && parsed.getFullYear() === 2026) {
+      const mi = parsed.getMonth();
+      const d = new Date(2026, mi, 1);
+      return { key: `${2026}-${String(mi + 1).padStart(2, "0")}`, label: d.toLocaleString("default", { month: "short", year: "2-digit" }), timestamp: d.getTime() };
+    }
+    return null;
+  };
+
+  const history = useMemo(() => {
+    const bySite = new Map<string, Map<string, { sum: number; count: number }>>();
+    const monthMeta = new Map<string, { key: string; label: string; timestamp: number }>();
+    const rows = (historyData?.rows || []) as Record<string, any>[];
+
+    const getValue = (row: Record<string, any>, aliases: string[]) => {
+      const wanted = new Set(aliases.map(normalize));
+      for (const [key, value] of Object.entries(row)) {
+        if (wanted.has(normalize(key))) return value;
+      }
+      return undefined;
+    };
+
+    const add = (siteIdRaw: any, month: ReturnType<typeof parseMonth>, ca: number) => {
+      const siteId = normalize(siteIdRaw);
+      if (!siteId || !month || !(ca > 0)) return;
+      if (!bySite.has(siteId)) bySite.set(siteId, new Map());
+      const siteMonths = bySite.get(siteId)!;
+      const current = siteMonths.get(month.key) || { sum: 0, count: 0 };
+      current.sum += ca;
+      current.count += 1;
+      siteMonths.set(month.key, current);
+      monthMeta.set(month.key, month);
+    };
+
+    for (const row of rows) {
+      const siteId = getValue(row, ["Site ID", "SiteID", "Site Id", "Site", "Site Code", "Site Name"]);
+      if (!siteId) continue;
+
+      // Long-format support: Site ID + Date/Month + AVB.
+      const longDate = getValue(row, ["Date", "AVB Date", "Cell AVB Date", "Report Date", "Day", "Month"]);
+      const longCa = getValue(row, ["Cell Avb", "Cell AVB", "Cell AVB %", "AVB", "AVB %", "Cell Availability", "Cell Availability %"]);
+      add(siteId, parseMonth(longDate), parseCa(longCa));
+
+      // Wide-format support: Jan'26 Cell_A, Feb'26 Cell_A ...
+      for (const [key, value] of Object.entries(row)) {
+        const month = parseMonth(key);
+        if (!month) continue;
+        add(siteId, month, parseCa(value));
+      }
+    }
+
+    const months = Array.from(monthMeta.values()).sort((a, b) => a.timestamp - b.timestamp).slice(-3);
+    const valuesBySite = new Map<string, Record<string, number>>();
+    for (const [siteId, siteMonths] of bySite.entries()) {
+      const vals: Record<string, number> = {};
+      for (const m of months) {
+        const agg = siteMonths.get(m.key);
+        if (agg?.count) vals[m.key] = agg.sum / agg.count;
+      }
+      valuesBySite.set(siteId, vals);
+    }
+    return { months, valuesBySite };
+  }, [historyData]);
+
+  const analysis = useMemo(() => {
+    const months = history.months;
+    if (months.length < 3) return { rows: [] as RecurringSiteRow[], regionStats: {} as Record<string, any> };
+
+    const denominators: Record<string, Record<string, number>> = {};
+    const regionSums: Record<string, Record<string, number>> = {};
+
+    for (const site of sites) {
+      const region = site.subRegion || (site.grid?.toUpperCase().startsWith("C1") ? "C-1" : site.grid?.toUpperCase().startsWith("C6") ? "C-6" : "");
+      if (!region) continue;
+      const vals = history.valuesBySite.get(normalize(site.siteName));
+      if (!vals) continue;
+      denominators[region] ||= {};
+      regionSums[region] ||= {};
+      for (const m of months) {
+        const ca = vals[m.key];
+        if (ca > 0) {
+          denominators[region][m.key] = (denominators[region][m.key] || 0) + 1;
+          regionSums[region][m.key] = (regionSums[region][m.key] || 0) + ca;
+        }
+      }
+    }
+
+    const regionStats: Record<string, { avg: number; shortfall: number }> = {};
+    for (const region of ["C-1", "C-6"]) {
+      const avgs = months
+        .map((m) => {
+          const n = denominators[region]?.[m.key] || 0;
+          return n ? (regionSums[region]?.[m.key] || 0) / n : 0;
+        })
+        .filter((v) => v > 0);
+      const avg = avgs.length ? avgs.reduce((a, b) => a + b, 0) / avgs.length : 0;
+      regionStats[region] = { avg, shortfall: avg > 0 ? 100 - avg : 0 };
+    }
+
+    const rows: RecurringSiteRow[] = [];
+    for (const site of sites) {
+      const region = site.subRegion || (site.grid?.toUpperCase().startsWith("C1") ? "C-1" : site.grid?.toUpperCase().startsWith("C6") ? "C-6" : "");
+      if (!region) continue;
+      const vals = history.valuesBySite.get(normalize(site.siteName));
+      if (!vals) continue;
+      const values = months.map((m) => vals[m.key] || 0);
+
+      // Require complete 3-month history so rankings stay apples-to-apples.
+      if (values.filter((v) => v > 0).length !== 3) continue;
+      const recurringMonths = values.filter((v) => v < threshold).length;
+      if (recurringMonths < minimumRecurringMonths) continue;
+
+      const threeMonthAvg = values.reduce((a, b) => a + b, 0) / 3;
+      const regionalHit = months.reduce((sum, m, idx) => {
+        const n = denominators[region]?.[m.key] || 0;
+        return sum + (n > 0 ? Math.max(0, 100 - values[idx]) / n : 0);
+      }, 0) / 3;
+      const regionalShortfall = regionStats[region]?.shortfall || 0;
+      const impactShare = regionalShortfall > 0 ? (regionalHit / regionalShortfall) * 100 : 0;
+      const batteryType = hasLiIon(site) ? "Li-ion" : hasAGM(site) ? "AGM" : "Other / Unknown";
+
+      rows.push({ site, monthValues: vals, recurringMonths, threeMonthAvg, regionalHit, impactShare, batteryType });
+    }
+
+    return { rows: rows.sort((a, b) => b.regionalHit - a.regionalHit), regionStats };
+  }, [sites, history, threshold, minimumRecurringMonths]);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return analysis.rows.filter((r) => {
+      const s = r.site;
+      if (subRegion !== "__all" && s.subRegion !== subRegion) return false;
+      if (grid !== "__all" && s.grid !== grid) return false;
+      if (owner !== "__all" && s.clusterOwner !== owner) return false;
+      if (battery !== "__all" && r.batteryType !== battery) return false;
+      if (group === "platinum" && s.revenueCategory !== "Platinum +") return false;
+      if (group === "pgs" && !PGS_GROUP.includes(s.revenueCategory)) return false;
+      if (group === "sb" && !SB_GROUP.includes(s.revenueCategory)) return false;
+      if (group === "dg" && !hasDG(s)) return false;
+      if (group === "liion" && !hasLiIon(s)) return false;
+      if (group === "agm" && !hasAGM(s)) return false;
+      if (q && ![s.siteName, s.grid, s.subRegion, s.clusterOwner, s.msGtl, s.zongLead, s.revenueCategory].some((v) => String(v || "").toLowerCase().includes(q))) return false;
+      return true;
+    });
+  }, [analysis.rows, subRegion, group, grid, owner, battery, search]);
+
+  const gridOptions = useMemo(() => Array.from(new Set(analysis.rows.map((r) => r.site.grid).filter(Boolean))).sort(), [analysis.rows]);
+  const ownerOptions = useMemo(() => Array.from(new Set(analysis.rows.map((r) => r.site.clusterOwner).filter(Boolean))).sort(), [analysis.rows]);
+
+  const exportRows = useMemo(() => filtered.map((r, index) => {
+    const row: Record<string, any> = {
+      Rank: index + 1,
+      "Site ID": r.site.siteName,
+      "Sub-Region": r.site.subRegion,
+      Grid: r.site.grid,
+      Category: r.site.revenueCategory,
+      "DG Status": hasDG(r.site) ? "DG" : "No DG",
+      Battery: r.batteryType,
+      "Cluster Owner": r.site.clusterOwner || "-",
+      "MS GTL": r.site.msGtl || "-",
+      "Zone Lead": r.site.zongLead || "-",
+    };
+    history.months.forEach((m) => { row[m.label] = r.monthValues[m.key]?.toFixed(2) + "%"; });
+    row["Recurring Low Months"] = `${r.recurringMonths}/3`;
+    row["3M Avg"] = `${r.threeMonthAvg.toFixed(2)}%`;
+    row["Regional Avg Hit"] = `${r.regionalHit.toFixed(4)} pp`;
+    row["Share of Regional AVB Hit"] = `${r.impactShare.toFixed(2)}%`;
+    return row;
+  }), [filtered, history.months]);
+
+  if (!historyData?.rows?.length) {
+    return <div className="bg-slate-800 border border-slate-700 rounded-xl p-10 text-center text-slate-400">Cell Avb history is not available in the September workbook.</div>;
+  }
+
+  if (history.months.length < 3) {
+    return <div className="bg-slate-800 border border-slate-700 rounded-xl p-10 text-center text-slate-400">At least three Y-26 months are required in Cell Avb history to build recurring-site analysis.</div>;
+  }
+
+  const topC1 = analysis.rows.find((r) => r.site.subRegion === "C-1");
+  const topC6 = analysis.rows.find((r) => r.site.subRegion === "C-6");
+
+  return (
+    <div className="max-w-[1700px] mx-auto space-y-5">
+      <SectionBanner
+        icon={<RefreshCw className="w-6 h-6 text-red-400" />}
+        title="Recurring Culprit Sites — Last 3 Months"
+        subtitle={`Y-26 history: ${history.months.map((m) => m.label).join(" · ")} · Ranked by contribution to C-1 / C-6 average AVB hit`}
+        gradient="from-red-500/10 to-amber-500/10 border-red-500/20"
+      />
+
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="bg-slate-800 border border-slate-700 rounded-xl p-4"><p className="text-xs text-slate-500">Recurring Sites</p><p className="text-2xl font-bold text-white">{filtered.length}</p></div>
+        <div className="bg-slate-800 border border-slate-700 rounded-xl p-4"><p className="text-xs text-slate-500">C-1 3M Regional AVB</p><p className="text-2xl font-bold text-cyan-300">{analysis.regionStats["C-1"]?.avg?.toFixed(2) || "0.00"}%</p><p className="text-[11px] text-slate-500">Top culprit: {topC1?.site.siteName || "—"}</p></div>
+        <div className="bg-slate-800 border border-slate-700 rounded-xl p-4"><p className="text-xs text-slate-500">C-6 3M Regional AVB</p><p className="text-2xl font-bold text-cyan-300">{analysis.regionStats["C-6"]?.avg?.toFixed(2) || "0.00"}%</p><p className="text-[11px] text-slate-500">Top culprit: {topC6?.site.siteName || "—"}</p></div>
+        <div className="bg-slate-800 border border-slate-700 rounded-xl p-4"><p className="text-xs text-slate-500">Recurring Rule</p><p className="text-lg font-bold text-amber-300">{minimumRecurringMonths}/3 months &lt; {threshold}%</p><p className="text-[11px] text-slate-500">Complete 3-month history required</p></div>
+      </div>
+
+      <div className="bg-slate-800/70 border border-slate-700 rounded-xl p-4 space-y-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 gap-2">
+          <FilterSelect label="Sub-Region" options={["C-1", "C-6"]} value={subRegion} onChange={setSubRegion} />
+          <FilterSelect label="Grid" options={gridOptions} value={grid} onChange={setGrid} />
+          <FilterSelect label="Battery" options={["Li-ion", "AGM", "Other / Unknown"]} value={battery} onChange={setBattery} />
+          <FilterSelect label="Cluster Owner" options={ownerOptions} value={owner} onChange={setOwner} />
+          <select value={group} onChange={(e) => setGroup(e.target.value as RecurringGroup)} className="px-3.5 py-2 rounded-lg bg-slate-900 border border-slate-700 text-sm text-slate-200 outline-none">
+            <option value="all">All Site Groups</option><option value="platinum">Platinum+</option><option value="pgs">PGS</option><option value="sb">SB</option><option value="dg">DG</option><option value="liion">Li-ion BB</option><option value="agm">AGM BB</option>
+          </select>
+          <select value={threshold} onChange={(e) => setThreshold(Number(e.target.value))} className="px-3.5 py-2 rounded-lg bg-slate-900 border border-slate-700 text-sm text-slate-200 outline-none">
+            <option value={98.5}>Low AVB &lt; 98.5%</option><option value={98}>Low AVB &lt; 98%</option><option value={95}>Low AVB &lt; 95%</option>
+          </select>
+          <select value={minimumRecurringMonths} onChange={(e) => setMinimumRecurringMonths(Number(e.target.value) as 2 | 3)} className="px-3.5 py-2 rounded-lg bg-slate-900 border border-slate-700 text-sm text-slate-200 outline-none">
+            <option value={2}>Recurring: 2+ of 3</option><option value={3}>Recurring: 3 of 3</option>
+          </select>
+        </div>
+        <div className="flex gap-2 flex-wrap">
+          <div className="relative flex-1 min-w-[260px]"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search site, grid, CO, GTL, category..." className="w-full pl-9 pr-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-sm outline-none focus:border-cyan-500" /></div>
+          <button onClick={() => { setSubRegion("__all"); setGroup("all"); setGrid("__all"); setOwner("__all"); setBattery("__all"); setThreshold(98); setMinimumRecurringMonths(2); setSearch(""); }} className="px-3.5 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-sm text-slate-200">Clear Filters</button>
+          <ExportButtonComponent data={exportRows} filename="september_recurring_culprit_sites_y26" label={`Export ${filtered.length} Sites`} format="excel" variant="danger" />
+        </div>
+      </div>
+
+      <div className="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden">
+        <div className="px-5 py-4 border-b border-slate-700"><h3 className="text-white font-semibold">Recurring Sites Ranked by Regional AVB Hit</h3><p className="text-xs text-slate-500 mt-1">Regional Avg Hit = average of each month's (100 − Site AVB) ÷ active sites in that sub-region. Highest hit is the biggest culprit.</p></div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-slate-900/70"><tr>
+              {['#','Site ID','Region','Grid','Category','DG','Battery','Cluster Owner',...history.months.map((m) => m.label),'Low Months','3M Avg','Avg AVB Hit','Hit Share'].map((h) => <th key={h} className="px-3 py-3 text-xs text-slate-400 font-medium text-center whitespace-nowrap">{h}</th>)}
+            </tr></thead>
+            <tbody>
+              {filtered.map((r, i) => <tr key={r.site.siteName} className="border-t border-slate-700/60 hover:bg-slate-700/20">
+                <td className="px-3 py-3 text-center text-slate-500">{i + 1}</td>
+                <td className="px-3 py-3 font-mono text-cyan-300 font-semibold">{r.site.siteName}</td>
+                <td className="px-3 py-3 text-center text-slate-300">{r.site.subRegion}</td>
+                <td className="px-3 py-3 text-center text-slate-300">{r.site.grid}</td>
+                <td className="px-3 py-3"><CategoryBadge category={r.site.revenueCategory} /></td>
+                <td className="px-3 py-3 text-center">{hasDG(r.site) ? <span className="text-amber-300">DG</span> : <span className="text-slate-600">—</span>}</td>
+                <td className="px-3 py-3 text-center"><span className={r.batteryType === "Li-ion" ? "text-emerald-400" : r.batteryType === "AGM" ? "text-amber-300" : "text-slate-500"}>{r.batteryType}</span></td>
+                <td className="px-3 py-3 text-slate-300 whitespace-nowrap">{r.site.clusterOwner || "—"}</td>
+                {history.months.map((m) => { const v = r.monthValues[m.key]; return <td key={m.key} className={`px-3 py-3 text-center font-semibold ${v < threshold ? "text-red-400" : "text-emerald-400"}`}>{v.toFixed(2)}%</td>; })}
+                <td className="px-3 py-3 text-center"><span className="px-2 py-1 rounded bg-red-500/10 text-red-300 font-bold">{r.recurringMonths}/3</span></td>
+                <td className="px-3 py-3 text-center font-bold text-amber-300">{r.threeMonthAvg.toFixed(2)}%</td>
+                <td className="px-3 py-3 text-center font-bold text-red-300">{r.regionalHit.toFixed(4)} pp</td>
+                <td className="px-3 py-3 text-center font-semibold text-fuchsia-300">{r.impactShare.toFixed(2)}%</td>
+              </tr>)}
+              {!filtered.length && <tr><td colSpan={14} className="px-4 py-12 text-center text-slate-500">No recurring sites match the selected filters.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
 //  SITE QUERY (unchanged)
 // ============================================================
 
-function SiteQuery({ sites, historyData = null }: { sites: SiteData[]; historyData?: SheetPayload | null }) {
+function SiteQuery({ sites, historyData = null, rawData = null }: { sites: SiteData[]; historyData?: SheetPayload | null; rawData?: SheetPayload | null }) {
   const [search, setSearch] = useState("");
   const [selectedSite, setSelectedSite] = useState<SiteData | null>(null);
 
@@ -1364,6 +1698,136 @@ function SiteQuery({ sites, historyData = null }: { sites: SiteData[]; historyDa
       "Load Shedding (hrs)": ls[d] !== undefined ? ls[d].toFixed(2) : "",
     }));
   }, [selectedSite]);
+
+
+  // September technology-wise Cell AVB from Sheet1.
+  // TCH = 2G, Cell_U = 3G, Cell_EU = 4G.
+  const technologyWiseAvb = useMemo(() => {
+    if (!selectedSite) return null;
+
+    const normalizeHeader = (value: any) =>
+      String(value ?? "")
+        .trim()
+        .toLowerCase()
+        .replace(/[’‘`]/g, "'")
+        .replace(/[^a-z0-9]+/g, "");
+
+    const parseTechValue = (value: any) => {
+      if (value === null || value === undefined || value === "") return 0;
+      const n = Number.parseFloat(String(value).replace(/%/g, "").replace(/,/g, "").trim());
+      return Number.isFinite(n) && n > 0 ? n : 0;
+    };
+
+    const selectedId = String(selectedSite.siteName ?? "").trim().toLowerCase();
+    const rows = (rawData?.rows || []) as Record<string, any>[];
+
+    const row = rows.find((r) => {
+      for (const [key, value] of Object.entries(r)) {
+        const nk = normalizeHeader(key);
+        if (["siteid", "site", "sitecode", "sitename"].includes(nk)) {
+          if (String(value ?? "").trim().toLowerCase() === selectedId) return true;
+        }
+      }
+      return false;
+    });
+
+    const findByHeader = (patterns: RegExp[]) => {
+      if (!row) return 0;
+      for (const [key, value] of Object.entries(row)) {
+        const nk = normalizeHeader(key);
+        if (patterns.some((p) => p.test(nk))) return parseTechValue(value);
+      }
+      return 0;
+    };
+
+    // Prefer the exact September-2026 Sheet1 headers. Fall back to normalized SiteData fields
+    // only when the raw Sheet1 value is unavailable.
+    const g2 = findByHeader([/^sep26tch$/, /^september26tch$/, /sep26.*tch/]) || Number(selectedSite.ca2G || 0);
+    const g3 = findByHeader([/^sep26cellu$/, /^september26cellu$/, /sep26.*cellu/]) || Number(selectedSite.ca3G || 0);
+    const g4 = findByHeader([/^sep26celleu$/, /^september26celleu$/, /sep26.*celleu/]) || Number(selectedSite.ca4G || 0);
+
+    const makeGap = (aLabel: string, a: number, bLabel: string, b: number) => {
+      if (!(a > 0) || !(b > 0)) return { pair: `${aLabel}–${bLabel}`, gap: 0, lower: "—", available: false };
+      return {
+        pair: `${aLabel}–${bLabel}`,
+        gap: Math.abs(a - b),
+        lower: a === b ? "Equal" : a < b ? aLabel : bLabel,
+        available: true,
+      };
+    };
+
+    return {
+      month: "Sep'26",
+      g2,
+      g3,
+      g4,
+      gaps: [
+        makeGap("2G", g2, "3G", g3),
+        makeGap("2G", g2, "4G", g4),
+        makeGap("3G", g3, "4G", g4),
+      ],
+    };
+  }, [selectedSite, rawData]);
+
+  function TechnologyWiseSection({ data }: { data: NonNullable<typeof technologyWiseAvb> }) {
+    const techCards = [
+      { tech: "2G", source: "TCH", value: data.g2 },
+      { tech: "3G", source: "Cell_U", value: data.g3 },
+      { tech: "4G", source: "Cell_EU", value: data.g4 },
+    ];
+
+    return (
+      <div className="bg-slate-800 border border-slate-700 rounded-xl p-5">
+        <div className="flex items-start justify-between gap-3 flex-wrap mb-4">
+          <div>
+            <h3 className="text-white font-semibold text-sm">Technology-wise Cell AVB — {data.month}</h3>
+            <p className="text-xs text-slate-500 mt-1">Source: Sheet1 · TCH = 2G · Cell_U = 3G · Cell_EU = 4G</p>
+          </div>
+          <span className="text-[10px] px-2 py-1 rounded bg-cyan-500/10 text-cyan-300 border border-cyan-500/20">Telco Diagnostic View</span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+          {techCards.map((item) => (
+            <div key={item.tech} className="bg-slate-900/55 rounded-lg p-4 border border-slate-700/60">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs text-slate-400 font-medium">{item.tech} Cell AVB</span>
+                <span className="text-[10px] text-slate-500">{item.source}</span>
+              </div>
+              <div className={`text-2xl font-bold ${item.value > 0 ? item.value >= 95 ? "text-emerald-400" : "text-red-400" : "text-slate-600"}`}>
+                {item.value > 0 ? `${item.value.toFixed(2)}%` : "—"}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="overflow-x-auto rounded-lg border border-slate-700/70">
+          <table className="w-full text-sm">
+            <thead className="bg-slate-900/70">
+              <tr>
+                <th className="text-left px-4 py-2.5 text-xs text-slate-400 font-medium">Technology Comparison</th>
+                <th className="text-center px-4 py-2.5 text-xs text-slate-400 font-medium">AVB Difference</th>
+                <th className="text-center px-4 py-2.5 text-xs text-slate-400 font-medium">Lower Technology</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.gaps.map((g) => (
+                <tr key={g.pair} className="border-t border-slate-700/60">
+                  <td className="px-4 py-3 text-slate-200 font-medium">{g.pair}</td>
+                  <td className="px-4 py-3 text-center font-bold text-amber-300">{g.available ? `${g.gap.toFixed(2)} pp` : "—"}</td>
+                  <td className="px-4 py-3 text-center">
+                    <span className={`text-xs px-2 py-1 rounded ${g.lower === "Equal" ? "bg-emerald-500/10 text-emerald-400" : g.available ? "bg-red-500/10 text-red-300" : "text-slate-600"}`}>
+                      {g.lower}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p className="text-[11px] text-slate-500 mt-3">Difference is shown in percentage points (pp). A comparatively lower RAT can be used as a quick indicator for technology-specific investigation.</p>
+      </div>
+    );
+  }
 
   // Cell Avb history (September workbook) — Year 2026 only.
   // Supports both common sheet layouts:
@@ -1474,12 +1938,12 @@ function SiteQuery({ sites, historyData = null }: { sites: SiteData[]; historyDa
     [year26History]
   );
 
-  function Year26HistoryChart({ data, siteName }: { data: { date: string; timestamp: number; ca: number }[]; siteName: string }) {
+  function Year26HistoryTable({ data, siteName }: { data: { date: string; timestamp: number; ca: number }[]; siteName: string }) {
     if (!data.length) {
       return (
         <div className="bg-slate-800 border border-slate-700 rounded-xl p-5">
           <h3 className="text-white font-semibold text-sm mb-2">{siteName} — Year 2026 Cell AVB History</h3>
-          <div className="flex items-center justify-center h-52 text-slate-500 text-sm">
+          <div className="flex items-center justify-center h-32 text-slate-500 text-sm">
             No Year 2026 Cell AVB history available for this site
           </div>
         </div>
@@ -1491,18 +1955,24 @@ function SiteQuery({ sites, historyData = null }: { sites: SiteData[]; historyDa
     const max = Math.max(...data.map(d => d.ca));
     const latest = data[data.length - 1];
 
-    const shortLabel = (label: string) => {
-      const d = new Date(data.find(x => x.date === label)?.timestamp ?? label);
-      if (Number.isNaN(d.getTime())) return label;
-      return `${d.getDate()} ${d.toLocaleString("default", { month: "short" })}`;
+    const monthLabel = (item: { date: string; timestamp: number }) => {
+      const d = new Date(item.timestamp);
+      if (Number.isNaN(d.getTime())) return item.date;
+      return `${d.toLocaleString("default", { month: "short" })}-${String(d.getFullYear()).slice(-2)}`;
     };
+
+    const tableRows = data.map((item, index) => {
+      const previous = index > 0 ? data[index - 1].ca : null;
+      const change = previous !== null ? item.ca - previous : null;
+      return { ...item, label: monthLabel(item), change };
+    });
 
     return (
       <div className="bg-slate-800 border border-slate-700 rounded-xl p-5">
         <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
           <div>
             <h3 className="text-white font-semibold text-sm">{siteName} — Year 2026 Cell AVB History</h3>
-            <p className="text-xs text-slate-500 mt-1">Source: September → Cell Avb history</p>
+            <p className="text-xs text-slate-500 mt-1">Source: September → Cell Avb history · Table view</p>
           </div>
           {historyExport.length > 0 && (
             <ExportButton
@@ -1514,42 +1984,7 @@ function SiteQuery({ sites, historyData = null }: { sites: SiteData[]; historyDa
           )}
         </div>
 
-        <ResponsiveContainer width="100%" height={300}>
-          <ComposedChart data={data}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-            <XAxis
-              dataKey="date"
-              stroke="#64748b"
-              fontSize={10}
-              tick={{ fill: "#64748b" }}
-              tickFormatter={shortLabel}
-              interval={Math.max(0, Math.floor(data.length / 14))}
-            />
-            <YAxis
-              domain={[0, 100]}
-              stroke="#06b6d4"
-              fontSize={10}
-              tick={{ fill: "#06b6d4" }}
-              label={{ value: "Cell AVB %", angle: -90, position: "insideLeft", fill: "#06b6d4", fontSize: 10 }}
-            />
-            <Tooltip
-              contentStyle={{ backgroundColor: "#1e293b", border: "1px solid #334155", borderRadius: "8px" }}
-              labelStyle={{ color: "#f1f5f9" }}
-              formatter={(value: any) => [`${Number(value).toFixed(2)}%`, "Cell AVB"]}
-            />
-            <Line
-              type="monotone"
-              dataKey="ca"
-              name="Cell AVB"
-              stroke="#06b6d4"
-              strokeWidth={2.5}
-              dot={{ fill: "#06b6d4", r: 2.5 }}
-              activeDot={{ r: 5 }}
-            />
-          </ComposedChart>
-        </ResponsiveContainer>
-
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
           <div className="bg-slate-900/50 rounded-lg p-2.5 border border-slate-700/50">
             <p className="text-[10px] text-slate-500 uppercase tracking-wide">2026 Avg</p>
             <p className="text-sm font-bold text-cyan-300">{avg.toFixed(2)}%</p>
@@ -1563,9 +1998,40 @@ function SiteQuery({ sites, historyData = null }: { sites: SiteData[]; historyDa
             <p className="text-sm font-bold text-emerald-400">{max.toFixed(2)}%</p>
           </div>
           <div className="bg-slate-900/50 rounded-lg p-2.5 border border-slate-700/50">
-            <p className="text-[10px] text-slate-500 uppercase tracking-wide">Latest ({latest.date})</p>
+            <p className="text-[10px] text-slate-500 uppercase tracking-wide">Latest ({monthLabel(latest)})</p>
             <p className={`text-sm font-bold ${latest.ca >= 95 ? "text-emerald-400" : "text-red-400"}`}>{latest.ca.toFixed(2)}%</p>
           </div>
+        </div>
+
+        <div className="overflow-x-auto rounded-lg border border-slate-700/70">
+          <table className="w-full text-sm">
+            <thead className="bg-slate-900/70">
+              <tr>
+                <th className="text-left px-4 py-2.5 text-xs text-slate-400 font-medium">Month</th>
+                <th className="text-center px-4 py-2.5 text-xs text-slate-400 font-medium">Cell AVB</th>
+                <th className="text-center px-4 py-2.5 text-xs text-slate-400 font-medium">Vs Previous Month</th>
+              </tr>
+            </thead>
+            <tbody>
+              {tableRows.map((row, index) => (
+                <tr key={`${row.timestamp}-${index}`} className="border-t border-slate-700/60 hover:bg-slate-700/20">
+                  <td className="px-4 py-3 text-slate-200 font-medium">{row.label}</td>
+                  <td className="px-4 py-3 text-center">
+                    <span className={`font-bold ${row.ca >= 95 ? "text-emerald-400" : "text-red-400"}`}>{row.ca.toFixed(2)}%</span>
+                  </td>
+                  <td className="px-4 py-3 text-center">
+                    {row.change === null ? (
+                      <span className="text-slate-600">—</span>
+                    ) : (
+                      <span className={`font-medium ${row.change > 0 ? "text-emerald-400" : row.change < 0 ? "text-red-400" : "text-slate-400"}`}>
+                        {row.change > 0 ? "+" : ""}{row.change.toFixed(2)} pp
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </div>
     );
@@ -1907,7 +2373,8 @@ function SiteQuery({ sites, historyData = null }: { sites: SiteData[]; historyDa
             )}
           </div>
           <ComboChart data={chartData} title={`${selectedSite.siteName} - Daily CA & Load Shedding Trend`} />
-          {historyData && <Year26HistoryChart data={year26History} siteName={selectedSite.siteName} />}
+          {technologyWiseAvb && <TechnologyWiseSection data={technologyWiseAvb} />}
+          {historyData && <Year26HistoryTable data={year26History} siteName={selectedSite.siteName} />}
         </motion.div>
       )}
 
@@ -4473,7 +4940,11 @@ export default function App() {
           </div>
         </div>
         <nav className="flex-1 overflow-y-auto p-3 space-y-1">
-          {NAV_ITEMS.filter((item) => item.id !== "5g" || selectedMonth === "august" || selectedMonth === "september").map((item) => {
+          {NAV_ITEMS.filter((item) => {
+            if (item.id === "5g") return selectedMonth === "august" || selectedMonth === "september";
+            if (item.id === "recurring") return selectedMonth === "september";
+            return true;
+          }).map((item) => {
             const Icon = item.icon;
             const isActive = activeTab === item.id;
             return (
@@ -4518,6 +4989,7 @@ export default function App() {
               <motion.div key={activeTab + selectedMonth} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.2 }} className="space-y-6">
                 {activeTab === "overall" && <OverallSummaryWithExport sites={sites} rawData={monthData} />}
                 {activeTab === "grid-performance" && <GridPerformanceScorecard rawData={monthData} lastUpdatedDate={monthLastUpdated} />}
+                {activeTab === "recurring" && <RecurringSitesPage sites={sites} historyData={monthCellAvbHistory} />}
                 {activeTab === "employees" && <><SectionBanner icon={<Users className="w-6 h-6 text-indigo-400" />} title="Employee Performance Analysis" subtitle={`${sites.filter((s) => s.currentAvb > 0).length} active sites`} gradient="from-indigo-500/10 to-purple-500/10 border-indigo-500/20" /><EmployeePerformance sites={sites} /></>}
                 {activeTab === "platinum-plus" && <CategoryPage sites={sites} title="Platinum+ Sites" description={`${platinumPlusRows.length} sites in the Platinum+ category`} threshold={98.5} filterFn={(s) => s.revenueCategory === "Platinum +"} lastUpdatedDate={monthLastUpdated} lastColumnIndex={monthLastColumnIndex} />}
                 {activeTab === "pgs" && <CategoryPage sites={sites} title="PGS Sites" description={`${pgsRows.length} high-priority revenue sites`} threshold={98.1} filterFn={(s) => PGS_GROUP.includes(s.revenueCategory)} lastUpdatedDate={monthLastUpdated} lastColumnIndex={monthLastColumnIndex} />}
@@ -4530,7 +5002,7 @@ export default function App() {
                 {activeTab === "agm" && <CategoryPage sites={sites} title="AGM Battery Backup Sites" description={`${agmRows.length} sites with AGM battery banks`} threshold={95} filterFn={(s) => hasAGM(s)} lastUpdatedDate={monthLastUpdated} lastColumnIndex={monthLastColumnIndex} />}
                 {activeTab === "rca" && <RcaSummary rcaData={rcaData} />}
                 {activeTab === "hardware" && hardwareData && <HardwareIssues data={hardwareData} />}
-                {activeTab === "query" && <SiteQuery sites={sites} historyData={selectedMonth === "september" ? monthCellAvbHistory : null} />}
+                {activeTab === "query" && <SiteQuery sites={sites} rawData={monthData} historyData={selectedMonth === "september" ? monthCellAvbHistory : null} />}
                 {activeTab === "weather" && <WeatherRadar />}
               </motion.div>
             </AnimatePresence>
@@ -4546,5 +5018,4 @@ export default function App() {
     </div>
   );
 }
-
 
