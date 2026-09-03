@@ -1392,24 +1392,41 @@ function SiteQuery({ sites, historyData = null }: { sites: SiteData[]; historyDa
 
     const parseHistoryDate = (raw: any): Date | null => {
       if (raw === null || raw === undefined) return null;
-      const text = String(raw).trim();
-      if (!text) return null;
+      const original = String(raw).trim();
+      if (!original) return null;
+
+      // The actual "Cell Avb history" headers are month labels such as:
+      // Jan'26 Cell_A, FEB'26 Cell_A, MAR'26 Cell_A, APRIL'26 Cell_A, etc.
+      // Strip the KPI suffix first, then parse the remaining month/date label.
+      const text = original
+        .replace(/\s+(?:cell[_\s-]*a(?:vb)?|cell\s+availability|avb)(?:\s*%?)?.*$/i, "")
+        .trim();
 
       const monthMap: Record<string, number> = {
-        jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
-        jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11,
+        jan: 0, january: 0,
+        feb: 1, february: 1,
+        mar: 2, march: 2,
+        apr: 3, april: 3,
+        may: 4,
+        jun: 5, june: 5,
+        jul: 6, july: 6,
+        aug: 7, august: 7,
+        sep: 8, sept: 8, september: 8,
+        oct: 9, october: 9,
+        nov: 10, november: 10,
+        dec: 11, december: 11,
       };
 
-      // Daily headers: 1-Sep-26 / 01-Sep-2026
-      let m = text.match(/^(\d{1,2})[-\/\s]([A-Za-z]{3})[-\/\s](\d{2}|\d{4})$/);
+      // Daily headers: 1-Sep-26 / 01-September-2026
+      let m = text.match(/^(\d{1,2})[-\/\s]([A-Za-z]{3,9})[-\/\s']?(\d{2}|\d{4})$/i);
       if (m) {
         const month = monthMap[m[2].toLowerCase()];
         const year = Number(m[3].length === 2 ? `20${m[3]}` : m[3]);
         if (month !== undefined) return new Date(year, month, Number(m[1]));
       }
 
-      // Monthly headers: Sep-26 / Sep 2026 / Sep'26
-      m = text.match(/^([A-Za-z]{3})[-\/\s']?(\d{2}|\d{4})$/);
+      // Monthly headers: Jan'26 / FEB'26 / APRIL'26 / Sep-26 / September 2026
+      m = text.match(/^([A-Za-z]{3,9})\s*[-\/\s']?\s*(\d{2}|\d{4})$/i);
       if (m) {
         const month = monthMap[m[1].toLowerCase()];
         const year = Number(m[2].length === 2 ? `20${m[2]}` : m[2]);
