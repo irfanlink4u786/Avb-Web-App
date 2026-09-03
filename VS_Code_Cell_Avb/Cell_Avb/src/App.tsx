@@ -747,45 +747,60 @@ function CategoryPage({
     return "th";
   };
 
+  // Latest 3 ACTUAL daily CA dates for the selected month.
+  // IMPORTANT: Google Sheets may already contain future date headers (for example
+  // 29-Sep, 30-Sep, 1-Oct). Never use those headers just because they exist.
+  // Only dates <= Updated Date, in the SAME month/year, and actually populated
+  // in at least one site's dailyData are eligible.
   const lastThreeDays = useMemo(() => {
-    if (!lastUpdatedDate) return [];
-    const parts = lastUpdatedDate.split("-");
-    if (parts.length !== 3) return [];
-    const day = parseInt(parts[0], 10);
-    const monthStr = parts[1];
-    const year = parseInt(parts[2], 10) + 2000;
+    const available = new Set<string>();
+
+    const cutoffKey = normalizeDailyDateKey(lastUpdatedDate || "");
+    const cutoffParts = cutoffKey?.split("-") || [];
+    const cutoffMonth = cutoffParts[1] || "";
+    const cutoffYear = cutoffParts[2] || "";
+
     const monthMap: Record<string, number> = {
-      Jan: 0,
-      Feb: 1,
-      Mar: 2,
-      Apr: 3,
-      May: 4,
-      Jun: 5,
-      Jul: 6,
-      Aug: 7,
-      Sep: 8,
-      Oct: 9,
-      Nov: 10,
-      Dec: 11,
+      Jan: 0, Feb: 1, Mar: 2, Apr: 3, May: 4, Jun: 5,
+      Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11,
     };
-    const month = monthMap[monthStr];
-    if (month === undefined) return [];
-    const baseDate = new Date(year, month, day);
-    if (isNaN(baseDate.getTime())) return [];
 
-    const dates: Date[] = [];
-    for (let i = 2; i >= 0; i--) {
-      const d = new Date(baseDate);
-      d.setDate(d.getDate() - i);
-      dates.push(d);
-    }
+    const toTime = (key: string): number => {
+      const [dayStr, monthStr, yearStr] = key.split("-");
+      const month = monthMap[monthStr];
+      if (month === undefined) return Number.NaN;
+      return new Date(2000 + parseInt(yearStr, 10), month, parseInt(dayStr, 10)).getTime();
+    };
 
-    return dates.map((d) => {
-      const dateKey = formatDateKey(d);
-      const label = `${d.getDate()}${getDaySuffix(d.getDate())} ${d.toLocaleString("default", { month: "long" })}`;
-      return { dateKey, label };
+    const cutoffTime = cutoffKey ? toTime(cutoffKey) : Number.POSITIVE_INFINITY;
+
+    filteredSites.forEach((site) => {
+      Object.entries(site.dailyData || {}).forEach(([key, value]) => {
+        const normalized = normalizeDailyDateKey(key);
+        if (!normalized || !Number.isFinite(value)) return;
+
+        const [, monthStr, yearStr] = normalized.split("-");
+        if (cutoffKey && (monthStr !== cutoffMonth || yearStr !== cutoffYear)) return;
+        if (toTime(normalized) > cutoffTime) return;
+
+        available.add(normalized);
+      });
     });
-  }, [lastUpdatedDate]);
+
+    const monthLong: Record<string, string> = {
+      Jan: "January", Feb: "February", Mar: "March", Apr: "April", May: "May", Jun: "June",
+      Jul: "July", Aug: "August", Sep: "September", Oct: "October", Nov: "November", Dec: "December",
+    };
+
+    return Array.from(available)
+      .sort((a, b) => toTime(a) - toTime(b))
+      .slice(-3)
+      .map((dateKey) => {
+        const [dayStr, monthStr] = dateKey.split("-");
+        const day = parseInt(dayStr, 10);
+        return { dateKey, label: `${day}${getDaySuffix(day)} ${monthLong[monthStr] || monthStr}` };
+      });
+  }, [filteredSites, lastUpdatedDate]);
 
   const worstSites = useMemo(() => {
     const sorted = [...employeeFilteredSites].sort((a, b) => a.currentAvb - b.currentAvb);
@@ -1239,11 +1254,14 @@ function CategoryPage({
                             <table className="w-full text-xs">
                               <thead>
                                 <tr className="border-b border-slate-700">
-                                  {["Site ID", "Category", "CA%", "DG", "Li-ion"].map((h, i) => (
-                                    <th key={h} className={`${i === 0 ? "text-left" : i === 2 ? "text-center" : "text-left"} py-2 px-2 text-slate-500`}>
-                                      {h}
-                                    </th>
+                                  <th className="text-left py-2 px-2 text-slate-500">Site ID</th>
+                                  <th className="text-left py-2 px-2 text-slate-500">Category</th>
+                                  <th className="text-center py-2 px-2 text-slate-500">Monthly CA%</th>
+                                  {lastThreeDays.map(({ label }) => (
+                                    <th key={label} className="text-center py-2 px-2 text-slate-500">{label}</th>
                                   ))}
+                                  <th className="text-left py-2 px-2 text-slate-500">DG</th>
+                                  <th className="text-left py-2 px-2 text-slate-500">Li-ion</th>
                                 </tr>
                               </thead>
                               <tbody>
@@ -1257,6 +1275,14 @@ function CategoryPage({
                                       <td className={`py-1.5 px-2 text-center font-medium ${s.currentAvb < threshold ? "text-red-400" : "text-emerald-400"}`}>
                                         {s.currentAvb > 0 ? `${s.currentAvb.toFixed(2)}%` : "-"}
                                       </td>
+                                      {lastThreeDays.map(({ dateKey }) => {
+                                        const value = s.dailyData?.[dateKey];
+                                        return (
+                                          <td key={`${s.siteName}-${dateKey}`} className={`py-1.5 px-2 text-center font-medium ${value != null && value > 0 && value < threshold ? "text-red-400" : value != null && value > 0 ? "text-slate-200" : "text-slate-600"}`}>
+                                            {value != null && value > 0 ? `${value.toFixed(2)}%` : "—"}
+                                          </td>
+                                        );
+                                      })}
                                       <td className="py-1.5 px-2 text-slate-400">{s.dgInstalled}</td>
                                       <td className="py-1.5 px-2 text-slate-400">{s.liIonInstalled}</td>
                                     </tr>
@@ -1282,7 +1308,7 @@ function CategoryPage({
 //  SITE QUERY (unchanged)
 // ============================================================
 
-function SiteQuery({ sites }: { sites: SiteData[] }) {
+function SiteQuery({ sites, historyData = null }: { sites: SiteData[]; historyData?: SheetPayload | null }) {
   const [search, setSearch] = useState("");
   const [selectedSite, setSelectedSite] = useState<SiteData | null>(null);
 
@@ -1338,6 +1364,195 @@ function SiteQuery({ sites }: { sites: SiteData[] }) {
       "Load Shedding (hrs)": ls[d] !== undefined ? ls[d].toFixed(2) : "",
     }));
   }, [selectedSite]);
+
+  // Cell Avb history (September workbook) — Year 2026 only.
+  // Supports both common sheet layouts:
+  // 1) Wide: one row per site with date/month columns (e.g. 1-Jan-26, Jan-26).
+  // 2) Long: Site ID + Date + Cell AVB columns.
+  const year26History = useMemo(() => {
+    if (!selectedSite || !historyData?.rows?.length) return [] as { date: string; timestamp: number; ca: number }[];
+
+    const normalizeKey = (v: any) => String(v ?? "").trim().toLowerCase().replace(/[_\s]+/g, " ");
+    const siteId = String(selectedSite.siteName ?? "").trim().toLowerCase();
+
+    const getValue = (row: Record<string, any>, aliases: string[]) => {
+      const wanted = new Set(aliases.map(normalizeKey));
+      for (const [key, value] of Object.entries(row)) {
+        if (wanted.has(normalizeKey(key))) return value;
+      }
+      return undefined;
+    };
+
+    const parseCa = (value: any) => {
+      if (value === null || value === undefined || value === "") return 0;
+      const cleaned = String(value).replace(/%/g, "").replace(/,/g, "").trim();
+      const n = Number.parseFloat(cleaned);
+      return Number.isFinite(n) && n > 0 ? n : 0;
+    };
+
+    const parseHistoryDate = (raw: any): Date | null => {
+      if (raw === null || raw === undefined) return null;
+      const text = String(raw).trim();
+      if (!text) return null;
+
+      const monthMap: Record<string, number> = {
+        jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
+        jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11,
+      };
+
+      // Daily headers: 1-Sep-26 / 01-Sep-2026
+      let m = text.match(/^(\d{1,2})[-\/\s]([A-Za-z]{3})[-\/\s](\d{2}|\d{4})$/);
+      if (m) {
+        const month = monthMap[m[2].toLowerCase()];
+        const year = Number(m[3].length === 2 ? `20${m[3]}` : m[3]);
+        if (month !== undefined) return new Date(year, month, Number(m[1]));
+      }
+
+      // Monthly headers: Sep-26 / Sep 2026 / Sep'26
+      m = text.match(/^([A-Za-z]{3})[-\/\s']?(\d{2}|\d{4})$/);
+      if (m) {
+        const month = monthMap[m[1].toLowerCase()];
+        const year = Number(m[2].length === 2 ? `20${m[2]}` : m[2]);
+        if (month !== undefined) return new Date(year, month, 1);
+      }
+
+      // ISO / browser-parseable date fallback.
+      const parsed = new Date(text);
+      return Number.isNaN(parsed.getTime()) ? null : parsed;
+    };
+
+    const result = new Map<number, { date: string; timestamp: number; ca: number }>();
+    const rows = historyData.rows as Record<string, any>[];
+
+    for (const row of rows) {
+      const rowSite = getValue(row, ["Site ID", "SiteID", "Site Id", "Site", "Site Code", "Site Name"]);
+      if (String(rowSite ?? "").trim().toLowerCase() !== siteId) continue;
+
+      // Long-format row first.
+      const dateValue = getValue(row, ["Date", "AVB Date", "Cell AVB Date", "Report Date", "Day", "Month"]);
+      const caValue = getValue(row, ["Cell Avb", "Cell AVB", "Cell AVB %", "AVB", "AVB %", "Cell Availability", "Cell Availability %"]);
+      const rowDate = parseHistoryDate(dateValue);
+      const rowCa = parseCa(caValue);
+      if (rowDate && rowDate.getFullYear() === 2026 && rowCa > 0) {
+        const ts = rowDate.getTime();
+        result.set(ts, { date: String(dateValue).trim(), timestamp: ts, ca: rowCa });
+      }
+
+      // Wide-format date/month columns.
+      for (const [key, value] of Object.entries(row)) {
+        const d = parseHistoryDate(key);
+        if (!d || d.getFullYear() !== 2026) continue;
+        const ca = parseCa(value);
+        if (ca <= 0) continue;
+        const ts = d.getTime();
+        result.set(ts, { date: key.trim(), timestamp: ts, ca });
+      }
+    }
+
+    return Array.from(result.values()).sort((a, b) => a.timestamp - b.timestamp);
+  }, [selectedSite, historyData]);
+
+  const historyExport = useMemo(() =>
+    year26History.map((d) => ({ Date: d.date, "Cell AVB %": d.ca.toFixed(2) })),
+    [year26History]
+  );
+
+  function Year26HistoryChart({ data, siteName }: { data: { date: string; timestamp: number; ca: number }[]; siteName: string }) {
+    if (!data.length) {
+      return (
+        <div className="bg-slate-800 border border-slate-700 rounded-xl p-5">
+          <h3 className="text-white font-semibold text-sm mb-2">{siteName} — Year 2026 Cell AVB History</h3>
+          <div className="flex items-center justify-center h-52 text-slate-500 text-sm">
+            No Year 2026 Cell AVB history available for this site
+          </div>
+        </div>
+      );
+    }
+
+    const avg = data.reduce((sum, d) => sum + d.ca, 0) / data.length;
+    const min = Math.min(...data.map(d => d.ca));
+    const max = Math.max(...data.map(d => d.ca));
+    const latest = data[data.length - 1];
+
+    const shortLabel = (label: string) => {
+      const d = new Date(data.find(x => x.date === label)?.timestamp ?? label);
+      if (Number.isNaN(d.getTime())) return label;
+      return `${d.getDate()} ${d.toLocaleString("default", { month: "short" })}`;
+    };
+
+    return (
+      <div className="bg-slate-800 border border-slate-700 rounded-xl p-5">
+        <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+          <div>
+            <h3 className="text-white font-semibold text-sm">{siteName} — Year 2026 Cell AVB History</h3>
+            <p className="text-xs text-slate-500 mt-1">Source: September → Cell Avb history</p>
+          </div>
+          {historyExport.length > 0 && (
+            <ExportButton
+              data={historyExport}
+              filename={`site_${siteName}_2026_cell_avb_history`}
+              sheetName="2026 Cell AVB History"
+              label="Export 2026 History"
+            />
+          )}
+        </div>
+
+        <ResponsiveContainer width="100%" height={300}>
+          <ComposedChart data={data}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+            <XAxis
+              dataKey="date"
+              stroke="#64748b"
+              fontSize={10}
+              tick={{ fill: "#64748b" }}
+              tickFormatter={shortLabel}
+              interval={Math.max(0, Math.floor(data.length / 14))}
+            />
+            <YAxis
+              domain={[0, 100]}
+              stroke="#06b6d4"
+              fontSize={10}
+              tick={{ fill: "#06b6d4" }}
+              label={{ value: "Cell AVB %", angle: -90, position: "insideLeft", fill: "#06b6d4", fontSize: 10 }}
+            />
+            <Tooltip
+              contentStyle={{ backgroundColor: "#1e293b", border: "1px solid #334155", borderRadius: "8px" }}
+              labelStyle={{ color: "#f1f5f9" }}
+              formatter={(value: any) => [`${Number(value).toFixed(2)}%`, "Cell AVB"]}
+            />
+            <Line
+              type="monotone"
+              dataKey="ca"
+              name="Cell AVB"
+              stroke="#06b6d4"
+              strokeWidth={2.5}
+              dot={{ fill: "#06b6d4", r: 2.5 }}
+              activeDot={{ r: 5 }}
+            />
+          </ComposedChart>
+        </ResponsiveContainer>
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4">
+          <div className="bg-slate-900/50 rounded-lg p-2.5 border border-slate-700/50">
+            <p className="text-[10px] text-slate-500 uppercase tracking-wide">2026 Avg</p>
+            <p className="text-sm font-bold text-cyan-300">{avg.toFixed(2)}%</p>
+          </div>
+          <div className="bg-slate-900/50 rounded-lg p-2.5 border border-slate-700/50">
+            <p className="text-[10px] text-slate-500 uppercase tracking-wide">Minimum</p>
+            <p className="text-sm font-bold text-red-400">{min.toFixed(2)}%</p>
+          </div>
+          <div className="bg-slate-900/50 rounded-lg p-2.5 border border-slate-700/50">
+            <p className="text-[10px] text-slate-500 uppercase tracking-wide">Maximum</p>
+            <p className="text-sm font-bold text-emerald-400">{max.toFixed(2)}%</p>
+          </div>
+          <div className="bg-slate-900/50 rounded-lg p-2.5 border border-slate-700/50">
+            <p className="text-[10px] text-slate-500 uppercase tracking-wide">Latest ({latest.date})</p>
+            <p className={`text-sm font-bold ${latest.ca >= 95 ? "text-emerald-400" : "text-red-400"}`}>{latest.ca.toFixed(2)}%</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   function ComboChart({ data, title }: { data: any[]; title: string }) {
     if (!data || data.length === 0) {
@@ -1675,6 +1890,7 @@ function SiteQuery({ sites }: { sites: SiteData[] }) {
             )}
           </div>
           <ComboChart data={chartData} title={`${selectedSite.siteName} - Daily CA & Load Shedding Trend`} />
+          {historyData && <Year26HistoryChart data={year26History} siteName={selectedSite.siteName} />}
         </motion.div>
       )}
 
@@ -2113,47 +2329,55 @@ function GridPerformanceScorecard({
   const [employeeLevel, setEmployeeLevel] = useState<"zoneLead" | "msGtl" | "clusterOwner">("zoneLead");
   const [selectedEmployee, setSelectedEmployee] = useState<string>("all");
 
-  // Use the exact same latest-3-days logic as the other monthly tabs.
-  // Example: Report Updated = 25-Aug-26 => 23-Aug-26, 24-Aug-26, 25-Aug-26.
+  // Latest 3 ACTUAL daily CA headers from the active Google Sheet.
+  // Do not select pre-created/future headers. A date is eligible only when:
+  // 1) it belongs to the same month/year as Updated Date,
+  // 2) it is <= Updated Date, and
+  // 3) at least one row contains a real value in that column.
+  // Example on 2-Sep-26: only 1-Sep-26 and 2-Sep-26 are shown.
   const latestDateHeaders = useMemo(() => {
-    if (!lastUpdatedDate) return [] as string[];
-
-    const parts = lastUpdatedDate.split("-");
-    if (parts.length !== 3) return [] as string[];
-
-    const day = parseInt(parts[0], 10);
-    const monthStr = parts[1];
-    let year = parseInt(parts[2], 10);
-    if (year < 100) year += 2000;
-
     const monthMap: Record<string, number> = {
       Jan: 0, Feb: 1, Mar: 2, Apr: 3, May: 4, Jun: 5,
       Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11,
     };
-    const month = monthMap[monthStr];
-    if (month === undefined) return [] as string[];
 
-    const baseDate = new Date(year, month, day);
-    if (Number.isNaN(baseDate.getTime())) return [] as string[];
+    const toTime = (key: string): number => {
+      const [dayStr, monthStr, yearStr] = key.split("-");
+      const month = monthMap[monthStr];
+      if (month === undefined) return Number.NaN;
+      return new Date(2000 + parseInt(yearStr, 10), month, parseInt(dayStr, 10)).getTime();
+    };
 
-    const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-    const formatDateKey = (date: Date) =>
-      `${date.getDate()}-${monthNames[date.getMonth()]}-${String(date.getFullYear()).slice(-2)}`;
+    const cutoffKey = normalizeDailyDateKey(lastUpdatedDate || "");
+    const cutoffParts = cutoffKey?.split("-") || [];
+    const cutoffMonth = cutoffParts[1] || "";
+    const cutoffYear = cutoffParts[2] || "";
+    const cutoffTime = cutoffKey ? toTime(cutoffKey) : Number.POSITIVE_INFINITY;
 
-    const expectedHeaders: string[] = [];
-    for (let i = 2; i >= 0; i--) {
-      const d = new Date(baseDate);
-      d.setDate(d.getDate() - i);
-      expectedHeaders.push(formatDateKey(d));
-    }
+    const headers = (rawData?.headers || [])
+      .map((header: string) => ({ raw: header, normalized: normalizeDailyDateKey(header) }))
+      .filter((item): item is { raw: string; normalized: string } => Boolean(item.normalized))
+      .filter((item) => {
+        const [, monthStr, yearStr] = item.normalized.split("-");
 
-    // Resolve against actual Google Sheet headers case-insensitively so the
-    // displayed columns use the sheet's exact header text.
-    const headerMap = new Map(
-      (rawData?.headers || []).map((header: string) => [header.trim().toLowerCase(), header])
-    );
+        if (cutoffKey && (monthStr !== cutoffMonth || yearStr !== cutoffYear)) return false;
+        if (toTime(item.normalized) > cutoffTime) return false;
 
-    return expectedHeaders.map((header) => headerMap.get(header.toLowerCase()) || header);
+        // Header existence alone is NOT enough. Future columns can already exist.
+        // Require at least one non-empty numeric CA value in the actual rows.
+        return (rawData?.rows || []).some((row: Record<string, any>) => {
+          const rawValue = getRawValue(row, item.raw);
+          if (rawValue === null || rawValue === undefined || String(rawValue).trim() === "") return false;
+          const cleaned = String(rawValue).replace(/%/g, "").replace(/,/g, "").trim();
+          const numeric = Number.parseFloat(cleaned);
+          return Number.isFinite(numeric);
+        });
+      });
+
+    return headers
+      .sort((a, b) => toTime(a.normalized) - toTime(b.normalized))
+      .slice(-3)
+      .map((item) => item.raw);
   }, [rawData, lastUpdatedDate]);
 
   const sourceSites = useMemo<GridPerformanceSite[]>(() => {
@@ -2267,6 +2491,24 @@ function GridPerformanceScorecard({
       };
     });
   }, [filteredSourceSites]);
+
+  // Latest-day overall AVB averages by Grid for immediate visibility in the scorecard.
+  const gridDailyAverages = useMemo(() => {
+    const result = new Map<string, number[]>();
+    gridRows.forEach((row) => {
+      const gridSites = filteredSourceSites.filter((site) => site.grid === row.grid);
+      result.set(
+        row.grid,
+        latestDateHeaders.map((_, idx) => {
+          const valid = gridSites
+            .map((site) => site.latestDays[idx]?.value || 0)
+            .filter((value) => value > 0);
+          return valid.length ? valid.reduce((sum, value) => sum + value, 0) / valid.length : 0;
+        })
+      );
+    });
+    return result;
+  }, [gridRows, filteredSourceSites, latestDateHeaders]);
 
   const exportGroups = useMemo(() => {
     const makeRows = (config: GridKpiConfig, threshold: "base" | "target" | "stretch") => {
@@ -2533,6 +2775,9 @@ function GridPerformanceScorecard({
               <tr className="border-b border-slate-700 bg-slate-900/40">
                 <th className="px-3 py-3 text-left text-xs font-semibold text-slate-500">Grid</th>
                 <th className="px-3 py-3 text-left text-xs font-semibold text-slate-500">CMPAK GTL</th>
+                {latestDateHeaders.map((header) => (
+                  <th key={`grid-${header}`} className="px-3 py-3 text-center text-xs font-semibold text-slate-500">{header}</th>
+                ))}
                 <th className="px-3 py-3 text-center text-xs font-semibold text-slate-500">Platinum+</th>
                 <th className="px-3 py-3 text-center text-xs font-semibold text-slate-500">Plat+ Score</th>
                 <th className="px-3 py-3 text-center text-xs font-semibold text-slate-500">PGS</th>
@@ -2549,6 +2794,11 @@ function GridPerformanceScorecard({
                 <tr key={row.grid} className="border-b border-slate-700/60 hover:bg-slate-700/20">
                   <td className="px-3 py-3 font-bold text-cyan-300">{row.grid}</td>
                   <td className="px-3 py-3 text-slate-300">{row.cmpakGtl}</td>
+                  {(gridDailyAverages.get(row.grid) || []).map((value, idx) => (
+                    <td key={`${row.grid}-day-${idx}`} className={`px-3 py-3 text-center font-semibold ${value > 0 && value < 95 ? "text-red-400" : value > 0 ? "text-slate-200" : "text-slate-600"}`}>
+                      {value > 0 ? `${value.toFixed(2)}%` : "—"}
+                    </td>
+                  ))}
                   <td className="px-3 py-3 text-center">{kpiCell(row, row.platinum)}</td>
                   <td className="px-3 py-3 text-center"><GridScoreBadge score={row.platinum.score} max={12} /></td>
                   <td className="px-3 py-3 text-center">{kpiCell(row, row.pgs)}</td>
@@ -3671,6 +3921,7 @@ export default function App() {
   const [monthHardware, setMonthHardware] = useState<SheetPayload | null>(null);
   const [monthRca, setMonthRca] = useState<SheetPayload | null>(null);
   const [month5G, setMonth5G] = useState<SheetPayload | null>(null);
+  const [monthCellAvbHistory, setMonthCellAvbHistory] = useState<SheetPayload | null>(null);
   const [preVsPostData, setPreVsPostData] = useState<SheetPayload | null>(null);
   const [prePostSites, setPrePostSites] = useState<SiteData[]>([]);
   const [prePostLastUpdated, setPrePostLastUpdated] = useState("");
@@ -3756,6 +4007,7 @@ export default function App() {
     setMonthHardware(null);
     setMonthRca(null);
     setMonth5G(null);
+    setMonthCellAvbHistory(null);
     setMonthLastUpdated("");
     setMonthLastColumnIndex(0);
 
@@ -3776,12 +4028,15 @@ export default function App() {
 
       // Supporting tabs are optional. A missing supporting tab must NOT cause
       // the whole dashboard to fall back to old/mock data.
-      const [hwResult, dateResult, rcaResult, fiveGResult] = await Promise.allSettled([
+      const [hwResult, dateResult, rcaResult, fiveGResult, historyResult] = await Promise.allSettled([
         fetchGoogleSheet(sheetId, "Hardware issues"),
         fetchGoogleSheet(sheetId, "Updated Date"),
         fetchGoogleSheet(sheetId, "RCA of Plat +"),
         (month === "august" || month === "september")
           ? fetchGoogleSheet(sheetId, "5G")
+          : Promise.resolve(null),
+        month === "september"
+          ? fetchGoogleSheet(sheetId, "Cell Avb history")
           : Promise.resolve(null),
       ]);
 
@@ -3791,15 +4046,18 @@ export default function App() {
       const dateData = dateResult.status === "fulfilled" ? dateResult.value : null;
       const rcaSheet = rcaResult.status === "fulfilled" ? rcaResult.value : null;
       const fiveGSheet = fiveGResult.status === "fulfilled" ? fiveGResult.value : null;
+      const cellAvbHistory = historyResult.status === "fulfilled" ? historyResult.value : null;
 
       if (hwResult.status === "rejected") console.warn(`[Cell AVB] ${month}: Hardware issues tab unavailable`, hwResult.reason);
       if (dateResult.status === "rejected") console.warn(`[Cell AVB] ${month}: Updated Date tab unavailable`, dateResult.reason);
       if (rcaResult.status === "rejected") console.warn(`[Cell AVB] ${month}: RCA of Plat + tab unavailable`, rcaResult.reason);
       if (fiveGResult.status === "rejected") console.warn(`[Cell AVB] ${month}: 5G tab unavailable`, fiveGResult.reason);
+      if (historyResult.status === "rejected") console.warn(`[Cell AVB] ${month}: Cell Avb history tab unavailable`, historyResult.reason);
 
       setMonthHardware(hwData);
       setMonthRca(rcaSheet);
       setMonth5G(fiveGSheet);
+      setMonthCellAvbHistory(month === "september" ? cellAvbHistory : null);
 
       if (dateData && Array.isArray(dateData.rows) && dateData.rows.length > 0) {
         const row = dateData.rows[0];
@@ -3821,6 +4079,7 @@ export default function App() {
       setMonthHardware(null);
       setMonthRca(null);
       setMonth5G(null);
+      setMonthCellAvbHistory(null);
       setMonthLastUpdated("");
       setMonthLastColumnIndex(0);
       setUseMock(false);
@@ -3941,6 +4200,7 @@ export default function App() {
     setMonthHardware(null);
     setMonthRca(null);
     setMonth5G(null);
+    setMonthCellAvbHistory(null);
     setPreVsPostData(null);
     setPrePostSites([]);
     setAppState("dashboard");
@@ -4253,7 +4513,7 @@ export default function App() {
                 {activeTab === "agm" && <CategoryPage sites={sites} title="AGM Battery Backup Sites" description={`${agmRows.length} sites with AGM battery banks`} threshold={95} filterFn={(s) => hasAGM(s)} lastUpdatedDate={monthLastUpdated} lastColumnIndex={monthLastColumnIndex} />}
                 {activeTab === "rca" && <RcaSummary rcaData={rcaData} />}
                 {activeTab === "hardware" && hardwareData && <HardwareIssues data={hardwareData} />}
-                {activeTab === "query" && <SiteQuery sites={sites} />}
+                {activeTab === "query" && <SiteQuery sites={sites} historyData={selectedMonth === "september" ? monthCellAvbHistory : null} />}
                 {activeTab === "weather" && <WeatherRadar />}
               </motion.div>
             </AnimatePresence>
@@ -4269,4 +4529,5 @@ export default function App() {
     </div>
   );
 }
+
 
