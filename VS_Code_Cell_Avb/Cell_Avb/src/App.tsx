@@ -3487,6 +3487,9 @@ function GridPerformanceScorecard({
 // ============================================================
 
 function OverallSummaryWithExport({ sites, rawData }: { sites: SiteData[]; rawData?: SheetPayload | null }) {
+  const [targetRegion, setTargetRegion] = useState<"C-1" | "C-6" | null>(null);
+  const TARGET_CA = 99;
+
   const fullExportData = useMemo(() => {
     if (rawData && rawData.rows && rawData.rows.length > 0) {
       return rawData.rows.map((row: any) => {
@@ -3531,6 +3534,92 @@ function OverallSummaryWithExport({ sites, rawData }: { sites: SiteData[]; rawDa
     }));
   }, [sites, rawData]);
 
+  // September 99% achievement plan.
+  // Minimum site count is calculated by restoring the lowest-AVB sites to 100%
+  // until the recomputed regional average reaches 99.00%.
+  const target99Plan = useMemo(() => {
+    const getRegion = (site: SiteData): "C-1" | "C-6" | null => {
+      const sr = String(site.subRegion || "").trim().toUpperCase().replace(/\s+/g, "");
+      const grid = String(site.grid || "").trim().toUpperCase();
+
+      if (sr === "C-1" || sr === "C1" || grid.startsWith("C1")) return "C-1";
+      if (sr === "C-6" || sr === "C6" || grid.startsWith("C6")) return "C-6";
+      return null;
+    };
+
+    return (["C-1", "C-6"] as const).map((region) => {
+      const regionSites = sites
+        .filter((site) => getRegion(site) === region)
+        .filter((site) => Number.isFinite(Number(site.monthlyAvb)) && Number(site.monthlyAvb) > 0)
+        .map((site) => ({ site, ca: Number(site.monthlyAvb) }));
+
+      const totalSites = regionSites.length;
+      const currentSum = regionSites.reduce((sum, row) => sum + row.ca, 0);
+      const currentAvg = totalSites > 0 ? currentSum / totalSites : 0;
+      const requiredTotal = TARGET_CA * totalSites;
+      const requiredGain = Math.max(0, requiredTotal - currentSum);
+
+      const sortedWorst = [...regionSites].sort((a, b) => a.ca - b.ca);
+      const sitesToFix: Array<{
+        site: SiteData;
+        ca: number;
+        possibleGain: number;
+        cumulativeGain: number;
+        projectedAvg: number;
+      }> = [];
+
+      let cumulativeGain = 0;
+      if (currentAvg < TARGET_CA) {
+        for (const row of sortedWorst) {
+          const possibleGain = Math.max(0, 100 - row.ca);
+          if (possibleGain <= 0) continue;
+
+          cumulativeGain += possibleGain;
+          sitesToFix.push({
+            ...row,
+            possibleGain,
+            cumulativeGain,
+            projectedAvg: totalSites > 0 ? (currentSum + cumulativeGain) / totalSites : 0,
+          });
+
+          if (currentSum + cumulativeGain >= requiredTotal - 0.000001) break;
+        }
+      }
+
+      const achievable = currentAvg >= TARGET_CA || currentSum + cumulativeGain >= requiredTotal - 0.000001;
+      const projectedAvg = totalSites > 0 ? Math.min(100, (currentSum + cumulativeGain) / totalSites) : 0;
+
+      return {
+        region,
+        totalSites,
+        currentAvg,
+        requiredGain,
+        sitesToFix,
+        achievable,
+        projectedAvg,
+      };
+    });
+  }, [sites]);
+
+  const selectedTargetPlan = target99Plan.find((p) => p.region === targetRegion) || null;
+
+  const targetPlanExport = (plan: (typeof target99Plan)[number]) =>
+    plan.sitesToFix.map((row, index) => ({
+      Rank: index + 1,
+      "Site ID": row.site.siteName,
+      Region: plan.region,
+      Grid: row.site.grid || "-",
+      "Revenue Category": row.site.revenueCategory || "-",
+      "September Cell AVB": row.ca.toFixed(2) + "%",
+      "Potential Gain if Fixed to 100%": row.possibleGain.toFixed(2) + " pp",
+      "Projected Regional Avg": row.projectedAvg.toFixed(2) + "%",
+      "Battery Type": hasLiIon(row.site) ? "Li-ion" : hasAGM(row.site) ? "AGM" : row.site.agmBb || "-",
+      DG: hasDG(row.site) ? "Yes" : "No",
+      "Cluster Owner": row.site.clusterOwner || "-",
+      "MS GTL": row.site.msGtl || "-",
+      "Zone Lead": row.site.zongLead || "-",
+    }));
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-4">
@@ -3546,9 +3635,163 @@ function OverallSummaryWithExport({ sites, rawData }: { sites: SiteData[]; rawDa
           <ExportButtonComponent data={fullExportData} filename="all_sites_full_data" label="CSV" format="csv" variant="secondary" />
         </div>
       </div>
-      {/* Keep every existing Overall Summary component. Remove only its old AI section inside components/OverallSummary.tsx. */}
+
       <OverallSummaryComponent sites={sites} />
 
+      {/* September regional 99% target achievement plan */}
+      <div className="rounded-xl border border-cyan-500/25 bg-gradient-to-r from-cyan-500/10 via-slate-800 to-slate-800 p-5">
+        <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2">
+              <TrendingUp className="h-5 w-5 text-cyan-400" />
+              <h3 className="text-lg font-bold text-white">September · Sites Required to Achieve 99% Cell AVB</h3>
+            </div>
+            <p className="mt-1 text-xs text-slate-400">
+              Lowest monthly Cell AVB sites are prioritized first. Count assumes each selected site is restored to 100% Cell AVB.
+            </p>
+          </div>
+          <span className="rounded-full border border-cyan-500/25 bg-cyan-500/10 px-3 py-1 text-xs font-semibold text-cyan-300">Target: 99.00%</span>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          {target99Plan.map((plan) => {
+            const achieved = plan.currentAvg >= TARGET_CA;
+            return (
+              <div key={plan.region} className="rounded-xl border border-slate-700 bg-slate-900/55 p-5">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-xs font-semibold uppercase tracking-wider text-slate-500">{plan.region}</div>
+                    <div className={`mt-1 text-3xl font-extrabold ${achieved ? "text-emerald-400" : "text-white"}`}>
+                      {plan.totalSites > 0 ? `${plan.currentAvg.toFixed(2)}%` : "—"}
+                    </div>
+                    <div className="mt-1 text-xs text-slate-400">Current September average · {plan.totalSites} valid sites</div>
+                  </div>
+
+                  <div className={`rounded-lg border px-4 py-3 text-center ${achieved ? "border-emerald-500/30 bg-emerald-500/10" : "border-red-500/30 bg-red-500/10"}`}>
+                    <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Sites to Fix</div>
+                    <div className={`text-3xl font-extrabold ${achieved ? "text-emerald-400" : "text-red-400"}`}>
+                      {achieved ? 0 : plan.sitesToFix.length}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-4 grid grid-cols-3 gap-2">
+                  <div className="rounded-lg border border-slate-700/70 bg-slate-800/60 p-3">
+                    <div className="text-[10px] uppercase text-slate-500">Gap to 99</div>
+                    <div className={`mt-1 font-bold ${plan.currentAvg >= TARGET_CA ? "text-emerald-400" : "text-red-400"}`}>
+                      {plan.totalSites > 0 ? `${Math.max(0, TARGET_CA - plan.currentAvg).toFixed(2)} pp` : "—"}
+                    </div>
+                  </div>
+                  <div className="rounded-lg border border-slate-700/70 bg-slate-800/60 p-3">
+                    <div className="text-[10px] uppercase text-slate-500">Required Gain</div>
+                    <div className="mt-1 font-bold text-amber-300">{plan.totalSites > 0 ? plan.requiredGain.toFixed(2) : "—"}</div>
+                  </div>
+                  <div className="rounded-lg border border-slate-700/70 bg-slate-800/60 p-3">
+                    <div className="text-[10px] uppercase text-slate-500">After Fix</div>
+                    <div className="mt-1 font-bold text-cyan-300">{plan.totalSites > 0 ? `${plan.projectedAvg.toFixed(2)}%` : "—"}</div>
+                  </div>
+                </div>
+
+                <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+                  <div className="text-xs text-slate-400">
+                    {achieved
+                      ? `${plan.region} has already achieved the 99% target.`
+                      : plan.achievable
+                        ? `Fix the worst ${plan.sitesToFix.length} site${plan.sitesToFix.length === 1 ? "" : "s"} to mathematically cross 99%.`
+                        : "99% cannot be reached under the current calculation assumptions."}
+                  </div>
+                  {!achieved && plan.sitesToFix.length > 0 && (
+                    <button
+                      onClick={() => setTargetRegion(plan.region)}
+                      className="flex items-center gap-2 rounded-lg bg-cyan-500/15 px-3 py-2 text-xs font-semibold text-cyan-300 transition-colors hover:bg-cyan-500/25"
+                    >
+                      <Search className="h-3.5 w-3.5" /> View {plan.sitesToFix.length} Sites
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <AnimatePresence>
+        {selectedTargetPlan && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[80] flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm"
+            onClick={() => setTargetRegion(null)}
+          >
+            <motion.div
+              initial={{ scale: 0.96, y: 14 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.96, y: 14 }}
+              onClick={(event) => event.stopPropagation()}
+              className="flex max-h-[88vh] w-full max-w-7xl flex-col overflow-hidden rounded-2xl border border-slate-600 bg-slate-900 shadow-2xl"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-700 p-5">
+                <div>
+                  <h3 className="text-xl font-bold text-white">{selectedTargetPlan.region} · Priority Sites to Reach 99%</h3>
+                  <p className="mt-1 text-xs text-slate-400">
+                    Current {selectedTargetPlan.currentAvg.toFixed(2)}% → projected {selectedTargetPlan.projectedAvg.toFixed(2)}% · {selectedTargetPlan.sitesToFix.length} sites required
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <ExportButtonComponent
+                    data={targetPlanExport(selectedTargetPlan)}
+                    filename={`${selectedTargetPlan.region.replace("-", "")}_september_99_target_sites`}
+                    label={`Export ${selectedTargetPlan.sitesToFix.length} Sites`}
+                    format="excel"
+                    variant="primary"
+                  />
+                  <button onClick={() => setTargetRegion(null)} className="rounded-md p-2 text-slate-400 hover:bg-slate-800 hover:text-white">
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
+              </div>
+
+              <div className="overflow-auto p-5">
+                <table className="w-full min-w-[1200px] text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-700 bg-slate-900/70 text-left">
+                      <th className="px-3 py-2 text-xs text-slate-500">#</th>
+                      <th className="px-3 py-2 text-xs text-slate-500">Site ID</th>
+                      <th className="px-3 py-2 text-xs text-slate-500">Grid</th>
+                      <th className="px-3 py-2 text-xs text-slate-500">Category</th>
+                      <th className="px-3 py-2 text-center text-xs text-slate-500">Sep AVB</th>
+                      <th className="px-3 py-2 text-center text-xs text-slate-500">Potential Gain</th>
+                      <th className="px-3 py-2 text-center text-xs text-slate-500">Projected Region Avg</th>
+                      <th className="px-3 py-2 text-xs text-slate-500">Battery</th>
+                      <th className="px-3 py-2 text-center text-xs text-slate-500">DG</th>
+                      <th className="px-3 py-2 text-xs text-slate-500">Cluster Owner</th>
+                      <th className="px-3 py-2 text-xs text-slate-500">MS GTL</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {selectedTargetPlan.sitesToFix.map((row, index) => (
+                      <tr key={`${selectedTargetPlan.region}-${row.site.siteName}-${index}`} className="border-b border-slate-800 hover:bg-slate-800/50">
+                        <td className="px-3 py-2 text-slate-500">{index + 1}</td>
+                        <td className="px-3 py-2 font-mono font-semibold text-cyan-300">{row.site.siteName || "—"}</td>
+                        <td className="px-3 py-2 text-slate-300">{row.site.grid || "—"}</td>
+                        <td className="px-3 py-2"><CategoryBadge category={row.site.revenueCategory || "—"} /></td>
+                        <td className="px-3 py-2 text-center font-bold text-red-400">{row.ca.toFixed(2)}%</td>
+                        <td className="px-3 py-2 text-center font-semibold text-amber-300">+{row.possibleGain.toFixed(2)} pp</td>
+                        <td className={`px-3 py-2 text-center font-bold ${row.projectedAvg >= TARGET_CA ? "text-emerald-400" : "text-cyan-300"}`}>{row.projectedAvg.toFixed(2)}%</td>
+                        <td className="px-3 py-2 text-slate-300">{hasLiIon(row.site) ? "Li-ion" : hasAGM(row.site) ? "AGM" : row.site.agmBb || "—"}</td>
+                        <td className="px-3 py-2 text-center text-slate-300">{hasDG(row.site) ? "Yes" : "No"}</td>
+                        <td className="px-3 py-2 text-slate-300">{row.site.clusterOwner || "—"}</td>
+                        <td className="px-3 py-2 text-slate-300">{row.site.msGtl || "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -5018,4 +5261,5 @@ export default function App() {
     </div>
   );
 }
+
 
