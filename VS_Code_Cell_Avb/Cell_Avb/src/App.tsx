@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, Fragment } from "react";
+import React, { useState, useEffect, useMemo, Fragment, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   LayoutDashboard,
@@ -3528,6 +3528,64 @@ function parseFloatSafe(v: string | undefined): number {
   return isNaN(n) ? 0 : n;
 }
 
+// Parse daily CA / load-shedding columns directly from the active month's raw row.
+// This keeps Site Query independent from any month-specific date logic inside normalizeRow.
+function normalizeDailyDateKey(rawHeader: string): string | null {
+  const header = rawHeader.trim();
+  const monthMap: Record<string, string> = {
+    jan: "Jan", feb: "Feb", mar: "Mar", apr: "Apr", may: "May", jun: "Jun",
+    jul: "Jul", aug: "Aug", sep: "Sep", oct: "Oct", nov: "Nov", dec: "Dec",
+  };
+
+  // 1-Sep-26 / 01-Sep-2026 (also accepts spaces or slashes around month text)
+  const named = header.match(/^(\d{1,2})[-\s\/]+([A-Za-z]{3,9})[-\s\/]+(\d{2}|\d{4})$/);
+  if (named) {
+    const day = parseInt(named[1], 10);
+    const month = monthMap[named[2].slice(0, 3).toLowerCase()];
+    if (!month || day < 1 || day > 31) return null;
+    const year = named[3].length === 4 ? named[3].slice(-2) : named[3];
+    return `${day}-${month}-${year}`;
+  }
+
+  return null;
+}
+
+function extractDailySeries(row: Record<string, any>): {
+  dailyData: Record<string, number>;
+  dailyLs: Record<string, number>;
+} {
+  const dailyData: Record<string, number> = {};
+  const dailyLs: Record<string, number> = {};
+
+  for (const [rawKey, rawValue] of Object.entries(row || {})) {
+    const key = rawKey.trim();
+
+    // Main AVB sheet daily columns: 1-Sep-26, 2-Sep-26, etc.
+    const directDate = normalizeDailyDateKey(key);
+    if (directDate) {
+      const value = parseFloatSafe(rawValue == null ? "" : String(rawValue));
+      // Keep 0 as a valid daily value too; the chart can still render when LS exists.
+      if (rawValue !== "" && rawValue != null) dailyData[directDate] = value;
+      continue;
+    }
+
+    // Also support LS headers if/when they are present in the workbook, e.g.
+    // "LS 1-Sep-26", "Load Shedding 1-Sep-26", "1-Sep-26 LS".
+    const lsMatch = key.match(/^(?:LS|Load\s*Shedding(?:\s*\(hrs?\))?)\s*[-:_]?\s*(.+)$/i)
+      || key.match(/^(.+?)\s*[-:_]?\s*(?:LS|Load\s*Shedding(?:\s*\(hrs?\))?)$/i);
+
+    if (lsMatch) {
+      const dateKey = normalizeDailyDateKey(lsMatch[1]);
+      if (dateKey) {
+        const value = parseFloatSafe(rawValue == null ? "" : String(rawValue));
+        if (rawValue !== "" && rawValue != null) dailyLs[dateKey] = value;
+      }
+    }
+  }
+
+  return { dailyData, dailyLs };
+}
+
 // ============================================================
 //  LOGIN SCREEN
 // ============================================================
@@ -3625,6 +3683,7 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [prePostSidebarOpen, setPrePostSidebarOpen] = useState(false);
   const [prePostSubView, setPrePostSubView] = useState<PrePostSubView>("analysis");
+  const monthLoadSeq = useRef(0);
 
   const parsePrePostRows = (rows: Record<string, string>[]): SiteData[] => {
     return rows.map((row) => {
@@ -3678,55 +3737,99 @@ export default function App() {
   };
 
   const loadMonthData = async (month: Month) => {
+    // Every month must load strictly from its own workbook.
+    // The sequence guard prevents an older request (for example August)
+    // from finishing later and overwriting a newer September selection.
+    const requestId = ++monthLoadSeq.current;
+    const sheetId = SHEET_IDS[month];
+
     setAppState("loading");
     setErrorMsg("");
-    const sheetId = SHEET_IDS[month];
+    setSelectedMonth(month);
+    setUseMock(false);
+    setActiveTab("overall");
+
+    // IMPORTANT: clear all previous workbook state before starting the new fetch.
+    // This prevents stale August data from remaining visible while September loads
+    // or when one of the optional September tabs is unavailable.
+    setMonthData(null);
+    setMonthHardware(null);
+    setMonthRca(null);
+    setMonth5G(null);
+    setMonthLastUpdated("");
+    setMonthLastColumnIndex(0);
+
     try {
-      const [data, hwData, dateData, rcaSheet, fiveGSheet] = await Promise.all([
-        fetchGoogleSheet(sheetId),
+      console.info(`[Cell AVB] Loading ${month} workbook: ${sheetId}`);
+
+      // Main AVB sheet is the source for ALL C1 & C6 dashboard analysis tabs.
+      // Load it first and fail clearly if it is not available.
+      const data = await fetchGoogleSheet(sheetId);
+
+      if (requestId !== monthLoadSeq.current) return;
+
+      if (!data || !Array.isArray(data.rows) || data.rows.length === 0) {
+        throw new Error(`No AVB rows returned from ${month} workbook (${sheetId})`);
+      }
+
+      setMonthData(data);
+
+      // Supporting tabs are optional. A missing supporting tab must NOT cause
+      // the whole dashboard to fall back to old/mock data.
+      const [hwResult, dateResult, rcaResult, fiveGResult] = await Promise.allSettled([
         fetchGoogleSheet(sheetId, "Hardware issues"),
         fetchGoogleSheet(sheetId, "Updated Date"),
         fetchGoogleSheet(sheetId, "RCA of Plat +"),
         (month === "august" || month === "september")
-          ? fetchGoogleSheet(sheetId, "5G").catch((error) => {
-              console.warn("5G sheet could not be loaded:", error);
-              return null;
-            })
+          ? fetchGoogleSheet(sheetId, "5G")
           : Promise.resolve(null),
       ]);
-      setMonthData(data);
+
+      if (requestId !== monthLoadSeq.current) return;
+
+      const hwData = hwResult.status === "fulfilled" ? hwResult.value : null;
+      const dateData = dateResult.status === "fulfilled" ? dateResult.value : null;
+      const rcaSheet = rcaResult.status === "fulfilled" ? rcaResult.value : null;
+      const fiveGSheet = fiveGResult.status === "fulfilled" ? fiveGResult.value : null;
+
+      if (hwResult.status === "rejected") console.warn(`[Cell AVB] ${month}: Hardware issues tab unavailable`, hwResult.reason);
+      if (dateResult.status === "rejected") console.warn(`[Cell AVB] ${month}: Updated Date tab unavailable`, dateResult.reason);
+      if (rcaResult.status === "rejected") console.warn(`[Cell AVB] ${month}: RCA of Plat + tab unavailable`, rcaResult.reason);
+      if (fiveGResult.status === "rejected") console.warn(`[Cell AVB] ${month}: 5G tab unavailable`, fiveGResult.reason);
+
       setMonthHardware(hwData);
       setMonthRca(rcaSheet);
       setMonth5G(fiveGSheet);
-      if (dateData && dateData.rows && dateData.rows.length > 0) {
+
+      if (dateData && Array.isArray(dateData.rows) && dateData.rows.length > 0) {
         const row = dateData.rows[0];
         setMonthLastUpdated(row["Last Updated"] || row["Date"] || row["Last Date"] || "");
-        setMonthLastColumnIndex(parseInt(row["Column Index"] || row["Column"] || row["Index"] || "0"));
+
+        const parsedIndex = parseInt(row["Column Index"] || row["Column"] || row["Index"] || "0", 10);
+        setMonthLastColumnIndex(Number.isFinite(parsedIndex) ? parsedIndex : 0);
       }
-      setUseMock(false);
-      setSelectedMonth(month);
+
       setViewMode("month");
       setAppState("dashboard");
     } catch (error) {
-      console.error(`Error loading ${month} data:`, error);
+      if (requestId !== monthLoadSeq.current) return;
+
+      console.error(`[Cell AVB] Error loading ${month} workbook ${sheetId}:`, error);
+
+      // Never leave the previous month's data on screen after a failed month switch.
       setMonthData(null);
       setMonthHardware(null);
       setMonthRca(null);
       setMonth5G(null);
-      setMonthLastUpdated(
-        month === "june"
-          ? "30-Jun-26"
-          : month === "july"
-            ? "31-Jul-26"
-            : month === "august"
-              ? "31-Aug-26"
-              : "1-Sep-26"
-      );
-      setMonthLastColumnIndex(74);
-      setUseMock(true);
-      setSelectedMonth(month);
+      setMonthLastUpdated("");
+      setMonthLastColumnIndex(0);
+      setUseMock(false);
       setViewMode("month");
-      setAppState("dashboard");
+      setErrorMsg(
+        `Failed to load ${month.charAt(0).toUpperCase() + month.slice(1)} AVB data from its configured Google Sheet. ` +
+        `Previous month data has been cleared to avoid showing stale values.`
+      );
+      setAppState("error");
     }
   };
 
@@ -3845,7 +3948,26 @@ export default function App() {
 
   const sites: SiteData[] = useMemo(() => {
     if (useMock) return MOCK_SITES;
-    return monthData ? monthData.rows.map(normalizeRow) : [];
+    if (!monthData?.rows?.length) return [];
+
+    return monthData.rows.map((rawRow: Record<string, any>) => {
+      const normalized = normalizeRow(rawRow);
+      const extracted = extractDailySeries(rawRow);
+
+      // Prefer the raw active-workbook daily columns. Fall back to normalizeRow only
+      // if no dynamic daily columns were found in the current row.
+      return {
+        ...normalized,
+        dailyData:
+          Object.keys(extracted.dailyData).length > 0
+            ? extracted.dailyData
+            : (normalized.dailyData || {}),
+        dailyLs:
+          Object.keys(extracted.dailyLs).length > 0
+            ? extracted.dailyLs
+            : (normalized.dailyLs || {}),
+      } as SiteData;
+    });
   }, [monthData, useMock]);
 
   const hardwareData: SheetPayload | null = useMemo(() => {
