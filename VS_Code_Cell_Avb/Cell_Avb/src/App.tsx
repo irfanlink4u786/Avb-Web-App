@@ -2799,7 +2799,7 @@ function GridScoreBadge({ score, max: _max }: { score: number; max: number }) {
         : "bg-emerald-100 text-emerald-800 border-emerald-300";
 
   return (
-    <span className={`inline-flex min-w-[210px] items-center justify-center rounded-xl border-2 px-6 py-3 text-[42px] leading-none font-black tabular-nums ${cls}`}>
+    <span className={`inline-flex min-w-[90px] items-center justify-center rounded-lg border px-3 py-2 text-[14px] leading-normal font-bold tabular-nums ${cls}`}>
       {score.toFixed(2)}
     </span>
   );
@@ -3174,9 +3174,9 @@ const LightAppTheme = () => (
       box-shadow: inset 0 0 0 1px rgba(15,23,42,.06);
     }
 
-    /* Grid Performance remains presentation-size as requested */
+    /* Grid Performance title normalized to 14px */
     .grid-performance-light-title {
-      font-size: 42px !important;
+      font-size: 14px !important;
       line-height: 1.08 !important;
       font-weight: 900 !important;
       color: #10213f !important;
@@ -3184,7 +3184,7 @@ const LightAppTheme = () => (
     }
 
     @media (max-width: 1100px) {
-      .grid-performance-light-title { font-size: 40px !important; }
+      .grid-performance-light-title { font-size: 14px !important; }
     }
   `}</style>
 );
@@ -3489,7 +3489,7 @@ function GridPerformanceScorecard({
       <div className="rounded-xl border border-slate-300 bg-gradient-to-r from-slate-100 to-white p-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <h2 className="text-[42px] leading-tight font-black text-slate-900">Grid Performance</h2>
+            <h2 className="text-[14px] leading-tight font-black text-slate-900">Grid Performance</h2>
             <p className="mt-1 text-lg text-slate-600">
               Monthly CA scorecard focused only on Platinum+, PGS and Operational DG sites. C2006 and C2009 are excluded as boundary grids.
             </p>
@@ -3642,32 +3642,32 @@ function GridPerformanceScorecard({
       <div className="rounded-2xl border border-slate-300 bg-[#f4f5f7] p-6 shadow-sm">
         <div className="mb-5 flex flex-wrap items-center justify-between gap-4">
           <div>
-            <h3 className="text-[44px] leading-tight font-black text-slate-900">Grid Performance</h3>
-            <p className="mt-1 text-[24px] font-medium text-slate-600">Worst performing Grid shown first · Score is based on monthly Grid average.</p>
+            <h3 className="text-[14px] leading-tight font-black text-slate-900">Grid Performance</h3>
+            <p className="mt-1 text-[14px] font-medium text-slate-600">Worst performing Grid shown first · Score is based on monthly Grid average.</p>
           </div>
-          <div className="rounded-xl border-2 border-red-300 bg-red-50 px-6 py-4 text-[26px] font-black text-red-700">
+          <div className="rounded-xl border-2 border-red-300 bg-red-50 px-4 py-3 text-[14px] font-bold text-red-700">
             ⚠ Focus on low performing grids in Plat+, PGS &amp; DG
           </div>
         </div>
 
         <div className="overflow-x-auto rounded-xl border border-slate-300 bg-white">
-          <table className="w-full min-w-[1650px] border-collapse">
+          <table className="w-full min-w-[900px] border-collapse">
             <thead>
               <tr className="bg-slate-200 text-slate-900">
-                <th className="border-r border-slate-300 px-6 py-5 text-left text-[40px] leading-tight font-black">#</th>
-                <th className="border-r border-slate-300 px-6 py-5 text-left text-[40px] leading-tight font-black">Grid</th>
-                <th className="border-r border-slate-300 px-6 py-5 text-left text-[40px] leading-tight font-black">CMPAK GTL</th>
-                <th className="border-r border-slate-300 px-6 py-5 text-center text-[40px] leading-tight font-black">Plat+ Score</th>
-                <th className="border-r border-slate-300 px-6 py-5 text-center text-[40px] leading-tight font-black">PGS Score</th>
-                <th className="px-6 py-5 text-center text-[40px] leading-tight font-black">DG Score</th>
+                <th className="border-r border-slate-300 px-4 py-3 text-left text-[14px] leading-normal font-bold">#</th>
+                <th className="border-r border-slate-300 px-4 py-3 text-left text-[14px] leading-normal font-bold">Grid</th>
+                <th className="border-r border-slate-300 px-4 py-3 text-left text-[14px] leading-normal font-bold">CMPAK GTL</th>
+                <th className="border-r border-slate-300 px-4 py-3 text-center text-[14px] leading-normal font-bold">Plat+ Score</th>
+                <th className="border-r border-slate-300 px-4 py-3 text-center text-[14px] leading-normal font-bold">PGS Score</th>
+                <th className="px-4 py-3 text-center text-[14px] leading-normal font-bold">DG Score</th>
               </tr>
             </thead>
             <tbody>
               {gridRows.map((row, index) => (
                 <tr key={row.grid} className={`${index % 2 === 0 ? "bg-white" : "bg-slate-50"} border-t border-slate-200 hover:bg-slate-100`}>
-                  <td className="border-r border-slate-200 px-6 py-4 text-center text-[40px] font-black text-slate-800">{index + 1}</td>
-                  <td className="border-r border-slate-200 px-6 py-4 text-[40px] font-black text-blue-700">{row.grid}</td>
-                  <td className="border-r border-slate-200 px-6 py-4 text-[40px] font-semibold text-slate-900">{row.cmpakGtl}</td>
+                  <td className="border-r border-slate-200 px-4 py-3 text-center text-[14px] font-semibold text-slate-800">{index + 1}</td>
+                  <td className="border-r border-slate-200 px-4 py-3 text-[14px] font-bold text-blue-700">{row.grid}</td>
+                  <td className="border-r border-slate-200 px-4 py-3 text-[14px] font-medium text-slate-900">{row.cmpakGtl}</td>
                   <td className="border-r border-slate-200 px-6 py-3 text-center"><GridScoreBadge score={row.platinum.score} max={12} /></td>
                   <td className="border-r border-slate-200 px-6 py-3 text-center"><GridScoreBadge score={row.pgs.score} max={12} /></td>
                   <td className="px-6 py-3 text-center"><GridScoreBadge score={row.dg.score} max={12} /></td>
@@ -3689,7 +3689,7 @@ function GridPerformanceScorecard({
       <div className="rounded-2xl border border-slate-300 bg-white p-6 shadow-sm">
         <div className="mb-5 flex flex-wrap items-end justify-between gap-4">
           <div>
-            <h3 className="text-[34px] leading-tight font-black text-slate-900">Detailed Grid Performance</h3>
+            <h3 className="text-[14px] leading-tight font-black text-slate-900">Detailed Grid Performance</h3>
             <p className="mt-1 text-[18px] font-medium text-slate-600">Latest 3 days + monthly KPI values + View Sites buttons.</p>
           </div>
           <div className="rounded-lg border border-slate-300 bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-700">
