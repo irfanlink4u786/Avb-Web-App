@@ -47,6 +47,7 @@ import {
   ResponsiveContainer,
   Cell,
   Area,
+  LabelList,
 } from "recharts";
 import ErrorBoundary from "./components/ErrorBoundary";
 import OverallSummaryComponent from "./components/OverallSummary";
@@ -2053,9 +2054,50 @@ function SiteQuery({ sites, historyData = null, rawData = null }: { sites: SiteD
     const avgCA = validData.length > 0 ? validData.reduce((s, d) => s + d.ca, 0) / validData.length : 0;
     const minCA = validData.length > 0 ? Math.min(...validData.map(d => d.ca)) : 0;
     const maxCA = validData.length > 0 ? Math.max(...validData.map(d => d.ca)) : 0;
-    const avgLS = data.reduce((s, d) => s + d.ls, 0) / data.length;
     const daysBelow95 = data.filter(d => d.ca < 95).length;
-    const lsAbove3 = data.filter(d => d.ls > 3).length;
+
+    // CA linear trend across the available daily values.
+    // This adds one clear trend line over the CA bars and a simple
+    // Increasing / Decreasing / Stable status in the chart header.
+    const caTrendInfo = (() => {
+      const points = data
+        .map((d, index) => ({ index, ca: Number(d.ca) }))
+        .filter((p) => Number.isFinite(p.ca) && p.ca > 0);
+
+      if (points.length < 2) {
+        return {
+          direction: "Stable" as const,
+          slope: 0,
+          data: data.map((d) => ({ ...d, caTrend: Number(d.ca) || 0 })),
+        };
+      }
+
+      const n = points.length;
+      const sumX = points.reduce((s, p) => s + p.index, 0);
+      const sumY = points.reduce((s, p) => s + p.ca, 0);
+      const sumXY = points.reduce((s, p) => s + p.index * p.ca, 0);
+      const sumXX = points.reduce((s, p) => s + p.index * p.index, 0);
+      const denominator = n * sumXX - sumX * sumX;
+      const slope = denominator !== 0 ? (n * sumXY - sumX * sumY) / denominator : 0;
+      const intercept = (sumY - slope * sumX) / n;
+
+      // Keep very small movement from being shown as a meaningful trend.
+      const direction =
+        slope > 0.03 ? "Increasing" :
+        slope < -0.03 ? "Decreasing" :
+        "Stable";
+
+      return {
+        direction,
+        slope,
+        data: data.map((d, index) => ({
+          ...d,
+          caTrend: Math.max(0, Math.min(100, intercept + slope * index)),
+        })),
+      };
+    })();
+
+    const chartDataWithTrend = caTrendInfo.data;
 
     const formatXAxis = (tick: string) => {
       const d = new Date(tick);
@@ -2069,20 +2111,41 @@ function SiteQuery({ sites, historyData = null, rawData = null }: { sites: SiteD
       <div className="bg-slate-800 border border-slate-700 rounded-xl p-5">
         <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
           <h3 className="text-white font-semibold text-sm">{title}</h3>
-          <div className="flex items-center gap-4 text-xs">
+          <div className="flex items-center gap-4 text-xs flex-wrap">
             <span className="flex items-center gap-1.5">
               <span className="w-3 h-3 rounded bg-cyan-500" />
               <span className="text-slate-400">CA % (Bar)</span>
             </span>
-            <span className="flex items-center gap-1.5">
-              <span className="w-3 h-0.5 bg-amber-400" />
-              <span className="text-slate-400">Load Shedding hrs (Line)</span>
+            <span
+              className={`px-2.5 py-1 rounded-full font-semibold border ${
+                caTrendInfo.direction === "Increasing"
+                  ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
+                  : caTrendInfo.direction === "Decreasing"
+                  ? "bg-red-500/10 text-red-400 border-red-500/30"
+                  : "bg-slate-700/50 text-slate-300 border-slate-600"
+              }`}
+            >
+              CA Trend: {caTrendInfo.direction === "Increasing" ? "↗ Increasing" : caTrendInfo.direction === "Decreasing" ? "↘ Decreasing" : "→ Stable"}
             </span>
           </div>
         </div>
 
         <ResponsiveContainer width="100%" height={300}>
-          <ComposedChart data={data}>
+          <ComposedChart data={chartDataWithTrend} margin={{ top: 24, right: 10, left: 0, bottom: 0 }}>
+            <defs>
+              <linearGradient id="caGreenGradient" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#16a34a" />
+                <stop offset="100%" stopColor="#86efac" />
+              </linearGradient>
+              <linearGradient id="caPurpleGradient" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#7c3aed" />
+                <stop offset="100%" stopColor="#d8b4fe" />
+              </linearGradient>
+              <linearGradient id="caRedGradient" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#ef4444" />
+                <stop offset="100%" stopColor="#fca5a5" />
+              </linearGradient>
+            </defs>
             <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
             <XAxis
               dataKey="date"
@@ -2100,22 +2163,14 @@ function SiteQuery({ sites, historyData = null, rawData = null }: { sites: SiteD
               tick={{ fill: '#06b6d4' }}
               label={{ value: 'CA %', angle: -90, position: 'insideLeft', fill: '#06b6d4', fontSize: 10 }}
             />
-            <YAxis
-              yAxisId="right"
-              orientation="right"
-              stroke="#f59e0b"
-              fontSize={10}
-              tick={{ fill: '#f59e0b' }}
-              label={{ value: 'LS (hrs)', angle: 90, position: 'insideRight', fill: '#f59e0b', fontSize: 10 }}
-            />
-            <Tooltip
+<Tooltip
               contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '8px' }}
               labelStyle={{ color: '#f1f5f9' }}
               itemStyle={{ color: '#94a3b8' }}
               formatter={(value: any, name: any) => {
                 const nameStr = name as string;
                 if (nameStr === 'CA %') return `${(value as number).toFixed(2)}%`;
-                if (nameStr === 'Load Shedding') return `${(value as number).toFixed(1)}h`;
+                if (nameStr === 'CA Trend') return [`${(value as number).toFixed(2)}%`, 'CA Trend'];
                 return value;
               }}
               labelFormatter={(label) => {
@@ -2123,8 +2178,7 @@ function SiteQuery({ sites, historyData = null, rawData = null }: { sites: SiteD
                 return isNaN(d.getTime()) ? label : d.toLocaleDateString();
               }}
             />
-            <Legend />
-            <Bar
+<Bar
               yAxisId="left"
               dataKey="ca"
               name="CA %"
@@ -2132,35 +2186,73 @@ function SiteQuery({ sites, historyData = null, rawData = null }: { sites: SiteD
               radius={[4, 4, 0, 0]}
               barSize={24}
             >
-              {data.map((entry, index) => (
+              {chartDataWithTrend.map((entry, index) => (
                 <Cell
-                  key={`cell-${index}`}
-                  fill={entry.ca >= 95 ? '#06b6d4' : entry.ca >= 90 ? '#f59e0b' : '#ef4444'}
+                  key={`ca-cell-${index}`}
+                  fill={
+                    Number(entry.ca) > 99
+                      ? "url(#caGreenGradient)"
+                      : Number(entry.ca) > 98
+                      ? "url(#caPurpleGradient)"
+                      : "url(#caRedGradient)"
+                  }
                 />
               ))}
+              {/* CA label only — outside the bar end, always exactly 2 decimals. */}
+              <LabelList
+                dataKey="ca"
+                content={(props: any) => {
+                  const { x, y, width, value } = props;
+                  const caValue = Number(value);
+                  if (!Number.isFinite(caValue) || caValue <= 0) return null;
+
+                  return (
+                    <text
+                      x={Number(x) + Number(width) / 2}
+                      y={Math.max(14, Number(y) - 8)}
+                      textAnchor="middle"
+                      dominantBaseline="auto"
+                      fill="#0f172a"
+                      fontSize={11}
+                      fontWeight={800}
+                    >
+                      {caValue.toFixed(2)}%
+                    </text>
+                  );
+                }}
+              />
             </Bar>
             <Line
-              yAxisId="right"
-              type="monotone"
-              dataKey="ls"
-              name="Load Shedding"
-              stroke="#f59e0b"
-              strokeWidth={2}
-              dot={{ fill: '#f59e0b', r: 3 }}
-              activeDot={{ r: 5 }}
-            />
-            <Area
-              yAxisId="right"
-              type="monotone"
-              dataKey="ls"
-              fill="#f59e0b"
-              fillOpacity={0.1}
-              stroke="none"
+              yAxisId="left"
+              type="linear"
+              dataKey="caTrend"
+              name="CA Trend"
+              stroke="#8b5cf6"
+              strokeWidth={3}
+              strokeDasharray="7 5"
+              dot={false}
+              activeDot={false}
+              isAnimationActive={false}
             />
           </ComposedChart>
         </ResponsiveContainer>
 
-        <div className="grid grid-cols-3 sm:grid-cols-6 gap-3 mt-4">
+        <div className="flex items-center justify-center gap-4 mt-3 text-xs flex-wrap">
+          <span className="flex items-center gap-1.5">
+            <span className="w-3 h-3 rounded-sm bg-gradient-to-b from-green-600 to-green-300" />
+            <span className="text-slate-400">CA &gt; 99%</span>
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="w-3 h-3 rounded-sm bg-gradient-to-b from-violet-600 to-violet-300" />
+            <span className="text-slate-400">CA &gt; 98%</span>
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="w-3 h-3 rounded-sm bg-gradient-to-b from-red-500 to-red-300" />
+            <span className="text-slate-400">CA ≤ 98%</span>
+          </span>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4">
           <div className="bg-slate-900/50 rounded-lg p-2.5 border border-slate-700/50">
             <p className="text-[10px] text-slate-500 uppercase tracking-wide">Avg CA</p>
             <p className={`text-sm font-bold ${avgCA >= 95 ? "text-emerald-400" : "text-red-400"}`}>
@@ -2176,16 +2268,8 @@ function SiteQuery({ sites, historyData = null, rawData = null }: { sites: SiteD
             <p className="text-sm font-bold text-emerald-400">{maxCA.toFixed(2)}%</p>
           </div>
           <div className="bg-slate-900/50 rounded-lg p-2.5 border border-slate-700/50">
-            <p className="text-[10px] text-slate-500 uppercase tracking-wide">Avg LS</p>
-            <p className="text-sm font-bold text-amber-400">{avgLS.toFixed(2)}h</p>
-          </div>
-          <div className="bg-slate-900/50 rounded-lg p-2.5 border border-slate-700/50">
             <p className="text-[10px] text-slate-500 uppercase tracking-wide">Days Below 95%</p>
             <p className="text-sm font-bold text-red-400">{daysBelow95}</p>
-          </div>
-          <div className="bg-slate-900/50 rounded-lg p-2.5 border border-slate-700/50">
-            <p className="text-[10px] text-slate-500 uppercase tracking-wide">LS &gt; 3hr</p>
-            <p className="text-sm font-bold text-orange-400">{lsAbove3}</p>
           </div>
         </div>
       </div>
@@ -2372,7 +2456,7 @@ function SiteQuery({ sites, historyData = null, rawData = null }: { sites: SiteD
               />
             )}
           </div>
-          <ComboChart data={chartData} title={`${selectedSite.siteName} - Daily CA & Load Shedding Trend`} />
+          <ComboChart data={chartData} title={`${selectedSite.siteName} - Daily CA Trend`} />
           {technologyWiseAvb && <TechnologyWiseSection data={technologyWiseAvb} />}
           {historyData && <Year26HistoryTable data={year26History} siteName={selectedSite.siteName} />}
         </motion.div>
