@@ -2788,17 +2788,406 @@ function averageCa(sites: GridPerformanceSite[]): number | null {
   return values.reduce((sum, value) => sum + value, 0) / values.length;
 }
 
-function GridScoreBadge({ score, max }: { score: number; max: number }) {
-  const ratio = max > 0 ? score / max : 0;
+function GridScoreBadge({ score, max: _max }: { score: number; max: number }) {
+  // Management scorecard colour bands requested for Grid Performance:
+  // <= 5 = Critical, > 5 and <= 10 = Needs Attention, > 10 = Good.
   const cls =
-    ratio >= 0.9
-      ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
-      : ratio >= 0.65
-      ? "bg-amber-500/15 text-amber-400 border-amber-500/30"
-      : "bg-red-500/15 text-red-400 border-red-500/30";
+    score <= 5
+      ? "bg-red-100 text-red-700 border-red-300"
+      : score <= 10
+        ? "bg-amber-100 text-amber-800 border-amber-300"
+        : "bg-emerald-100 text-emerald-800 border-emerald-300";
 
-  return <span className={`inline-flex min-w-[58px] justify-center rounded-md border px-2 py-1 text-xs font-bold ${cls}`}>{score.toFixed(2)}</span>;
+  return (
+    <span className={`inline-flex min-w-[210px] items-center justify-center rounded-xl border-2 px-6 py-3 text-[42px] leading-none font-black tabular-nums ${cls}`}>
+      {score.toFixed(2)}
+    </span>
+  );
 }
+
+const LightAppTheme = () => (
+  <style>{`
+    /* ========================================================
+       LIGHT MANAGEMENT THEME
+       Clean white / soft-gray UI with strong navy typography.
+       These rules intentionally override legacy dark Tailwind
+       classes used by imported dashboard components as well.
+       ======================================================== */
+    .light-app {
+      background: #f3f4f6 !important;
+      color: #172033 !important;
+      font-family: Inter, "Segoe UI", Roboto, Arial, sans-serif;
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
+    }
+
+    .light-app main { background: #f5f6f8 !important; }
+
+    /* Convert legacy dark surfaces into clean light cards */
+    .light-app [class*="bg-slate-950"],
+    .light-app [class*="bg-slate-900"],
+    .light-app [class*="bg-slate-800"] {
+      background-color: #ffffff !important;
+    }
+    .light-app [class*="bg-slate-700"] {
+      background-color: #eef1f5 !important;
+    }
+    .light-app [class*="bg-[#0"],
+    .light-app [class*="bg-[#1"] {
+      background-color: #ffffff !important;
+    }
+
+    /* Borders / separators */
+    .light-app [class*="border-slate-8"],
+    .light-app [class*="border-slate-7"],
+    .light-app [class*="border-slate-6"] {
+      border-color: #d6dbe3 !important;
+    }
+
+    /* Primary typography */
+    .light-app .text-white,
+    .light-app .text-slate-100,
+    .light-app .text-slate-200 {
+      color: #15213a !important;
+    }
+    .light-app .text-slate-300 { color: #28364f !important; }
+    .light-app .text-slate-400 { color: #526078 !important; }
+    .light-app .text-slate-500 { color: #69768d !important; }
+    .light-app .text-slate-600 { color: #7b879b !important; }
+
+    .light-app h1,
+    .light-app h2,
+    .light-app h3,
+    .light-app h4 {
+      color: #11213f !important;
+      letter-spacing: -0.015em;
+    }
+    .light-app h2 { font-weight: 800 !important; }
+    .light-app h3, .light-app h4 { font-weight: 750 !important; }
+
+    /* Card treatment */
+    .light-app main > div [class*="rounded-xl"],
+    .light-app main > div [class*="rounded-2xl"] {
+      box-shadow: 0 1px 2px rgba(15, 23, 42, .05), 0 8px 24px rgba(15, 23, 42, .04);
+    }
+
+    /* Tables */
+    .light-app table {
+      color: #1d2a44 !important;
+      font-variant-numeric: tabular-nums;
+    }
+    .light-app thead,
+    .light-app thead tr {
+      background: #e9edf3 !important;
+    }
+    .light-app th {
+      color: #263650 !important;
+      font-weight: 800 !important;
+    }
+    .light-app td { color: #24324a; }
+    .light-app tbody tr:hover { background: #f0f4f8 !important; }
+
+    /* Inputs / filters */
+    .light-app input,
+    .light-app select {
+      background: #ffffff !important;
+      color: #1d2a44 !important;
+      border-color: #cbd3df !important;
+    }
+    .light-app input::placeholder { color: #8a96a8 !important; }
+
+    /* Sidebar */
+    .light-app aside {
+      background: #eef1f4 !important;
+      border-color: #cfd6df !important;
+    }
+    .light-app aside h1 { color: #12213c !important; }
+    .light-app aside nav button {
+      color: #44536b !important;
+      font-weight: 650 !important;
+    }
+    .light-app aside nav button:hover {
+      background: #e2e8f0 !important;
+      color: #10213f !important;
+    }
+    .light-app aside nav button[class*="bg-cyan"] {
+      background: #dff4f8 !important;
+      border-color: #79cbd8 !important;
+      color: #0585a0 !important;
+      box-shadow: inset 3px 0 0 #06a9c4;
+    }
+
+    /* Top header */
+    .light-app > div > header {
+      background: rgba(255,255,255,.96) !important;
+      border-color: #d5dbe4 !important;
+      box-shadow: 0 1px 8px rgba(15,23,42,.06);
+    }
+
+    /* Standard dark buttons become premium slate buttons */
+    .light-app button[class*="bg-slate-800"],
+    .light-app button[class*="bg-slate-700"] {
+      background: #e7ebf0 !important;
+      color: #20304a !important;
+      border: 1px solid #cbd3df !important;
+    }
+    .light-app button[class*="bg-slate-800"]:hover,
+    .light-app button[class*="bg-slate-700"]:hover {
+      background: #dce3eb !important;
+      color: #10203d !important;
+    }
+
+    /* Preserve semantic accent text so KPIs remain easy to scan */
+    .light-app .text-cyan-300, .light-app .text-cyan-400 { color: #008eaa !important; }
+    .light-app .text-emerald-300, .light-app .text-emerald-400 { color: #067a58 !important; }
+    .light-app .text-red-300, .light-app .text-red-400 { color: #c62828 !important; }
+    .light-app .text-amber-300, .light-app .text-amber-400 { color: #a45d00 !important; }
+
+
+    /* ========================================================
+       OVERALL SUMMARY — HIGH CONTRAST + GRADIENT KPI CARDS
+       ======================================================== */
+    .overall-summary-light {
+      color: #12213f !important;
+    }
+
+    /* Main Overall Summary banner: premium navy/teal gradient with white text */
+    .overall-summary-light > div > div:first-child {
+      background: linear-gradient(135deg, #0f2742 0%, #164e63 52%, #0f766e 100%) !important;
+      border: 1px solid #1f6f7e !important;
+      box-shadow: 0 12px 32px rgba(15, 39, 66, .18) !important;
+    }
+    .overall-summary-light > div > div:first-child h1,
+    .overall-summary-light > div > div:first-child h2,
+    .overall-summary-light > div > div:first-child h3,
+    .overall-summary-light > div > div:first-child p,
+    .overall-summary-light > div > div:first-child span,
+    .overall-summary-light > div > div:first-child svg {
+      color: #ffffff !important;
+    }
+    .overall-summary-light > div > div:first-child h2,
+    .overall-summary-light > div > div:first-child h3 {
+      font-weight: 900 !important;
+      letter-spacing: -0.02em !important;
+    }
+    .overall-summary-light > div > div:first-child p {
+      color: #d7eef4 !important;
+      font-weight: 500 !important;
+    }
+    .overall-summary-light > div > div:first-child button {
+      background: rgba(255,255,255,.94) !important;
+      color: #14304b !important;
+      border-color: rgba(255,255,255,.72) !important;
+      font-weight: 800 !important;
+    }
+    .overall-summary-light > div > div:first-child button svg,
+    .overall-summary-light > div > div:first-child button span {
+      color: #14304b !important;
+    }
+
+    /* Top KPI row: filled light gradients instead of plain white cards */
+    .overall-summary-light > div > div:nth-child(2) > div {
+      border-width: 1px !important;
+      border-color: rgba(148,163,184,.32) !important;
+      box-shadow: 0 7px 20px rgba(15,23,42,.08) !important;
+      position: relative;
+      overflow: hidden;
+    }
+    .overall-summary-light > div > div:nth-child(2) > div:nth-child(1) {
+      background: linear-gradient(135deg, #e8f1ff 0%, #dbeafe 55%, #c7ddff 100%) !important;
+    }
+    .overall-summary-light > div > div:nth-child(2) > div:nth-child(2) {
+      background: linear-gradient(135deg, #e9fbf5 0%, #d1fae5 55%, #bcefdc 100%) !important;
+    }
+    .overall-summary-light > div > div:nth-child(2) > div:nth-child(3) {
+      background: linear-gradient(135deg, #e7f9fd 0%, #cffafe 55%, #b9edf5 100%) !important;
+    }
+    .overall-summary-light > div > div:nth-child(2) > div:nth-child(4) {
+      background: linear-gradient(135deg, #f0efff 0%, #e0e7ff 55%, #d5d7ff 100%) !important;
+    }
+    .overall-summary-light > div > div:nth-child(2) > div:nth-child(5) {
+      background: linear-gradient(135deg, #fff0f1 0%, #fee2e2 55%, #ffd2d5 100%) !important;
+    }
+
+    /* Make KPI numbers and labels much easier to read */
+    .overall-summary-light > div > div:nth-child(2) > div [class*="text-2xl"],
+    .overall-summary-light > div > div:nth-child(2) > div [class*="text-3xl"] {
+      color: #0f2342 !important;
+      font-weight: 900 !important;
+      letter-spacing: -0.02em !important;
+    }
+    .overall-summary-light > div > div:nth-child(2) > div [class*="text-xs"],
+    .overall-summary-light > div > div:nth-child(2) > div [class*="text-sm"] {
+      color: #4d5f79 !important;
+      font-weight: 650 !important;
+    }
+
+    /* Keep KPI icon tiles saturated enough to stand out on gradient cards */
+    .overall-summary-light > div > div:nth-child(2) > div > div > div:first-child {
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,.55), 0 3px 10px rgba(15,23,42,.08);
+    }
+
+    /* Category section: crisp titles and stronger card readability */
+    .overall-summary-light [class*="Cell Availability"] h3,
+    .overall-summary-light h3 {
+      color: #10213f !important;
+    }
+    .overall-summary-light [class*="rounded-xl"] p,
+    .overall-summary-light [class*="rounded-xl"] span {
+      text-shadow: none !important;
+    }
+
+
+    /* ========================================================
+       GLOBAL KPI / TABLE GRADIENT SYSTEM
+       Apply soft gradients consistently across every KPI card,
+       regional category card and data table without hurting readability.
+       ======================================================== */
+
+    /* Overall Summary section containers */
+    .overall-summary-light [class*="border-slate-700"],
+    .overall-summary-light [class*="border-slate-600"] {
+      border-color: #d4dde8 !important;
+    }
+
+    /* Regional C-1 / C-6 panels get a very soft blue-violet wash */
+    .overall-summary-light > div > div:nth-child(n+3) [class*="rounded-xl"][class*="border"] {
+      background: linear-gradient(135deg, #ffffff 0%, #f8fbff 46%, #eef4fb 100%) !important;
+      box-shadow: 0 6px 18px rgba(15, 23, 42, .055) !important;
+    }
+
+    /* Every category KPI card inside C-1 / C-6 receives a category gradient. */
+    .overall-summary-light [class*="grid-cols-5"] > div:nth-child(1),
+    .overall-summary-light [class*="grid-cols-4"] > div:nth-child(1) {
+      background: linear-gradient(135deg, #fffdf5 0%, #fff7dc 52%, #ffefbd 100%) !important;
+      border-color: #f3d58a !important;
+    }
+    .overall-summary-light [class*="grid-cols-5"] > div:nth-child(2),
+    .overall-summary-light [class*="grid-cols-4"] > div:nth-child(2) {
+      background: linear-gradient(135deg, #f3fcff 0%, #e2f8fd 52%, #cceff8 100%) !important;
+      border-color: #a9deea !important;
+    }
+    .overall-summary-light [class*="grid-cols-5"] > div:nth-child(3),
+    .overall-summary-light [class*="grid-cols-4"] > div:nth-child(3) {
+      background: linear-gradient(135deg, #f8f7ff 0%, #eeecff 52%, #dfdcff 100%) !important;
+      border-color: #ccc6fb !important;
+    }
+    .overall-summary-light [class*="grid-cols-5"] > div:nth-child(4),
+    .overall-summary-light [class*="grid-cols-4"] > div:nth-child(4) {
+      background: linear-gradient(135deg, #fff9f4 0%, #fff0df 52%, #ffe0bd 100%) !important;
+      border-color: #f6c994 !important;
+    }
+    .overall-summary-light [class*="grid-cols-5"] > div:nth-child(5),
+    .overall-summary-light [class*="grid-cols-4"] > div:nth-child(5) {
+      background: linear-gradient(135deg, #f2fdf8 0%, #ddf8ea 52%, #c3f0db 100%) !important;
+      border-color: #a9dfc7 !important;
+    }
+
+    /* Strong, consistent text on every KPI card */
+    .overall-summary-light [class*="grid-cols-5"] > div,
+    .overall-summary-light [class*="grid-cols-4"] > div {
+      color: #10213f !important;
+      box-shadow: 0 5px 14px rgba(15,23,42,.065) !important;
+    }
+    .overall-summary-light [class*="grid-cols-5"] > div [class*="font-bold"],
+    .overall-summary-light [class*="grid-cols-4"] > div [class*="font-bold"],
+    .overall-summary-light [class*="grid-cols-5"] > div [class*="font-semibold"],
+    .overall-summary-light [class*="grid-cols-4"] > div [class*="font-semibold"] {
+      color: #10213f !important;
+      font-weight: 850 !important;
+    }
+    .overall-summary-light [class*="grid-cols-5"] > div [class*="text-slate-400"],
+    .overall-summary-light [class*="grid-cols-4"] > div [class*="text-slate-400"],
+    .overall-summary-light [class*="grid-cols-5"] > div [class*="text-slate-500"],
+    .overall-summary-light [class*="grid-cols-4"] > div [class*="text-slate-500"] {
+      color: #5b6b82 !important;
+    }
+
+    /* Tables across the application: gradient header + alternating gradient rows. */
+    .light-app table {
+      border-collapse: separate !important;
+      border-spacing: 0 !important;
+      overflow: hidden;
+      border-radius: 14px;
+      background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%) !important;
+      box-shadow: inset 0 0 0 1px #d9e1ea;
+    }
+    .light-app table thead tr,
+    .light-app thead tr {
+      background: linear-gradient(90deg, #dfe8f3 0%, #edf3f8 50%, #dfe8f3 100%) !important;
+    }
+    .light-app table thead th {
+      color: #173052 !important;
+      font-weight: 850 !important;
+      border-bottom: 1px solid #c8d3df !important;
+    }
+    .light-app table tbody tr:nth-child(odd) {
+      background: linear-gradient(90deg, #ffffff 0%, #f8fbfe 100%) !important;
+    }
+    .light-app table tbody tr:nth-child(even) {
+      background: linear-gradient(90deg, #f7f9fc 0%, #eef4f8 100%) !important;
+    }
+    .light-app table tbody tr:hover {
+      background: linear-gradient(90deg, #eaf4fb 0%, #e3f0f8 100%) !important;
+    }
+    .light-app table td {
+      border-bottom-color: #dde5ee !important;
+      color: #20324d !important;
+    }
+
+    /* KPI score / status badges should look filled, not flat. */
+    .light-app span[class*="bg-emerald-500"],
+    .light-app div[class*="bg-emerald-500"] {
+      background: linear-gradient(135deg, #dcfce7 0%, #bbf7d0 100%) !important;
+      color: #047857 !important;
+      border-color: #86efac !important;
+    }
+    .light-app span[class*="bg-red-500"],
+    .light-app div[class*="bg-red-500"] {
+      background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%) !important;
+      color: #b91c1c !important;
+      border-color: #fca5a5 !important;
+    }
+    .light-app span[class*="bg-amber-500"],
+    .light-app div[class*="bg-amber-500"] {
+      background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%) !important;
+      color: #92400e !important;
+      border-color: #fcd34d !important;
+    }
+    .light-app span[class*="bg-cyan-500"],
+    .light-app div[class*="bg-cyan-500"] {
+      background: linear-gradient(135deg, #cffafe 0%, #a5f3fc 100%) !important;
+      color: #0e7490 !important;
+      border-color: #67e8f9 !important;
+    }
+    .light-app span[class*="bg-blue-500"],
+    .light-app div[class*="bg-blue-500"] {
+      background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%) !important;
+      color: #1d4ed8 !important;
+      border-color: #93c5fd !important;
+    }
+
+    /* Keep progress bars visually strong on top of light gradients. */
+    .overall-summary-light [class*="h-1"],
+    .overall-summary-light [class*="h-1.5"],
+    .overall-summary-light [class*="h-2"] {
+      box-shadow: inset 0 0 0 1px rgba(15,23,42,.06);
+    }
+
+    /* Grid Performance remains presentation-size as requested */
+    .grid-performance-light-title {
+      font-size: 42px !important;
+      line-height: 1.08 !important;
+      font-weight: 900 !important;
+      color: #10213f !important;
+      letter-spacing: -0.025em;
+    }
+
+    @media (max-width: 1100px) {
+      .grid-performance-light-title { font-size: 40px !important; }
+    }
+  `}</style>
+);
 
 function GridPerformanceScorecard({
   rawData,
@@ -2952,7 +3341,7 @@ function GridPerformanceScorecard({
           pgs: results.pgs,
           sb: results.sb,
           dg: results.dg,
-          totalScore: results.platinum.score + results.pgs.score + results.sb.score + results.dg.score,
+          totalScore: results.platinum.score + results.pgs.score + results.dg.score,
         };
       })
       .sort((a, b) => a.totalScore - b.totalScore || a.grid.localeCompare(b.grid));
@@ -2971,7 +3360,7 @@ function GridPerformanceScorecard({
       return {
         key,
         ...results,
-        totalScore: results.platinum.score + results.pgs.score + results.sb.score + results.dg.score,
+        totalScore: results.platinum.score + results.pgs.score + results.dg.score,
       };
     });
   }, [filteredSourceSites]);
@@ -3025,12 +3414,14 @@ function GridPerformanceScorecard({
         });
     };
 
-    return GRID_KPI_CONFIG.map((config) => ({
-      config,
-      base: makeRows(config, "base"),
-      target: makeRows(config, "target"),
-      stretch: makeRows(config, "stretch"),
-    }));
+    return GRID_KPI_CONFIG
+      .filter((config) => config.key !== "sb")
+      .map((config) => ({
+        config,
+        base: makeRows(config, "base"),
+        target: makeRows(config, "target"),
+        stretch: makeRows(config, "stretch"),
+      }));
   }, [filteredSourceSites]);
 
   const selectedResult = selectedGrid && selectedKpi ? selectedGrid[selectedKpi] : null;
@@ -3061,13 +3452,13 @@ function GridPerformanceScorecard({
     const achievedStretch = result.average !== null && result.average >= result.config.stretch;
     return (
       <div className="flex items-center justify-center gap-2 whitespace-nowrap">
-        <span className={`font-semibold ${result.average === null ? "text-slate-600" : achievedStretch ? "text-emerald-400" : "text-slate-200"}`}>
+        <span className={`font-semibold ${result.average === null ? "text-slate-600" : achievedStretch ? "text-emerald-400" : "text-slate-900"}`}>
           {result.average === null ? "—" : result.average.toFixed(2)}
         </span>
         <button
           onClick={() => openSites(row, result.config.key)}
           disabled={result.sites.length === 0}
-          className="rounded-md border border-slate-600 bg-slate-800 px-2 py-1 text-[10px] font-medium text-cyan-400 transition-colors hover:border-cyan-500 hover:bg-cyan-500/10 disabled:cursor-not-allowed disabled:opacity-30"
+          className="rounded-md border border-slate-300 bg-white px-2 py-1 text-[10px] font-medium text-cyan-400 transition-colors hover:border-cyan-500 hover:bg-cyan-500/10 disabled:cursor-not-allowed disabled:opacity-30"
         >
           View {result.sites.length}
         </button>
@@ -3076,7 +3467,7 @@ function GridPerformanceScorecard({
   };
 
   const improvementItems = (row: GridPerformanceRow) =>
-    ([row.platinum, row.pgs, row.sb, row.dg] as GridKpiResult[])
+    ([row.platinum, row.pgs, row.dg] as GridKpiResult[])
       .filter((result) => result.average === null || result.average < result.config.stretch)
       .map((result) => {
         const avgGap = result.average === null ? null : Math.max(0, result.config.stretch - result.average);
@@ -3086,35 +3477,35 @@ function GridPerformanceScorecard({
 
   if (!rawData?.rows?.length) {
     return (
-      <div className="rounded-xl border border-slate-700 bg-slate-800 p-6">
-        <h3 className="text-lg font-semibold text-white">Grid Performance</h3>
-        <p className="mt-2 text-sm text-slate-400">Grid Performance requires the Sheet1 raw data so Group and DG Status can be evaluated.</p>
+      <div className="rounded-xl border border-slate-300 bg-white p-6">
+        <h3 className="text-lg font-semibold text-slate-900">Grid Performance</h3>
+        <p className="mt-2 text-lg text-slate-600">Grid Performance requires the Sheet1 raw data so Group and DG Status can be evaluated.</p>
       </div>
     );
   }
 
   return (
     <div className="space-y-6">
-      <div className="rounded-xl border border-cyan-500/30 bg-gradient-to-r from-cyan-500/10 to-transparent p-6">
+      <div className="rounded-xl border border-slate-300 bg-gradient-to-r from-slate-100 to-white p-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <h2 className="text-2xl font-bold text-white">Grid Performance</h2>
-            <p className="mt-1 text-sm text-slate-400">
-              Monthly CA scorecard for Platinum+, PGS, SB and Operational DG sites. C2006 and C2009 are excluded as boundary grids.
+            <h2 className="text-[42px] leading-tight font-black text-slate-900">Grid Performance</h2>
+            <p className="mt-1 text-lg text-slate-600">
+              Monthly CA scorecard focused only on Platinum+, PGS and Operational DG sites. C2006 and C2009 are excluded as boundary grids.
             </p>
           </div>
-          <div className="rounded-lg border border-slate-700 bg-slate-900/60 px-4 py-2 text-right">
+          <div className="rounded-lg border border-slate-300 bg-slate-100 px-4 py-2 text-right">
             <div className="text-[10px] uppercase tracking-wide text-slate-500">Maximum Score</div>
-            <div className="text-xl font-bold text-cyan-400">43.00</div>
+            <div className="text-xl font-bold text-cyan-600">36.00</div>
           </div>
         </div>
       </div>
 
       {/* Employee filter - same pattern as Employee Performance tab */}
-      <div className="rounded-xl border border-slate-700 bg-slate-800/70 p-4">
+      <div className="rounded-xl border border-slate-300 bg-white p-4">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="mr-1 text-xs font-medium text-slate-400">Employee Level:</span>
+            <span className="mr-1 text-xs font-medium text-slate-600">Employee Level:</span>
             {[
               { key: "zoneLead" as const, label: "Zone Lead" },
               { key: "msGtl" as const, label: "MS GTL" },
@@ -3126,7 +3517,7 @@ function GridPerformanceScorecard({
                 className={`rounded-lg border px-3 py-2 text-xs font-semibold transition-colors ${
                   employeeLevel === level.key
                     ? "border-cyan-500/50 bg-cyan-500/15 text-cyan-400"
-                    : "border-slate-600 bg-slate-900/50 text-slate-400 hover:border-slate-500 hover:text-slate-200"
+                    : "border-slate-300 bg-slate-100/50 text-slate-600 hover:border-slate-500 hover:text-slate-900"
                 }`}
               >
                 {level.label}
@@ -3144,7 +3535,7 @@ function GridPerformanceScorecard({
                 setSelectedKpi(null);
                 setExpandedPlanGrid(null);
               }}
-              className="w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-slate-200 outline-none transition-colors focus:border-cyan-500"
+              className="w-full rounded-lg border border-slate-300 bg-slate-100 px-3 py-2 text-sm text-slate-900 outline-none transition-colors focus:border-cyan-500"
             >
               <option value="all">All Employees ({employeeNames.length})</option>
               {employeeNames.map((name) => (
@@ -3164,9 +3555,9 @@ function GridPerformanceScorecard({
           </div>
         </div>
 
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-700 pt-3 text-xs text-slate-400">
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-300 pt-3 text-xs text-slate-600">
           <span>
-            Showing <span className="font-semibold text-white">{filteredSourceSites.length}</span> sites
+            Showing <span className="font-semibold text-slate-900">{filteredSourceSites.length}</span> sites
             {selectedEmployee !== "all" && (
               <> for <span className="font-semibold text-cyan-400">{selectedEmployee}</span></>
             )}
@@ -3178,22 +3569,22 @@ function GridPerformanceScorecard({
       {/* C-1 / C-6 overall score cards */}
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         {subRegionCards.map((region) => (
-          <div key={region.key} className="rounded-xl border border-slate-700 bg-slate-800 p-5">
+          <div key={region.key} className="rounded-xl border border-slate-300 bg-white p-5">
             <div className="mb-4 flex items-center justify-between">
               <div>
                 <div className="text-xs uppercase tracking-wider text-slate-500">Sub-Region Overall</div>
-                <h3 className="text-xl font-bold text-white">{region.key} Grid KPI Score</h3>
+                <h3 className="text-xl font-bold text-slate-900">{region.key} Grid KPI Score</h3>
               </div>
               <div className="text-right">
                 <div className="text-3xl font-bold text-cyan-400">{region.totalScore.toFixed(2)}</div>
-                <div className="text-xs text-slate-500">out of 43</div>
+                <div className="text-xs text-slate-500">out of 36</div>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-              {([region.platinum, region.pgs, region.sb, region.dg] as GridKpiResult[]).map((result) => (
-                <div key={result.config.key} className="rounded-lg border border-slate-700 bg-slate-900/60 p-3">
-                  <div className="text-xs font-medium text-slate-400">{result.config.label}</div>
-                  <div className="mt-1 text-lg font-bold text-white">{result.average === null ? "—" : `${result.average.toFixed(2)}%`}</div>
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+              {([region.platinum, region.pgs, region.dg] as GridKpiResult[]).map((result) => (
+                <div key={result.config.key} className="rounded-lg border border-slate-300 bg-slate-100 p-3">
+                  <div className="text-xs font-medium text-slate-600">{result.config.label}</div>
+                  <div className="mt-1 text-lg font-bold text-slate-900">{result.average === null ? "—" : `${result.average.toFixed(2)}%`}</div>
                   <div className="mt-1 text-xs text-cyan-400">Score {result.score.toFixed(2)} / {result.config.maxScore}</div>
                 </div>
               ))}
@@ -3203,16 +3594,16 @@ function GridPerformanceScorecard({
       </div>
 
       {/* Category-wise exports irrespective of Grid */}
-      <div className="rounded-xl border border-slate-700 bg-slate-800 p-5">
+      <div className="rounded-xl border border-slate-300 bg-white p-5">
         <div className="mb-4">
-          <h3 className="text-lg font-semibold text-white">Category-wise Performance Exceptions</h3>
-          <p className="mt-1 text-xs text-slate-400">Export sites not achieving Base, Target or Stretch irrespective of Grid.</p>
+          <h3 className="text-lg font-semibold text-slate-900">Category-wise Performance Exceptions</h3>
+          <p className="mt-1 text-xs text-slate-600">Export sites not achieving Base, Target or Stretch irrespective of Grid.</p>
         </div>
-        <div className="grid grid-cols-1 gap-4 xl:grid-cols-4">
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
           {exportGroups.map(({ config, base, target, stretch }) => (
-            <div key={config.key} className="rounded-lg border border-slate-700 bg-slate-900/50 p-4">
+            <div key={config.key} className="rounded-lg border border-slate-300 bg-slate-50 p-4">
               <div className="mb-3 flex items-center justify-between">
-                <span className="font-semibold text-white">{config.label}</span>
+                <span className="font-semibold text-slate-900">{config.label}</span>
                 <span className="text-[10px] text-slate-500">Valid CA only</span>
               </div>
               <div className="space-y-2">
@@ -3226,106 +3617,164 @@ function GridPerformanceScorecard({
       </div>
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <div className="rounded-xl border border-slate-700 bg-slate-800 p-4">
+        <div className="rounded-xl border border-slate-300 bg-white p-4">
           <div className="text-[10px] uppercase text-slate-500">Worst Grid</div>
           <div className="mt-1 text-xl font-bold text-red-400">{lowestGrid?.grid || "—"}</div>
-          <div className="text-xs text-slate-400">{lowestGrid ? `${lowestGrid.totalScore.toFixed(2)} / 43` : "No data"}</div>
+          <div className="text-xs text-slate-600">{lowestGrid ? `${lowestGrid.totalScore.toFixed(2)} / 36` : "No data"}</div>
         </div>
-        <div className="rounded-xl border border-slate-700 bg-slate-800 p-4">
+        <div className="rounded-xl border border-slate-300 bg-white p-4">
           <div className="text-[10px] uppercase text-slate-500">Best Grid</div>
           <div className="mt-1 text-xl font-bold text-emerald-400">{bestGrid?.grid || "—"}</div>
-          <div className="text-xs text-slate-400">{bestGrid ? `${bestGrid.totalScore.toFixed(2)} / 43` : "No data"}</div>
+          <div className="text-xs text-slate-600">{bestGrid ? `${bestGrid.totalScore.toFixed(2)} / 36` : "No data"}</div>
         </div>
-        <div className="rounded-xl border border-slate-700 bg-slate-800 p-4">
+        <div className="rounded-xl border border-slate-300 bg-white p-4">
           <div className="text-[10px] uppercase text-slate-500">Average Grid Score</div>
           <div className="mt-1 text-xl font-bold text-cyan-400">{avgScore.toFixed(2)}</div>
-          <div className="text-xs text-slate-400">Across {gridRows.length} grids</div>
+          <div className="text-xs text-slate-600">Across {gridRows.length} grids</div>
         </div>
-        <div className="rounded-xl border border-slate-700 bg-slate-800 p-4">
+        <div className="rounded-xl border border-slate-300 bg-white p-4">
           <div className="text-[10px] uppercase text-slate-500">Sites Below Stretch</div>
           <div className="mt-1 text-xl font-bold text-amber-400">{totalBelowStretch}</div>
-          <div className="text-xs text-slate-400">All four categories</div>
+          <div className="text-xs text-slate-600">Plat+, PGS & DG only</div>
         </div>
       </div>
 
-      <div className="rounded-xl border border-slate-700 bg-slate-800 p-5">
-        <div className="mb-4">
-          <h3 className="text-lg font-semibold text-white">Grid Performance Scorecard</h3>
-          <p className="text-xs text-slate-400">Worst performing Grid shown first · Score is based on monthly Grid average.</p>
+      <div className="rounded-2xl border border-slate-300 bg-[#f4f5f7] p-6 shadow-sm">
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <h3 className="text-[44px] leading-tight font-black text-slate-900">Grid Performance</h3>
+            <p className="mt-1 text-[24px] font-medium text-slate-600">Worst performing Grid shown first · Score is based on monthly Grid average.</p>
+          </div>
+          <div className="rounded-xl border-2 border-red-300 bg-red-50 px-6 py-4 text-[26px] font-black text-red-700">
+            ⚠ Focus on low performing grids in Plat+, PGS &amp; DG
+          </div>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[1250px] text-sm">
+
+        <div className="overflow-x-auto rounded-xl border border-slate-300 bg-white">
+          <table className="w-full min-w-[1650px] border-collapse">
             <thead>
-              <tr className="border-b border-slate-700 bg-slate-900/40">
-                <th className="px-3 py-3 text-left text-xs font-semibold text-slate-500">Grid</th>
-                <th className="px-3 py-3 text-left text-xs font-semibold text-slate-500">CMPAK GTL</th>
-                {latestDateHeaders.map((header) => (
-                  <th key={`grid-${header}`} className="px-3 py-3 text-center text-xs font-semibold text-slate-500">{header}</th>
-                ))}
-                <th className="px-3 py-3 text-center text-xs font-semibold text-slate-500">Platinum+</th>
-                <th className="px-3 py-3 text-center text-xs font-semibold text-slate-500">Plat+ Score</th>
-                <th className="px-3 py-3 text-center text-xs font-semibold text-slate-500">PGS</th>
-                <th className="px-3 py-3 text-center text-xs font-semibold text-slate-500">PGS Score</th>
-                <th className="px-3 py-3 text-center text-xs font-semibold text-slate-500">SB</th>
-                <th className="px-3 py-3 text-center text-xs font-semibold text-slate-500">SB Score</th>
-                <th className="px-3 py-3 text-center text-xs font-semibold text-slate-500">DG</th>
-                <th className="px-3 py-3 text-center text-xs font-semibold text-slate-500">DG Score</th>
-                <th className="px-3 py-3 text-center text-xs font-semibold text-slate-500">Total Score</th>
+              <tr className="bg-slate-200 text-slate-900">
+                <th className="border-r border-slate-300 px-6 py-5 text-left text-[40px] leading-tight font-black">#</th>
+                <th className="border-r border-slate-300 px-6 py-5 text-left text-[40px] leading-tight font-black">Grid</th>
+                <th className="border-r border-slate-300 px-6 py-5 text-left text-[40px] leading-tight font-black">CMPAK GTL</th>
+                <th className="border-r border-slate-300 px-6 py-5 text-center text-[40px] leading-tight font-black">Plat+ Score</th>
+                <th className="border-r border-slate-300 px-6 py-5 text-center text-[40px] leading-tight font-black">PGS Score</th>
+                <th className="px-6 py-5 text-center text-[40px] leading-tight font-black">DG Score</th>
               </tr>
             </thead>
             <tbody>
-              {gridRows.map((row) => (
-                <tr key={row.grid} className="border-b border-slate-700/60 hover:bg-slate-700/20">
-                  <td className="px-3 py-3 font-bold text-cyan-300">{row.grid}</td>
-                  <td className="px-3 py-3 text-slate-300">{row.cmpakGtl}</td>
-                  {(gridDailyAverages.get(row.grid) || []).map((value, idx) => (
-                    <td key={`${row.grid}-day-${idx}`} className={`px-3 py-3 text-center font-semibold ${value > 0 && value < 95 ? "text-red-400" : value > 0 ? "text-slate-200" : "text-slate-600"}`}>
-                      {value > 0 ? `${value.toFixed(2)}%` : "—"}
-                    </td>
-                  ))}
-                  <td className="px-3 py-3 text-center">{kpiCell(row, row.platinum)}</td>
-                  <td className="px-3 py-3 text-center"><GridScoreBadge score={row.platinum.score} max={12} /></td>
-                  <td className="px-3 py-3 text-center">{kpiCell(row, row.pgs)}</td>
-                  <td className="px-3 py-3 text-center"><GridScoreBadge score={row.pgs.score} max={12} /></td>
-                  <td className="px-3 py-3 text-center">{kpiCell(row, row.sb)}</td>
-                  <td className="px-3 py-3 text-center"><GridScoreBadge score={row.sb.score} max={7} /></td>
-                  <td className="px-3 py-3 text-center">{kpiCell(row, row.dg)}</td>
-                  <td className="px-3 py-3 text-center"><GridScoreBadge score={row.dg.score} max={12} /></td>
-                  <td className="px-3 py-3 text-center"><GridScoreBadge score={row.totalScore} max={43} /></td>
+              {gridRows.map((row, index) => (
+                <tr key={row.grid} className={`${index % 2 === 0 ? "bg-white" : "bg-slate-50"} border-t border-slate-200 hover:bg-slate-100`}>
+                  <td className="border-r border-slate-200 px-6 py-4 text-center text-[40px] font-black text-slate-800">{index + 1}</td>
+                  <td className="border-r border-slate-200 px-6 py-4 text-[40px] font-black text-blue-700">{row.grid}</td>
+                  <td className="border-r border-slate-200 px-6 py-4 text-[40px] font-semibold text-slate-900">{row.cmpakGtl}</td>
+                  <td className="border-r border-slate-200 px-6 py-3 text-center"><GridScoreBadge score={row.platinum.score} max={12} /></td>
+                  <td className="border-r border-slate-200 px-6 py-3 text-center"><GridScoreBadge score={row.pgs.score} max={12} /></td>
+                  <td className="px-6 py-3 text-center"><GridScoreBadge score={row.dg.score} max={12} /></td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
+
+        <div className="mt-5 flex flex-wrap items-center gap-6 rounded-xl border border-slate-300 bg-slate-100 px-5 py-4 text-[22px] font-bold text-slate-700">
+          <span className="inline-flex items-center gap-2"><span className="h-8 w-12 rounded-md border border-red-300 bg-red-100" /> ≤ 5 Critical</span>
+          <span className="inline-flex items-center gap-2"><span className="h-8 w-12 rounded-md border border-amber-300 bg-amber-100" /> &gt; 5 and ≤ 10 Needs Attention</span>
+          <span className="inline-flex items-center gap-2"><span className="h-8 w-12 rounded-md border border-emerald-300 bg-emerald-100" /> &gt; 10 Good</span>
+        </div>
       </div>
 
-      <div className="rounded-xl border border-slate-700 bg-slate-800 p-5">
-        <h3 className="text-lg font-semibold text-white">Stretch Achievement Improvement Plan</h3>
-        <p className="mt-1 text-xs text-slate-400">Focuses on categories where the Grid average has not yet achieved Stretch.</p>
+      {/* Detailed / legacy Grid Performance table retained for operational review.
+          This keeps latest 3 daily Grid averages, actual KPI values and View buttons. */}
+      <div className="rounded-2xl border border-slate-300 bg-white p-6 shadow-sm">
+        <div className="mb-5 flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <h3 className="text-[34px] leading-tight font-black text-slate-900">Detailed Grid Performance</h3>
+            <p className="mt-1 text-[18px] font-medium text-slate-600">Latest 3 days + monthly KPI values + View Sites buttons.</p>
+          </div>
+          <div className="rounded-lg border border-slate-300 bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-700">
+            Worst performing Grid shown first
+          </div>
+        </div>
+
+        <div className="overflow-x-auto rounded-xl border border-slate-300">
+          <table className="w-full min-w-[1900px] border-collapse bg-white text-[15px]">
+            <thead>
+              <tr className="border-b border-slate-300 bg-slate-200 text-slate-900">
+                <th className="px-4 py-4 text-left text-[16px] font-extrabold">Grid</th>
+                <th className="px-4 py-4 text-left text-[16px] font-extrabold">CMPAK GTL</th>
+                {latestDateHeaders.map((header) => (
+                  <th key={`detail-grid-${header}`} className="px-4 py-4 text-center text-[16px] font-extrabold">{header}</th>
+                ))}
+                <th className="px-4 py-4 text-center text-[16px] font-extrabold">Platinum+</th>
+                <th className="px-4 py-4 text-center text-[16px] font-extrabold">Plat+ Score</th>
+                <th className="px-4 py-4 text-center text-[16px] font-extrabold">PGS</th>
+                <th className="px-4 py-4 text-center text-[16px] font-extrabold">PGS Score</th>
+                <th className="px-4 py-4 text-center text-[16px] font-extrabold">DG</th>
+                <th className="px-4 py-4 text-center text-[16px] font-extrabold">DG Score</th>
+                <th className="px-4 py-4 text-center text-[16px] font-extrabold">Total Score</th>
+              </tr>
+            </thead>
+            <tbody>
+              {gridRows.map((row, rowIndex) => (
+                <tr key={`detail-${row.grid}`} className={`${rowIndex % 2 === 0 ? "bg-white" : "bg-slate-50"} border-b border-slate-200 hover:bg-cyan-50/60`}>
+                  <td className="px-4 py-4 text-left text-[17px] font-black text-blue-700">{row.grid}</td>
+                  <td className="px-4 py-4 text-left text-[16px] font-semibold text-slate-900">{row.cmpakGtl}</td>
+                  {(gridDailyAverages.get(row.grid) || []).map((value, idx) => (
+                    <td
+                      key={`${row.grid}-detail-day-${idx}`}
+                      className={`px-4 py-4 text-center text-[16px] font-extrabold ${
+                        value > 0 && value < 95 ? "text-red-600" : value > 0 && value < 98 ? "text-amber-600" : value > 0 ? "text-slate-900" : "text-slate-400"
+                      }`}
+                    >
+                      {value > 0 ? `${value.toFixed(2)}%` : "—"}
+                    </td>
+                  ))}
+                  <td className="px-4 py-3 text-center">{kpiCell(row, row.platinum)}</td>
+                  <td className="px-4 py-3 text-center"><GridScoreBadge score={row.platinum.score} max={12} /></td>
+                  <td className="px-4 py-3 text-center">{kpiCell(row, row.pgs)}</td>
+                  <td className="px-4 py-3 text-center"><GridScoreBadge score={row.pgs.score} max={12} /></td>
+                  <td className="px-4 py-3 text-center">{kpiCell(row, row.dg)}</td>
+                  <td className="px-4 py-3 text-center"><GridScoreBadge score={row.dg.score} max={12} /></td>
+                  <td className="px-4 py-3 text-center"><GridScoreBadge score={row.totalScore} max={36} /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-5 py-3 text-[15px] font-medium text-slate-600">
+          <span className="font-bold text-slate-900">View</span> opens the exact sites contributing to that Grid/category. Daily columns always use the latest three valid dates available up to the report update date.
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-slate-300 bg-white p-5">
+        <h3 className="text-lg font-semibold text-slate-900">Stretch Achievement Improvement Plan</h3>
+        <p className="mt-1 text-xs text-slate-600">Focuses on categories where the Grid average has not yet achieved Stretch.</p>
         <div className="mt-4 space-y-3">
           {gridRows.map((row) => {
             const items = improvementItems(row);
             const open = expandedPlanGrid === row.grid;
             return (
-              <div key={`plan-${row.grid}`} className="overflow-hidden rounded-lg border border-slate-700 bg-slate-900/40">
-                <button onClick={() => setExpandedPlanGrid(open ? null : row.grid)} className="flex w-full items-center justify-between px-4 py-3 text-left hover:bg-slate-800/60">
+              <div key={`plan-${row.grid}`} className="overflow-hidden rounded-lg border border-slate-300 bg-slate-50">
+                <button onClick={() => setExpandedPlanGrid(open ? null : row.grid)} className="flex w-full items-center justify-between px-4 py-3 text-left hover:bg-white/60">
                   <div>
                     <span className="font-bold text-cyan-300">{row.grid}</span>
-                    <span className="ml-3 text-xs text-slate-400">{items.length === 0 ? "All categories at Stretch" : `${items.length} categories require improvement`}</span>
+                    <span className="ml-3 text-xs text-slate-600">{items.length === 0 ? "All categories at Stretch" : `${items.length} categories require improvement`}</span>
                   </div>
-                  {open ? <ChevronUp className="h-4 w-4 text-slate-400" /> : <ChevronDown className="h-4 w-4 text-slate-400" />}
+                  {open ? <ChevronUp className="h-4 w-4 text-slate-600" /> : <ChevronDown className="h-4 w-4 text-slate-600" />}
                 </button>
                 {open && (
-                  <div className="space-y-3 border-t border-slate-700 p-4">
+                  <div className="space-y-3 border-t border-slate-300 p-4">
                     {items.length === 0 ? (
-                      <div className="text-sm text-emerald-400">All four categories have achieved Stretch.</div>
+                      <div className="text-sm text-emerald-400">Plat+, PGS & DG only have achieved Stretch.</div>
                     ) : items.map(({ result, avgGap, prioritySites }) => (
-                      <div key={`${row.grid}-${result.config.key}`} className="rounded-lg border border-slate-700 bg-slate-800/60 p-4">
+                      <div key={`${row.grid}-${result.config.key}`} className="rounded-lg border border-slate-300 bg-white/60 p-4">
                         <div className="flex flex-wrap items-center justify-between gap-3">
                           <div>
-                            <div className="font-semibold text-white">{result.config.label}</div>
-                            <div className="mt-1 text-xs text-slate-400">
-                              Grid Avg: <span className="font-semibold text-slate-200">{result.average === null ? "No valid CA" : `${result.average.toFixed(2)}%`}</span>
+                            <div className="font-semibold text-slate-900">{result.config.label}</div>
+                            <div className="mt-1 text-xs text-slate-600">
+                              Grid Avg: <span className="font-semibold text-slate-900">{result.average === null ? "No valid CA" : `${result.average.toFixed(2)}%`}</span>
                               {result.average !== null && <> · Stretch: <span className="font-semibold text-emerald-400">{result.config.stretch.toFixed(2)}%</span> · Gap: <span className="font-semibold text-red-400">{avgGap?.toFixed(2)}%</span></>}
                             </div>
                           </div>
@@ -3341,9 +3790,9 @@ function GridPerformanceScorecard({
                         {result.sites.length === 0 ? (
                           <p className="mt-3 text-xs text-amber-400">No valid Monthly CA records are available for this KPI.</p>
                         ) : prioritySites.length === 0 ? (
-                          <p className="mt-3 text-xs text-slate-400">Individual sites are at Stretch, but verify source data if the calculated Grid average is still below target.</p>
+                          <p className="mt-3 text-xs text-slate-600">Individual sites are at Stretch, but verify source data if the calculated Grid average is still below target.</p>
                         ) : (
-                          <div className="mt-3 text-xs text-slate-300">
+                          <div className="mt-3 text-xs text-slate-800">
                             Priority: improve the lowest CA sites first. {prioritySites.length} site{prioritySites.length > 1 ? "s are" : " is"} below Stretch.
                             <span className="ml-1 text-red-400">
                               Worst: {prioritySites.slice(0, 5).map((site) => `${site.siteId} (${site.currentMonth.toFixed(2)}%)`).join(", ")}
@@ -3377,12 +3826,12 @@ function GridPerformanceScorecard({
               animate={{ scale: 1, y: 0 }}
               exit={{ scale: 0.96, y: 15 }}
               onClick={(event) => event.stopPropagation()}
-              className="flex max-h-[88vh] w-full max-w-7xl flex-col overflow-hidden rounded-2xl border border-slate-600 bg-slate-900 shadow-2xl"
+              className="flex max-h-[88vh] w-full max-w-7xl flex-col overflow-hidden rounded-2xl border border-slate-300 bg-slate-100 shadow-2xl"
             >
-              <div className="flex items-center justify-between gap-4 border-b border-slate-700 p-5">
+              <div className="flex items-center justify-between gap-4 border-b border-slate-300 p-5">
                 <div>
-                  <h3 className="text-xl font-bold text-white">{selectedGrid.grid} · {selectedResult.config.label} Sites</h3>
-                  <p className="mt-1 text-xs text-slate-400">
+                  <h3 className="text-xl font-bold text-slate-900">{selectedGrid.grid} · {selectedResult.config.label} Sites</h3>
+                  <p className="mt-1 text-xs text-slate-600">
                     Grid Avg {selectedResult.average === null ? "—" : `${selectedResult.average.toFixed(2)}%`} · Stretch {selectedResult.config.stretch.toFixed(2)}% · {selectedResult.sites.length} valid sites
                   </p>
                 </div>
@@ -3423,7 +3872,7 @@ function GridPerformanceScorecard({
                     format="excel"
                     variant="primary"
                   />
-                  <button onClick={() => { setSelectedGrid(null); setSelectedKpi(null); }} className="rounded-md p-2 text-slate-400 hover:bg-slate-800 hover:text-white">
+                  <button onClick={() => { setSelectedGrid(null); setSelectedKpi(null); }} className="rounded-md p-2 text-slate-600 hover:bg-white hover:text-slate-900">
                     <X className="h-5 w-5" />
                   </button>
                 </div>
@@ -3431,7 +3880,7 @@ function GridPerformanceScorecard({
               <div className="overflow-auto p-5">
                 <table className="w-full min-w-[1200px] text-sm">
                   <thead>
-                    <tr className="border-b border-slate-700 text-left">
+                    <tr className="border-b border-slate-300 text-left">
                       <th className="px-3 py-2 text-xs text-slate-500">Site ID</th>
                       <th className="px-3 py-2 text-xs text-slate-500">Current Month</th>
                       {latestDateHeaders.map((header) => <th key={header} className="px-3 py-2 text-center text-xs text-slate-500">{header}</th>)}
@@ -3451,11 +3900,11 @@ function GridPerformanceScorecard({
                         const gap = Math.max(0, selectedResult.config.stretch - site.currentMonth);
                         const status = site.currentMonth >= selectedResult.config.stretch ? "Stretch Achieved" : site.currentMonth >= selectedResult.config.target ? "Target to Stretch" : site.currentMonth >= selectedResult.config.base ? "Base to Target" : "Below Base";
                         return (
-                          <tr key={`${selectedKpi}-${site.siteId}`} className="border-b border-slate-800 hover:bg-slate-800/50">
+                          <tr key={`${selectedKpi}-${site.siteId}`} className="border-b border-slate-800 hover:bg-white/50">
                             <td className="px-3 py-2 font-mono font-semibold text-cyan-300">{site.siteId || "—"}</td>
-                            <td className={`px-3 py-2 font-semibold ${site.currentMonth >= selectedResult.config.stretch ? "text-emerald-400" : "text-slate-200"}`}>{site.currentMonth.toFixed(2)}%</td>
+                            <td className={`px-3 py-2 font-semibold ${site.currentMonth >= selectedResult.config.stretch ? "text-emerald-400" : "text-slate-900"}`}>{site.currentMonth.toFixed(2)}%</td>
                             {site.latestDays.map((day) => (
-                              <td key={`${site.siteId}-${day.label}`} className={`px-3 py-2 text-center font-medium ${day.value > 0 && day.value < selectedResult.config.base ? "text-red-400" : day.value > 0 ? "text-slate-200" : "text-slate-600"}`}>
+                              <td key={`${site.siteId}-${day.label}`} className={`px-3 py-2 text-center font-medium ${day.value > 0 && day.value < selectedResult.config.base ? "text-red-400" : day.value > 0 ? "text-slate-900" : "text-slate-600"}`}>
                                 {day.value > 0 ? `${day.value.toFixed(2)}%` : "—"}
                               </td>
                             ))}
@@ -3463,11 +3912,11 @@ function GridPerformanceScorecard({
                             <td className="px-3 py-2">
                               <span className={`rounded px-2 py-1 text-[10px] font-semibold ${status === "Stretch Achieved" ? "bg-emerald-500/15 text-emerald-400" : status === "Target to Stretch" ? "bg-cyan-500/15 text-cyan-400" : status === "Base to Target" ? "bg-amber-500/15 text-amber-400" : "bg-red-500/15 text-red-400"}`}>{status}</span>
                             </td>
-                            <td className="px-3 py-2 text-slate-300">{site.group || "—"}</td>
-                            <td className="px-3 py-2 text-slate-300">{site.revenueCategory || "—"}</td>
-                            <td className="px-3 py-2 text-slate-300">{site.dgStatus || "—"}</td>
-                            <td className="px-3 py-2 text-slate-300">{site.clusterOwner || "—"}</td>
-                            <td className="px-3 py-2 text-slate-300">{site.msGtl || "—"}</td>
+                            <td className="px-3 py-2 text-slate-800">{site.group || "—"}</td>
+                            <td className="px-3 py-2 text-slate-800">{site.revenueCategory || "—"}</td>
+                            <td className="px-3 py-2 text-slate-800">{site.dgStatus || "—"}</td>
+                            <td className="px-3 py-2 text-slate-800">{site.clusterOwner || "—"}</td>
+                            <td className="px-3 py-2 text-slate-800">{site.msGtl || "—"}</td>
                           </tr>
                         );
                       })}
@@ -3636,7 +4085,9 @@ function OverallSummaryWithExport({ sites, rawData }: { sites: SiteData[]; rawDa
         </div>
       </div>
 
-      <OverallSummaryComponent sites={sites} />
+      <div className="overall-summary-light">
+        <OverallSummaryComponent sites={sites} />
+      </div>
 
       {/* September regional 99% target achievement plan */}
       <div className="rounded-xl border border-cyan-500/25 bg-gradient-to-r from-cyan-500/10 via-slate-800 to-slate-800 p-5">
@@ -5067,7 +5518,7 @@ export default function App() {
 
       {/* Sidebar */}
       <aside className={`fixed lg:sticky top-0 z-40 h-screen w-64 bg-slate-950 border-r border-slate-800 flex flex-col transition-transform duration-300 ${prePostSidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}`}>
-        <div className="p-5 border-b border-slate-800">
+        <div className="p-5 border-b border-slate-300">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-pink-600 flex items-center justify-center shadow-lg shadow-purple-500/20">
               <GitCompare className="w-5 h-5 text-white" />
@@ -5099,7 +5550,7 @@ export default function App() {
             );
           })}
         </nav>
-        <div className="p-3 border-t border-slate-800">
+        <div className="p-3 border-t border-slate-300">
           <button onClick={goHome} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm font-medium transition-colors w-full">
             <span className="text-slate-400">←</span> Back to Home
           </button>
@@ -5113,7 +5564,7 @@ export default function App() {
 
       {/* Main content */}
       <div className="flex-1 min-w-0 flex flex-col">
-        <header className="sticky top-0 z-20 bg-slate-900/80 backdrop-blur-xl border-b border-slate-800">
+        <header className="sticky top-0 z-20 bg-[#f3f4f6]/95 backdrop-blur-xl border-b border-slate-300">
           <div className="px-4 sm:px-6 py-4 flex items-center justify-between">
             <div className="flex items-center gap-3">
               <button onClick={() => setPrePostSidebarOpen(true)} className="lg:hidden text-slate-400 hover:text-white">
@@ -5168,9 +5619,10 @@ export default function App() {
   const isLive = selectedMonth === "september";
 
   return (
-    <div className="min-h-screen bg-slate-900 text-slate-100 flex">
+    <div className="light-app min-h-screen bg-[#eef0f3] text-slate-900 flex">
+      <LightAppTheme />
       <RainAlertWidget />
-      <aside className={`fixed lg:sticky top-0 z-40 h-screen w-64 bg-slate-950 border-r border-slate-800 flex flex-col transition-transform ${sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}`}>
+      <aside className={`fixed lg:sticky top-0 z-40 h-screen w-64 bg-[#e5e7eb] border-r border-slate-300 flex flex-col transition-transform ${sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}`}>
         <div className="p-5 border-b border-slate-800">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-400 to-blue-600 flex items-center justify-center shadow-lg shadow-cyan-500/20">
@@ -5207,12 +5659,15 @@ export default function App() {
       </aside>
 
       <div className="flex-1 min-w-0 flex flex-col">
-        <header className="sticky top-0 z-20 bg-slate-900/80 backdrop-blur-xl border-b border-slate-800">
+        <header className="sticky top-0 z-20 bg-white/95 backdrop-blur-xl border-b border-slate-300">
           <div className="px-4 sm:px-6 py-4 flex items-center justify-between gap-4">
             <div className="flex items-center gap-3 min-w-0">
               <button onClick={() => setSidebarOpen(true)} className="lg:hidden text-slate-400 hover:text-white"><Menu className="w-5 h-5" /></button>
               <div className="min-w-0">
-                <h2 className="text-lg font-bold text-white truncate">{activeLabel} — {monthLabel}{isLive && <span className="ml-2 text-xs text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded">LIVE</span>}</h2>
+                <h2 className={`${activeTab === "grid-performance" ? "grid-performance-light-title" : "text-xl"} font-extrabold text-slate-900 truncate`}>
+                  {activeLabel} — {monthLabel}
+                  {isLive && <span className="ml-3 align-middle text-sm text-emerald-700 bg-emerald-100 px-3 py-1 rounded-lg">LIVE</span>}
+                </h2>
                 <p className="text-[11px] text-slate-500 truncate flex items-center gap-2 flex-wrap">
                   {monthLastUpdated && <span className="text-cyan-400 font-medium">Report Updated: {monthLastUpdated}</span>}
                   {!monthLastUpdated && useMock && <span className="text-cyan-400 font-medium">Report Updated: {selectedMonth === "june" ? "30-Jun-26" : selectedMonth === "july" ? "31-Jul-26" : selectedMonth === "august" ? "31-Aug-26" : "1-Sep-26"}</span>}
