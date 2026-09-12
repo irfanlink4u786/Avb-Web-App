@@ -88,6 +88,7 @@ const NAV_ITEMS = [
   { id: "overall", label: "Overall Summary", icon: LayoutDashboard },
   { id: "grid-performance", label: "Grid Performance", icon: Award },
   { id: "recurring", label: "Recurring Sites", icon: RefreshCw },
+  { id: "s2s-bb", label: "S2S BB Performance", icon: Battery },
   { id: "employees", label: "Employees", icon: Users },
   { id: "platinum-plus", label: "Platinum+", icon: Crown },
   { id: "pgs", label: "PGS Sites", icon: TrendingUp },
@@ -1301,6 +1302,504 @@ function CategoryPage({
             </tbody>
           </table>
         </div>
+      </div>
+    </motion.div>
+  );
+}
+
+// ============================================================
+//  S2S BB PERFORMANCE — INVESTMENT EFFECTIVENESS
+// ============================================================
+
+type S2SPerformanceStatus = "Improved & Stable" | "Improved, Still Vulnerable" | "Stable High" | "No Material Change" | "Needs Attention";
+
+type S2SPerformanceRow = {
+  site: SiteData;
+  raw: Record<string, any>;
+  capacity: string;
+  installDate: string;
+  baselineLabel: string;
+  baselineCa: number;
+  pre3Avg: number;
+  currentCa: number;
+  delta: number;
+  outageDays: number;
+  observedDays: number;
+  latest3Avg: number;
+  last5Values: Record<string, number>;
+  status: S2SPerformanceStatus;
+};
+
+function S2SBBPerformancePage({
+  sites,
+  s2sData,
+  historyData,
+  rawData,
+  lastUpdatedDate,
+}: {
+  sites: SiteData[];
+  s2sData: SheetPayload | null;
+  historyData: SheetPayload | null;
+  rawData: SheetPayload | null;
+  lastUpdatedDate: string;
+}) {
+  const [subRegion, setSubRegion] = useState("__all");
+  const [grid, setGrid] = useState("__all");
+  const [owner, setOwner] = useState("__all");
+  const [statusFilter, setStatusFilter] = useState("__all");
+  const [search, setSearch] = useState("");
+
+  const normalize = (v: any) =>
+    String(v ?? "")
+      .replace(/[\u200B-\u200D\uFEFF]/g, "") // zero-width chars from Sheets
+      .replace(/\u00A0/g, " ") // non-breaking spaces
+      .trim()
+      .toLowerCase()
+      .replace(/[’‘`]/g, "'")
+      .replace(/[_\s-]+/g, " ");
+
+  const parseCa = (value: any) => {
+    if (value === null || value === undefined || value === "") return 0;
+    const n = Number.parseFloat(String(value).replace(/%/g, "").replace(/,/g, "").trim());
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  };
+
+  const getValue = (row: Record<string, any>, aliases: string[]) => {
+    const wanted = new Set(aliases.map(normalize));
+    for (const [key, value] of Object.entries(row)) {
+      if (wanted.has(normalize(key))) return value;
+    }
+    return undefined;
+  };
+
+  // Canonical site key used to JOIN all three September sheets.
+  // Prefer the numeric site ID because headers / prefixes can differ between tabs.
+  const siteKey = (value: any) => {
+    const text = String(value ?? "").trim();
+    if (!text) return "";
+    const numeric = text.match(/(?:^|\D)(\d{3,6})(?:\D|$)/)?.[1];
+    return numeric || normalize(text).replace(/[^a-z0-9]/g, "");
+  };
+
+  const getInstalledCapacity = (row: Record<string, any>) => {
+    // Exact aliases first.
+    const exact = getValue(row, [
+      "Installed Capacity", "Installed capacity", "InstalledCapacity",
+      "Installed BB Capacity", "BB Installed Capacity", "Installed Battery Capacity",
+      "Battery Installed Capacity", "BB Capacity", "Battery Capacity", "Capacity",
+      "Capacity Ah", "Capacity AH", "AH", "Ampere Hour"
+    ]);
+    if (exact !== undefined && String(exact).trim() !== "") return String(exact).trim();
+
+    // Google Sheets headers can contain hidden spaces / formatting chars.
+    // Accept any header that clearly contains both Installed and Capacity.
+    for (const [key, value] of Object.entries(row)) {
+      const nk = normalize(key);
+      if (nk.includes("installed") && nk.includes("capacity") && String(value ?? "").trim() !== "") {
+        return String(value).trim();
+      }
+    }
+
+    // Last-resort positional fallback for the known S2S layout:
+    // A = Site ID, B = Installed Capacity, C = Date.
+    const entries = Object.entries(row);
+    if (entries.length >= 3) {
+      const firstKey = normalize(entries[0][0]);
+      const thirdKey = normalize(entries[2][0]);
+      const secondValue = entries[1][1];
+      if (firstKey.includes("site") && thirdKey.includes("date") && String(secondValue ?? "").trim() !== "") {
+        return String(secondValue).trim();
+      }
+    }
+
+    return "—";
+  };
+
+  const extractTargetSite = (row: Record<string, any>) => {
+    // 1) Exact / expected destination headers first.
+    const exact = getValue(row, [
+      "Site ID", "SiteID", "Site Id", "Site", "Site Name", "Site Code",
+      "Destination Site", "Destination Site ID", "To Site", "To Site ID",
+      "Receiving Site", "Receiving Site ID", "Installed Site", "Installed Site ID",
+      "BB Installed Site", "BB Installed Site ID", "Target Site", "Target Site ID",
+    ]);
+    if (siteKey(exact)) return exact;
+
+    // 2) Any site-related column except donor/source/from columns.
+    for (const [key, value] of Object.entries(row)) {
+      const nk = normalize(key);
+      if (!nk.includes("site")) continue;
+      if (nk.includes("source") || nk.includes("from") || nk.includes("donor")) continue;
+      if (siteKey(value)) return value;
+    }
+
+    // 3) Last-resort: a standalone site-like ID anywhere in the S2S row.
+    for (const value of Object.values(row)) {
+      const text = String(value ?? "").trim();
+      if (/^\d{3,6}$/.test(text)) return text;
+    }
+    return undefined;
+  };
+
+  const monthMeta = (raw: any): { key: string; label: string; timestamp: number } | null => {
+    const original = String(raw ?? "").trim();
+    if (!original) return null;
+    const cleaned = original
+      .replace(/\s+(?:cell[_\s-]*a(?:vb)?|cell\s+availability|avb)(?:\s*%?)?.*$/i, "")
+      .trim();
+    const mm: Record<string, number> = {
+      jan: 0, january: 0, feb: 1, february: 1, mar: 2, march: 2, apr: 3, april: 3,
+      may: 4, jun: 5, june: 5, jul: 6, july: 6, aug: 7, august: 7,
+      sep: 8, sept: 8, september: 8, oct: 9, october: 9, nov: 10, november: 10, dec: 11, december: 11,
+    };
+    let m = cleaned.match(/^([A-Za-z]{3,9})\s*[-\/\s']?\s*(\d{2}|\d{4})$/i);
+    if (m) {
+      const mi = mm[m[1].toLowerCase()];
+      const year = Number(m[2].length === 2 ? `20${m[2]}` : m[2]);
+      if (mi !== undefined && year === 2026) {
+        const d = new Date(year, mi, 1);
+        return { key: `${year}-${String(mi + 1).padStart(2, "0")}`, label: d.toLocaleString("default", { month: "short", year: "2-digit" }), timestamp: d.getTime() };
+      }
+    }
+    m = cleaned.match(/^(\d{1,2})[-\/\s]([A-Za-z]{3,9})[-\/\s']?(\d{2}|\d{4})$/i);
+    if (m) {
+      const mi = mm[m[2].toLowerCase()];
+      const year = Number(m[3].length === 2 ? `20${m[3]}` : m[3]);
+      if (mi !== undefined && year === 2026) {
+        const d = new Date(year, mi, 1);
+        return { key: `${year}-${String(mi + 1).padStart(2, "0")}`, label: d.toLocaleString("default", { month: "short", year: "2-digit" }), timestamp: d.getTime() };
+      }
+    }
+    const parsed = new Date(cleaned);
+    if (!Number.isNaN(parsed.getTime()) && parsed.getFullYear() === 2026) {
+      const d = new Date(2026, parsed.getMonth(), 1);
+      return { key: `2026-${String(parsed.getMonth() + 1).padStart(2, "0")}`, label: d.toLocaleString("default", { month: "short", year: "2-digit" }), timestamp: d.getTime() };
+    }
+    return null;
+  };
+
+  const history = useMemo(() => {
+    const bySite = new Map<string, Map<string, { sum: number; count: number }>>();
+    const months = new Map<string, { key: string; label: string; timestamp: number }>();
+    const rows = (historyData?.rows || []) as Record<string, any>[];
+
+    const add = (siteRaw: any, month: ReturnType<typeof monthMeta>, ca: number) => {
+      const siteId = siteKey(siteRaw);
+      if (!siteId || !month || !(ca > 0)) return;
+      if (!bySite.has(siteId)) bySite.set(siteId, new Map());
+      const sm = bySite.get(siteId)!;
+      const prev = sm.get(month.key) || { sum: 0, count: 0 };
+      prev.sum += ca;
+      prev.count += 1;
+      sm.set(month.key, prev);
+      months.set(month.key, month);
+    };
+
+    for (const row of rows) {
+      const siteId = getValue(row, ["Site ID", "SiteID", "Site Id", "Site", "Site Code", "Site Name"]);
+      if (!siteId) continue;
+      const longDate = getValue(row, ["Date", "AVB Date", "Cell AVB Date", "Report Date", "Day", "Month"]);
+      const longCa = getValue(row, ["Cell Avb", "Cell AVB", "Cell AVB %", "AVB", "AVB %", "Cell Availability", "Cell Availability %"]);
+      add(siteId, monthMeta(longDate), parseCa(longCa));
+      for (const [key, value] of Object.entries(row)) add(siteId, monthMeta(key), parseCa(value));
+    }
+
+    const allMonths = Array.from(months.values()).sort((a, b) => a.timestamp - b.timestamp);
+    const preCurrentMonths = allMonths.filter((m) => m.key < "2026-09");
+    return { bySite, preCurrentMonths };
+  }, [historyData]);
+
+  const siteLookup = useMemo(() => {
+    const map = new Map<string, SiteData>();
+    sites.forEach((site) => {
+      const key = siteKey(site.siteName);
+      if (key) map.set(key, site);
+    });
+    return map;
+  }, [sites]);
+
+  // Raw Sheet1 lookup is kept separately so the S2S page is a true 3-table join:
+  // S2S BB installed (population) + Sheet1 (current Sep CA/site master) + Cell Avb history (baseline).
+  const sheet1Lookup = useMemo(() => {
+    const map = new Map<string, Record<string, any>>();
+    for (const row of ((rawData?.rows || []) as Record<string, any>[])) {
+      const id = getValue(row, ["Site ID", "SiteID", "Site Id", "Site", "Site Name", "Site Code"]);
+      const key = siteKey(id);
+      if (key && !map.has(key)) map.set(key, row);
+    }
+    return map;
+  }, [rawData]);
+
+  const latestFiveDateKeys = useMemo(() => {
+    const monthMap: Record<string, number> = { Jan: 0, Feb: 1, Mar: 2, Apr: 3, May: 4, Jun: 5, Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11 };
+    const toTime = (key: string) => {
+      const normalized = normalizeDailyDateKey(key);
+      if (!normalized) return Number.NaN;
+      const [d, m, y] = normalized.split("-");
+      if (monthMap[m] === undefined) return Number.NaN;
+      return new Date(2000 + Number(y), monthMap[m], Number(d)).getTime();
+    };
+    const cutoff = normalizeDailyDateKey(lastUpdatedDate || "");
+    const cutoffTime = cutoff ? toTime(cutoff) : Number.POSITIVE_INFINITY;
+    const cutoffParts = cutoff?.split("-") || [];
+    const keys = new Set<string>();
+    sites.forEach((site) => {
+      Object.entries(site.dailyData || {}).forEach(([key, value]) => {
+        const normalized = normalizeDailyDateKey(key);
+        if (!normalized || !Number.isFinite(value) || Number(value) <= 0) return;
+        const [, m, y] = normalized.split("-");
+        if (cutoff && (m !== cutoffParts[1] || y !== cutoffParts[2])) return;
+        if (toTime(normalized) > cutoffTime) return;
+        keys.add(normalized);
+      });
+    });
+    return Array.from(keys).sort((a, b) => toTime(a) - toTime(b)).slice(-5);
+  }, [sites, lastUpdatedDate]);
+
+  const rows = useMemo(() => {
+    const output: S2SPerformanceRow[] = [];
+    const rawRows = (s2sData?.rows || []) as Record<string, any>[];
+
+    for (const raw of rawRows) {
+      const rawSite = extractTargetSite(raw);
+      const key = siteKey(rawSite);
+      if (!key) continue;
+
+      // Join S2S row with normalized Sheet1 site master.
+      const site = siteLookup.get(key);
+      if (!site) continue;
+      const mainRow = sheet1Lookup.get(key);
+
+      // Join the same site with Cell Avb history.
+      const siteHistory = history.bySite.get(key);
+      const priorMonths = history.preCurrentMonths.filter((m) => {
+        const agg = siteHistory?.get(m.key);
+        return !!agg?.count;
+      });
+      const latestMonth = priorMonths.length ? priorMonths[priorMonths.length - 1] : null;
+      const latestAgg = latestMonth ? siteHistory?.get(latestMonth.key) : undefined;
+      const baselineCa = latestAgg?.count ? latestAgg.sum / latestAgg.count : 0;
+      const pre3 = priorMonths.slice(-3).map((m) => {
+        const a = siteHistory?.get(m.key);
+        return a?.count ? a.sum / a.count : 0;
+      }).filter((v) => v > 0);
+      const pre3Avg = pre3.length ? pre3.reduce((a, b) => a + b, 0) / pre3.length : 0;
+
+      const sheetCurrentCa = mainRow
+        ? parseCa(getValue(mainRow, ["Current Month", "Current Month CA", "Current Month AVB", "Monthly AVB", "Monthly CA", "Current CA%", "Cell AVB", "Cell Availability"]))
+        : 0;
+      const currentCa = sheetCurrentCa > 0 ? sheetCurrentCa : (site.monthlyAvb > 0 ? site.monthlyAvb : site.currentAvb);
+      const delta = baselineCa > 0 && currentCa > 0 ? currentCa - baselineCa : 0;
+      const normalizedDaily = new Map<string, number>();
+      Object.entries(site.dailyData || {}).forEach(([key, value]) => {
+        const normalized = normalizeDailyDateKey(key);
+        if (normalized && Number.isFinite(value) && Number(value) > 0) normalizedDaily.set(normalized, Number(value));
+      });
+      const currentMonthKeys = Array.from(normalizedDaily.keys()).filter((key) => /-Sep-26$/i.test(key)).sort((a, b) => {
+        const da = Number(a.split("-")[0]);
+        const db = Number(b.split("-")[0]);
+        return da - db;
+      });
+      const dailyValues = currentMonthKeys.map((key) => normalizedDaily.get(key) || 0).filter((v) => v > 0);
+      const outageDays = dailyValues.filter((v) => v < 98).length;
+      const observedDays = dailyValues.length;
+      const latest3 = dailyValues.slice(-3);
+      const latest3Avg = latest3.length ? latest3.reduce((a, b) => a + b, 0) / latest3.length : 0;
+      const last5Values = Object.fromEntries(latestFiveDateKeys.map((key) => [key, normalizedDaily.get(key) || 0]));
+
+      let status: S2SPerformanceStatus = "No Material Change";
+      if (currentCa >= 98 && delta >= 0.5) status = "Improved & Stable";
+      else if (delta >= 0.5) status = "Improved, Still Vulnerable";
+      else if (currentCa >= 98 && delta > -0.5) status = "Stable High";
+      else if (delta <= -0.5 || (currentCa > 0 && currentCa < 98)) status = "Needs Attention";
+
+      output.push({
+        site,
+        raw,
+        capacity: getInstalledCapacity(raw),
+        installDate: String(getValue(raw, ["Installation Date", "Installed Date", "Date Installed", "S2S Date", "Activity Date", "Date"]) || "—"),
+        baselineLabel: latestMonth?.label || "No history",
+        baselineCa,
+        pre3Avg,
+        currentCa,
+        delta,
+        outageDays,
+        observedDays,
+        latest3Avg,
+        last5Values,
+        status,
+      });
+    }
+
+    return output.sort((a, b) => {
+      const attentionA = a.status === "Needs Attention" ? 0 : a.status === "Improved, Still Vulnerable" ? 1 : 2;
+      const attentionB = b.status === "Needs Attention" ? 0 : b.status === "Improved, Still Vulnerable" ? 1 : 2;
+      if (attentionA !== attentionB) return attentionA - attentionB;
+      return a.delta - b.delta;
+    });
+  }, [s2sData, history, siteLookup, sheet1Lookup, latestFiveDateKeys]);
+
+  const joinDiagnostics = useMemo(() => {
+    const s2sRows = ((s2sData?.rows || []) as Record<string, any>[]);
+    const extracted = s2sRows.map(extractTargetSite).map(siteKey).filter(Boolean);
+    const matchedSheet1 = extracted.filter((key) => siteLookup.has(key)).length;
+    const matchedHistory = extracted.filter((key) => history.bySite.has(key)).length;
+    return { source: s2sRows.length, extracted: extracted.length, matchedSheet1, matchedHistory };
+  }, [s2sData, siteLookup, history]);
+
+  const filterOptions = useMemo(() => ({
+    subRegions: Array.from(new Set(rows.map((r) => r.site.subRegion).filter(Boolean))).sort(),
+    grids: Array.from(new Set(rows.map((r) => r.site.grid).filter(Boolean))).sort(),
+    owners: Array.from(new Set(rows.map((r) => r.site.clusterOwner).filter(Boolean))).sort(),
+    statuses: Array.from(new Set(rows.map((r) => r.status).filter(Boolean))).sort(),
+  }), [rows]);
+
+  const filtered = useMemo(() => rows.filter((r) => {
+    if (subRegion !== "__all" && r.site.subRegion !== subRegion) return false;
+    if (grid !== "__all" && r.site.grid !== grid) return false;
+    if (owner !== "__all" && r.site.clusterOwner !== owner) return false;
+    if (statusFilter !== "__all" && r.status !== statusFilter) return false;
+    if (search.trim()) {
+      const q = normalize(search);
+      if (![r.site.siteName, r.site.grid, r.site.clusterOwner, r.capacity].some((v) => normalize(v).includes(q))) return false;
+    }
+    return true;
+  }), [rows, subRegion, grid, owner, statusFilter, search]);
+
+  const stats = useMemo(() => {
+    const comparable = rows.filter((r) => r.baselineCa > 0 && r.currentCa > 0);
+    const improved = comparable.filter((r) => r.delta >= 0.5).length;
+    const stable = rows.filter((r) => r.currentCa >= 98).length;
+    const attention = rows.filter((r) => r.status === "Needs Attention").length;
+    const avgGain = comparable.length ? comparable.reduce((sum, r) => sum + r.delta, 0) / comparable.length : 0;
+    return { total: rows.length, comparable: comparable.length, improved, stable, attention, avgGain };
+  }, [rows]);
+
+  const exportRows = filtered.map((r) => ({
+    "Site ID": r.site.siteName,
+    "Sub-Region": r.site.subRegion,
+    Grid: r.site.grid,
+    "Cluster Owner": r.site.clusterOwner,
+    "Installed Capacity": r.capacity,
+    "Installation Date": r.installDate,
+    "Baseline Month": r.baselineLabel,
+    "Baseline CA%": r.baselineCa ? r.baselineCa.toFixed(2) : "-",
+    "Pre-3M Avg CA%": r.pre3Avg ? r.pre3Avg.toFixed(2) : "-",
+    "Current Month CA%": r.currentCa ? r.currentCa.toFixed(2) : "-",
+    ...Object.fromEntries(latestFiveDateKeys.map((key) => [key, r.last5Values[key] > 0 ? r.last5Values[key].toFixed(2) : "-"])),
+    "Improvement pp": r.baselineCa ? r.delta.toFixed(2) : "-",
+    "Days CA <98": `${r.outageDays}/${r.observedDays}`,
+    "Latest 3 Days Avg": r.latest3Avg ? r.latest3Avg.toFixed(2) : "-",
+    Status: r.status,
+  }));
+
+  const statusClass = (status: S2SPerformanceStatus) => {
+    if (status === "Improved & Stable" || status === "Stable High") return "bg-emerald-100 text-emerald-800 border-emerald-300";
+    if (status === "Improved, Still Vulnerable" || status === "No Material Change") return "bg-amber-100 text-amber-800 border-amber-300";
+    return "bg-red-100 text-red-800 border-red-300";
+  };
+
+  if (!s2sData) {
+    return <div className="bg-white border border-slate-300 rounded-xl p-10 text-center text-slate-600">S2S BB installed sheet is not available in the September workbook.</div>;
+  }
+
+  return (
+    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-5">
+      <div className="rounded-2xl border border-cyan-200 bg-gradient-to-r from-cyan-50 via-white to-emerald-50 p-5">
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div>
+            <div className="flex items-center gap-2">
+              <Battery className="w-6 h-6 text-cyan-700" />
+              <h3 className="text-xl font-extrabold text-slate-900">S2S Battery Bank Performance</h3>
+            </div>
+            <p className="text-sm text-slate-600 mt-1">Investment effectiveness: compare current September monthly CA against the latest historical CA before September.</p>
+            <p className="text-xs text-slate-500 mt-1">Current source: September main AVB sheet · Baseline source: Cell Avb history · S2S population: S2S BB installed {lastUpdatedDate ? `· Updated ${lastUpdatedDate}` : ""}</p>
+            <p className="text-[11px] text-cyan-800 mt-1 font-semibold">Join check: S2S rows {joinDiagnostics.source} · Site IDs detected {joinDiagnostics.extracted} · Matched Sheet1 {joinDiagnostics.matchedSheet1} · Matched History {joinDiagnostics.matchedHistory}</p>
+          </div>
+          <ExportButtonComponent data={exportRows} filename="s2s_bb_performance_sep26" label={`Export ${filtered.length} Sites`} format="excel" variant="primary" />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
+        {[
+          { label: "S2S BB Sites", value: stats.total, note: "Investment population" },
+          { label: "Comparable", value: stats.comparable, note: "History + current CA" },
+          { label: "Improved", value: stats.improved, note: "Gain ≥ 0.50 pp" },
+          { label: "CA ≥ 98%", value: stats.stable, note: "Currently stable" },
+          { label: "Needs Attention", value: stats.attention, note: "Still weak / declined" },
+          { label: "Average Gain", value: `${stats.avgGain >= 0 ? "+" : ""}${stats.avgGain.toFixed(2)} pp`, note: "Vs latest pre-Sep CA" },
+        ].map((k) => (
+          <div key={k.label} className="bg-white border border-slate-300 rounded-xl p-4 shadow-sm">
+            <div className="text-2xl font-extrabold text-slate-900">{k.value}</div>
+            <div className="text-sm font-semibold text-slate-700 mt-1">{k.label}</div>
+            <div className="text-[11px] text-slate-500 mt-1">{k.note}</div>
+          </div>
+        ))}
+      </div>
+
+      <div className="bg-white border border-slate-300 rounded-xl p-4 shadow-sm">
+        <div className="flex flex-wrap gap-2 items-center">
+          <div className="relative flex-1 min-w-[220px]">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search Site ID, Grid, CO, Installed Capacity..." className="w-full pl-9 pr-3 py-2 rounded-lg bg-white border border-slate-300 text-sm text-slate-800 outline-none focus:border-cyan-500" />
+          </div>
+          <FilterSelect label="Region" options={filterOptions.subRegions} value={subRegion} onChange={setSubRegion} />
+          <FilterSelect label="Grid" options={filterOptions.grids} value={grid} onChange={setGrid} />
+          <FilterSelect label="CO" options={filterOptions.owners} value={owner} onChange={setOwner} />
+          <FilterSelect label="Status" options={filterOptions.statuses} value={statusFilter} onChange={setStatusFilter} />
+          {(search || subRegion !== "__all" || grid !== "__all" || owner !== "__all" || statusFilter !== "__all") && (
+            <button onClick={() => { setSearch(""); setSubRegion("__all"); setGrid("__all"); setOwner("__all"); setStatusFilter("__all"); }} className="px-3 py-2 rounded-lg bg-slate-100 border border-slate-300 text-slate-700 text-sm hover:bg-slate-200">Clear</button>
+          )}
+        </div>
+      </div>
+
+      <div className="bg-white border border-slate-300 rounded-xl overflow-hidden shadow-sm">
+        <div className="px-4 py-3 border-b border-slate-200 flex items-center justify-between gap-3 flex-wrap">
+          <div>
+            <h4 className="font-bold text-slate-900">Site-wise S2S BB Benefit Tracking</h4>
+            <p className="text-xs text-slate-500">Worst / unresolved sites shown first. Last 5 day-wise CA gives immediate visibility of backup sustainability after S2S BB installation. “Days CA &lt;98” shows current-month degradation frequency.</p>
+          </div>
+          <span className="text-xs font-semibold text-slate-600">Showing {filtered.length} of {rows.length}</span>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-[12px] min-w-[1500px]">
+            <thead className="bg-slate-100 text-slate-700">
+              <tr>
+                {["Site ID", "Grid", "CO", "Installed Capacity", "Installed", "Baseline", "Baseline CA", "Pre-3M Avg", "Current Sep CA", ...latestFiveDateKeys, "Gain / Loss", "Days CA <98", "Latest 3D Avg", "Assessment"].map((h) => (
+                  <th key={h} className="px-3 py-3 text-left font-bold whitespace-nowrap">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((r) => (
+                <tr key={r.site.siteName} className="border-t border-slate-200 hover:bg-slate-50">
+                  <td className="px-3 py-3 font-extrabold text-cyan-800">{r.site.siteName}</td>
+                  <td className="px-3 py-3 font-semibold text-slate-800">{r.site.grid || "—"}</td>
+                  <td className="px-3 py-3 text-slate-700">{r.site.clusterOwner || "—"}</td>
+                  <td className="px-3 py-3 font-semibold text-slate-700">{r.capacity}</td>
+                  <td className="px-3 py-3 text-slate-600">{r.installDate}</td>
+                  <td className="px-3 py-3 text-slate-600">{r.baselineLabel}</td>
+                  <td className="px-3 py-3 font-semibold text-slate-800">{r.baselineCa > 0 ? `${r.baselineCa.toFixed(2)}%` : "—"}</td>
+                  <td className="px-3 py-3 text-slate-700">{r.pre3Avg > 0 ? `${r.pre3Avg.toFixed(2)}%` : "—"}</td>
+                  <td className={`px-3 py-3 font-extrabold ${r.currentCa >= 98 ? "text-emerald-700" : "text-red-700"}`}>{r.currentCa > 0 ? `${r.currentCa.toFixed(2)}%` : "—"}</td>
+                  {latestFiveDateKeys.map((key) => {
+                    const value = r.last5Values[key] || 0;
+                    return <td key={key} className={`px-3 py-3 text-center font-bold ${value >= 98 ? "text-emerald-700" : value > 0 ? "text-red-700" : "text-slate-400"}`}>{value > 0 ? `${value.toFixed(2)}%` : "—"}</td>;
+                  })}
+                  <td className={`px-3 py-3 font-extrabold ${r.baselineCa <= 0 ? "text-slate-400" : r.delta >= 0.5 ? "text-emerald-700" : r.delta <= -0.5 ? "text-red-700" : "text-amber-700"}`}>{r.baselineCa > 0 ? `${r.delta >= 0 ? "+" : ""}${r.delta.toFixed(2)} pp` : "—"}</td>
+                  <td className={`px-3 py-3 font-bold ${r.outageDays === 0 && r.observedDays > 0 ? "text-emerald-700" : r.outageDays > 0 ? "text-red-700" : "text-slate-500"}`}>{r.observedDays > 0 ? `${r.outageDays}/${r.observedDays}` : "—"}</td>
+                  <td className={`px-3 py-3 font-semibold ${r.latest3Avg >= 98 ? "text-emerald-700" : r.latest3Avg > 0 ? "text-red-700" : "text-slate-400"}`}>{r.latest3Avg > 0 ? `${r.latest3Avg.toFixed(2)}%` : "—"}</td>
+                  <td className="px-3 py-3"><span className={`inline-flex px-2.5 py-1 rounded-full border text-[11px] font-extrabold whitespace-nowrap ${statusClass(r.status)}`}>{r.status}</span></td>
+                </tr>
+              ))}
+              {filtered.length === 0 && <tr><td colSpan={12 + latestFiveDateKeys.length} className="px-4 py-12 text-center text-slate-500">No S2S BB sites match the selected filters.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="bg-slate-50 border border-slate-300 rounded-xl p-4 text-xs text-slate-600">
+        <span className="font-bold text-slate-800">Assessment logic:</span> Improved = current monthly CA gain ≥ 0.50 percentage point versus latest available pre-September history. Stable = current CA ≥ 98%. Sites still below 98% or declining by ≥ 0.50 pp are flagged for attention. Pre-3M average is displayed to avoid judging investment only against one abnormal month.
       </div>
     </motion.div>
   );
@@ -5205,6 +5704,7 @@ export default function App() {
   const [monthRca, setMonthRca] = useState<SheetPayload | null>(null);
   const [month5G, setMonth5G] = useState<SheetPayload | null>(null);
   const [monthCellAvbHistory, setMonthCellAvbHistory] = useState<SheetPayload | null>(null);
+  const [monthS2SBB, setMonthS2SBB] = useState<SheetPayload | null>(null);
   const [preVsPostData, setPreVsPostData] = useState<SheetPayload | null>(null);
   const [prePostSites, setPrePostSites] = useState<SiteData[]>([]);
   const [prePostLastUpdated, setPrePostLastUpdated] = useState("");
@@ -5291,6 +5791,7 @@ export default function App() {
     setMonthRca(null);
     setMonth5G(null);
     setMonthCellAvbHistory(null);
+    setMonthS2SBB(null);
     setMonthLastUpdated("");
     setMonthLastColumnIndex(0);
 
@@ -5311,7 +5812,7 @@ export default function App() {
 
       // Supporting tabs are optional. A missing supporting tab must NOT cause
       // the whole dashboard to fall back to old/mock data.
-      const [hwResult, dateResult, rcaResult, fiveGResult, historyResult] = await Promise.allSettled([
+      const [hwResult, dateResult, rcaResult, fiveGResult, historyResult, s2sResult] = await Promise.allSettled([
         fetchGoogleSheet(sheetId, "Hardware issues"),
         fetchGoogleSheet(sheetId, "Updated Date"),
         fetchGoogleSheet(sheetId, "RCA of Plat +"),
@@ -5320,6 +5821,9 @@ export default function App() {
           : Promise.resolve(null),
         month === "september"
           ? fetchGoogleSheet(sheetId, "Cell Avb history")
+          : Promise.resolve(null),
+        month === "september"
+          ? fetchGoogleSheet(sheetId, "S2S BB installed")
           : Promise.resolve(null),
       ]);
 
@@ -5330,17 +5834,20 @@ export default function App() {
       const rcaSheet = rcaResult.status === "fulfilled" ? rcaResult.value : null;
       const fiveGSheet = fiveGResult.status === "fulfilled" ? fiveGResult.value : null;
       const cellAvbHistory = historyResult.status === "fulfilled" ? historyResult.value : null;
+      const s2sBBData = s2sResult.status === "fulfilled" ? s2sResult.value : null;
 
       if (hwResult.status === "rejected") console.warn(`[Cell AVB] ${month}: Hardware issues tab unavailable`, hwResult.reason);
       if (dateResult.status === "rejected") console.warn(`[Cell AVB] ${month}: Updated Date tab unavailable`, dateResult.reason);
       if (rcaResult.status === "rejected") console.warn(`[Cell AVB] ${month}: RCA of Plat + tab unavailable`, rcaResult.reason);
       if (fiveGResult.status === "rejected") console.warn(`[Cell AVB] ${month}: 5G tab unavailable`, fiveGResult.reason);
       if (historyResult.status === "rejected") console.warn(`[Cell AVB] ${month}: Cell Avb history tab unavailable`, historyResult.reason);
+      if (s2sResult.status === "rejected") console.warn(`[Cell AVB] ${month}: S2S BB installed tab unavailable`, s2sResult.reason);
 
       setMonthHardware(hwData);
       setMonthRca(rcaSheet);
       setMonth5G(fiveGSheet);
       setMonthCellAvbHistory(month === "september" ? cellAvbHistory : null);
+      setMonthS2SBB(month === "september" ? s2sBBData : null);
 
       if (dateData && Array.isArray(dateData.rows) && dateData.rows.length > 0) {
         const row = dateData.rows[0];
@@ -5363,6 +5870,7 @@ export default function App() {
       setMonthRca(null);
       setMonth5G(null);
       setMonthCellAvbHistory(null);
+      setMonthS2SBB(null);
       setMonthLastUpdated("");
       setMonthLastColumnIndex(0);
       setUseMock(false);
@@ -5484,6 +5992,7 @@ export default function App() {
     setMonthRca(null);
     setMonth5G(null);
     setMonthCellAvbHistory(null);
+    setMonthS2SBB(null);
     setPreVsPostData(null);
     setPrePostSites([]);
     setAppState("dashboard");
@@ -5743,6 +6252,7 @@ export default function App() {
           {NAV_ITEMS.filter((item) => {
             if (item.id === "5g") return selectedMonth === "august" || selectedMonth === "september";
             if (item.id === "recurring") return selectedMonth === "september";
+            if (item.id === "s2s-bb") return selectedMonth === "september";
             return true;
           }).map((item) => {
             const Icon = item.icon;
@@ -5793,6 +6303,7 @@ export default function App() {
                 {activeTab === "overall" && <OverallSummaryWithExport sites={sites} rawData={monthData} />}
                 {activeTab === "grid-performance" && <GridPerformanceScorecard rawData={monthData} lastUpdatedDate={monthLastUpdated} />}
                 {activeTab === "recurring" && <RecurringSitesPage sites={sites} historyData={monthCellAvbHistory} />}
+                {activeTab === "s2s-bb" && <S2SBBPerformancePage sites={sites} s2sData={monthS2SBB} historyData={monthCellAvbHistory} rawData={monthData} lastUpdatedDate={monthLastUpdated} />}
                 {activeTab === "employees" && <><SectionBanner icon={<Users className="w-6 h-6 text-indigo-400" />} title="Employee Performance Analysis" subtitle={`${sites.filter((s) => s.currentAvb > 0).length} active sites`} gradient="from-indigo-500/10 to-purple-500/10 border-indigo-500/20" /><EmployeePerformance sites={sites} /></>}
                 {activeTab === "platinum-plus" && <CategoryPage sites={sites} title="Platinum+ Sites" description={`${platinumPlusRows.length} sites in the Platinum+ category`} threshold={98.5} filterFn={(s) => s.revenueCategory === "Platinum +"} lastUpdatedDate={monthLastUpdated} lastColumnIndex={monthLastColumnIndex} />}
                 {activeTab === "pgs" && <CategoryPage sites={sites} title="PGS Sites" description={`${pgsRows.length} high-priority revenue sites`} threshold={98.1} filterFn={(s) => PGS_GROUP.includes(s.revenueCategory)} lastUpdatedDate={monthLastUpdated} lastColumnIndex={monthLastColumnIndex} />}
