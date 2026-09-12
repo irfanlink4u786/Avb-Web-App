@@ -2783,6 +2783,7 @@ type GridKpiResult = {
 type GridPerformanceRow = {
   grid: string;
   cmpakGtl: string;
+  monthlyAverage: number | null;
   platinum: GridKpiResult;
   pgs: GridKpiResult;
   sb: GridKpiResult;
@@ -3421,11 +3422,13 @@ function GridPerformanceScorecard({
         return {
           grid,
           cmpakGtl: zoneLead,
+          // True current-month Grid CA: average of all valid site monthly AVB values in this Grid.
+          monthlyAverage: averageCa(gridSites),
           platinum: results.platinum,
           pgs: results.pgs,
           sb: results.sb,
           dg: results.dg,
-          totalScore: results.platinum.score + results.pgs.score + results.dg.score,
+          totalScore: results.platinum.score + results.pgs.score + results.sb.score + results.dg.score,
         };
       })
       .sort((a, b) => a.totalScore - b.totalScore || a.grid.localeCompare(b.grid));
@@ -3444,7 +3447,7 @@ function GridPerformanceScorecard({
       return {
         key,
         ...results,
-        totalScore: results.platinum.score + results.pgs.score + results.dg.score,
+        totalScore: results.platinum.score + results.pgs.score + results.sb.score + results.dg.score,
       };
     });
   }, [filteredSourceSites]);
@@ -3575,12 +3578,12 @@ function GridPerformanceScorecard({
           <div>
             <h2 className="text-[14px] leading-tight font-black text-slate-900">Grid Performance</h2>
             <p className="mt-1 text-lg text-slate-600">
-              Monthly CA scorecard focused only on Platinum+, PGS and Operational DG sites. C2006 and C2009 are excluded as boundary grids.
+              September Monthly CA scorecard includes Platinum+, PGS, SB and Operational DG sites. SB carries 5 base marks + 2 stretch bonus marks. C2006 and C2009 are excluded as boundary grids.
             </p>
           </div>
           <div className="rounded-lg border border-slate-300 bg-slate-100 px-4 py-2 text-right">
             <div className="text-[10px] uppercase tracking-wide text-slate-500">Maximum Score</div>
-            <div className="text-xl font-bold text-cyan-600">36.00</div>
+            <div className="text-xl font-bold text-cyan-600">43.00</div>
           </div>
         </div>
       </div>
@@ -3704,12 +3707,12 @@ function GridPerformanceScorecard({
         <div className="rounded-xl border border-slate-300 bg-white p-4">
           <div className="text-[10px] uppercase text-slate-500">Worst Grid</div>
           <div className="mt-1 text-xl font-bold text-red-400">{lowestGrid?.grid || "—"}</div>
-          <div className="text-xs text-slate-600">{lowestGrid ? `${lowestGrid.totalScore.toFixed(2)} / 36` : "No data"}</div>
+          <div className="text-xs text-slate-600">{lowestGrid ? `${lowestGrid.totalScore.toFixed(2)} / 43` : "No data"}</div>
         </div>
         <div className="rounded-xl border border-slate-300 bg-white p-4">
           <div className="text-[10px] uppercase text-slate-500">Best Grid</div>
           <div className="mt-1 text-xl font-bold text-emerald-400">{bestGrid?.grid || "—"}</div>
-          <div className="text-xs text-slate-600">{bestGrid ? `${bestGrid.totalScore.toFixed(2)} / 36` : "No data"}</div>
+          <div className="text-xs text-slate-600">{bestGrid ? `${bestGrid.totalScore.toFixed(2)} / 43` : "No data"}</div>
         </div>
         <div className="rounded-xl border border-slate-300 bg-white p-4">
           <div className="text-[10px] uppercase text-slate-500">Average Grid Score</div>
@@ -3719,7 +3722,7 @@ function GridPerformanceScorecard({
         <div className="rounded-xl border border-slate-300 bg-white p-4">
           <div className="text-[10px] uppercase text-slate-500">Sites Below Stretch</div>
           <div className="mt-1 text-xl font-bold text-amber-400">{totalBelowStretch}</div>
-          <div className="text-xs text-slate-600">Plat+, PGS & DG only</div>
+          <div className="text-xs text-slate-600">Plat+, PGS, SB & DG</div>
         </div>
       </div>
 
@@ -3730,7 +3733,7 @@ function GridPerformanceScorecard({
             <p className="mt-1 text-[14px] font-medium text-slate-600">Worst performing Grid shown first · Score is based on monthly Grid average.</p>
           </div>
           <div className="rounded-xl border-2 border-red-300 bg-red-50 px-4 py-3 text-[14px] font-bold text-red-700">
-            ⚠ Focus on low performing grids in Plat+, PGS &amp; DG
+            ⚠ Focus on low performing grids in Plat+, PGS, SB &amp; DG
           </div>
         </div>
 
@@ -3741,8 +3744,10 @@ function GridPerformanceScorecard({
                 <th className="border-r border-slate-300 px-4 py-3 text-left text-[14px] leading-normal font-bold">#</th>
                 <th className="border-r border-slate-300 px-4 py-3 text-left text-[14px] leading-normal font-bold">Grid</th>
                 <th className="border-r border-slate-300 px-4 py-3 text-left text-[14px] leading-normal font-bold">CMPAK GTL</th>
+                <th className="border-r border-slate-300 px-4 py-3 text-center text-[14px] leading-normal font-bold">Monthly Grid CA</th>
                 <th className="border-r border-slate-300 px-4 py-3 text-center text-[14px] leading-normal font-bold">Plat+ Score</th>
                 <th className="border-r border-slate-300 px-4 py-3 text-center text-[14px] leading-normal font-bold">PGS Score</th>
+                <th className="border-r border-slate-300 px-4 py-3 text-center text-[14px] leading-normal font-bold">SB Score</th>
                 <th className="px-4 py-3 text-center text-[14px] leading-normal font-bold">DG Score</th>
               </tr>
             </thead>
@@ -3752,8 +3757,14 @@ function GridPerformanceScorecard({
                   <td className="border-r border-slate-200 px-4 py-3 text-center text-[14px] font-semibold text-slate-800">{index + 1}</td>
                   <td className="border-r border-slate-200 px-4 py-3 text-[14px] font-bold text-blue-700">{row.grid}</td>
                   <td className="border-r border-slate-200 px-4 py-3 text-[14px] font-medium text-slate-900">{row.cmpakGtl}</td>
+                  <td className={`border-r border-slate-200 px-4 py-3 text-center text-[14px] font-extrabold ${
+                    row.monthlyAverage === null ? "text-slate-400" : row.monthlyAverage < 95 ? "text-red-600" : row.monthlyAverage < 98 ? "text-amber-600" : "text-emerald-700"
+                  }`}>
+                    {row.monthlyAverage === null ? "—" : `${row.monthlyAverage.toFixed(2)}%`}
+                  </td>
                   <td className="border-r border-slate-200 px-6 py-3 text-center"><GridScoreBadge score={row.platinum.score} max={12} /></td>
                   <td className="border-r border-slate-200 px-6 py-3 text-center"><GridScoreBadge score={row.pgs.score} max={12} /></td>
+                  <td className="border-r border-slate-200 px-6 py-3 text-center"><GridScoreBadge score={row.sb.score} max={7} /></td>
                   <td className="px-6 py-3 text-center"><GridScoreBadge score={row.dg.score} max={12} /></td>
                 </tr>
               ))}
@@ -3790,10 +3801,13 @@ function GridPerformanceScorecard({
                 {latestDateHeaders.map((header) => (
                   <th key={`detail-grid-${header}`} className="px-4 py-4 text-center text-[16px] font-extrabold">{header}</th>
                 ))}
+                <th className="px-4 py-4 text-center text-[16px] font-extrabold">Monthly Grid CA</th>
                 <th className="px-4 py-4 text-center text-[16px] font-extrabold">Platinum+</th>
                 <th className="px-4 py-4 text-center text-[16px] font-extrabold">Plat+ Score</th>
                 <th className="px-4 py-4 text-center text-[16px] font-extrabold">PGS</th>
                 <th className="px-4 py-4 text-center text-[16px] font-extrabold">PGS Score</th>
+                <th className="px-4 py-4 text-center text-[16px] font-extrabold">SB</th>
+                <th className="px-4 py-4 text-center text-[16px] font-extrabold">SB Score</th>
                 <th className="px-4 py-4 text-center text-[16px] font-extrabold">DG</th>
                 <th className="px-4 py-4 text-center text-[16px] font-extrabold">DG Score</th>
                 <th className="px-4 py-4 text-center text-[16px] font-extrabold">Total Score</th>
@@ -3814,13 +3828,20 @@ function GridPerformanceScorecard({
                       {value > 0 ? `${value.toFixed(2)}%` : "—"}
                     </td>
                   ))}
+                  <td className={`px-4 py-4 text-center text-[16px] font-black ${
+                    row.monthlyAverage === null ? "text-slate-400" : row.monthlyAverage < 95 ? "text-red-600" : row.monthlyAverage < 98 ? "text-amber-600" : "text-emerald-700"
+                  }`}>
+                    {row.monthlyAverage === null ? "—" : `${row.monthlyAverage.toFixed(2)}%`}
+                  </td>
                   <td className="px-4 py-3 text-center">{kpiCell(row, row.platinum)}</td>
                   <td className="px-4 py-3 text-center"><GridScoreBadge score={row.platinum.score} max={12} /></td>
                   <td className="px-4 py-3 text-center">{kpiCell(row, row.pgs)}</td>
                   <td className="px-4 py-3 text-center"><GridScoreBadge score={row.pgs.score} max={12} /></td>
+                  <td className="px-4 py-3 text-center">{kpiCell(row, row.sb)}</td>
+                  <td className="px-4 py-3 text-center"><GridScoreBadge score={row.sb.score} max={7} /></td>
                   <td className="px-4 py-3 text-center">{kpiCell(row, row.dg)}</td>
                   <td className="px-4 py-3 text-center"><GridScoreBadge score={row.dg.score} max={12} /></td>
-                  <td className="px-4 py-3 text-center"><GridScoreBadge score={row.totalScore} max={36} /></td>
+                  <td className="px-4 py-3 text-center"><GridScoreBadge score={row.totalScore} max={43} /></td>
                 </tr>
               ))}
             </tbody>
@@ -3851,7 +3872,7 @@ function GridPerformanceScorecard({
                 {open && (
                   <div className="space-y-3 border-t border-slate-300 p-4">
                     {items.length === 0 ? (
-                      <div className="text-sm text-emerald-400">Plat+, PGS & DG only have achieved Stretch.</div>
+                      <div className="text-sm text-emerald-400">Plat+, PGS, SB & DG have achieved Stretch.</div>
                     ) : items.map(({ result, avgGap, prioritySites }) => (
                       <div key={`${row.grid}-${result.config.key}`} className="rounded-lg border border-slate-300 bg-white/60 p-4">
                         <div className="flex flex-wrap items-center justify-between gap-3">
