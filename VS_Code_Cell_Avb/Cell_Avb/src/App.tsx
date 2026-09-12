@@ -3933,23 +3933,46 @@ function GridPerformanceScorecard({
       .sort((a, b) => a.totalScore - b.totalScore || a.grid.localeCompare(b.grid));
   }, [filteredSourceSites]);
 
-  const subRegionCards = useMemo(() => {
-    return [
-      { key: "C-1", prefix: "C1" },
-      { key: "C-6", prefix: "C6" },
-    ].map(({ key, prefix }) => {
-      const sites = filteredSourceSites.filter((site) => site.grid.toUpperCase().startsWith(prefix));
-      const results = GRID_KPI_CONFIG.reduce<Record<GridKpiKey, GridKpiResult>>((acc, config) => {
-        acc[config.key] = buildKpiResult(sites, config);
-        return acc;
-      }, {} as Record<GridKpiKey, GridKpiResult>);
+  // Sub-region score = arithmetic average of the individual Grid scores.
+  // C-1 uses C1001..C1006; C-6 uses C6001..C6005.
+  const subRegionSummaries = useMemo(() => {
+    const definitions = [
+      { key: "C-1" as const, grids: ["C1001","C1002","C1003","C1004","C1005","C1006"] },
+      { key: "C-6" as const, grids: ["C6001","C6002","C6003","C6004","C6005"] },
+    ];
+
+    const avgScore = (rows: GridPerformanceRow[], k: GridKpiKey) =>
+      rows.length ? rows.reduce((s, r) => s + r[k].score, 0) / rows.length : 0;
+
+    const worst = (rows: GridPerformanceRow[], k: GridKpiKey) =>
+      rows.length ? [...rows].sort((a,b) => a[k].score - b[k].score || a.grid.localeCompare(b.grid))[0] : null;
+
+    return definitions.map(({ key, grids }) => {
+      const rows = grids
+        .map((g) => gridRows.find((r) => r.grid.toUpperCase() === g))
+        .filter((r): r is GridPerformanceRow => Boolean(r));
+
+      const platinumScore = avgScore(rows, "platinum");
+      const pgsScore = avgScore(rows, "pgs");
+      const sbScore = avgScore(rows, "sb");
+      const dgScore = avgScore(rows, "dg");
+
       return {
         key,
-        ...results,
-        totalScore: results.platinum.score + results.pgs.score + results.sb.score + results.dg.score,
+        expectedGridCount: grids.length,
+        rows,
+        platinumScore,
+        pgsScore,
+        sbScore,
+        dgScore,
+        totalScore: platinumScore + pgsScore + sbScore + dgScore,
+        worstPlatinum: worst(rows, "platinum"),
+        worstPgs: worst(rows, "pgs"),
+        worstSb: worst(rows, "sb"),
+        worstDg: worst(rows, "dg"),
       };
     });
-  }, [filteredSourceSites]);
+  }, [gridRows]);
 
   // Latest-day overall AVB averages by Grid for immediate visibility in the scorecard.
   const gridDailyAverages = useMemo(() => {
@@ -4001,7 +4024,6 @@ function GridPerformanceScorecard({
     };
 
     return GRID_KPI_CONFIG
-      .filter((config) => config.key !== "sb")
       .map((config) => ({
         config,
         base: makeRows(config, "base"),
@@ -4053,7 +4075,7 @@ function GridPerformanceScorecard({
   };
 
   const improvementItems = (row: GridPerformanceRow) =>
-    ([row.platinum, row.pgs, row.dg] as GridKpiResult[])
+    ([row.platinum, row.pgs, row.sb, row.dg] as GridKpiResult[])
       .filter((result) => result.average === null || result.average < result.config.stretch)
       .map((result) => {
         const avgGap = result.average === null ? null : Math.max(0, result.config.stretch - result.average);
@@ -4152,33 +4174,6 @@ function GridPerformanceScorecard({
         </div>
       </div>
 
-      {/* C-1 / C-6 overall score cards */}
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-        {subRegionCards.map((region) => (
-          <div key={region.key} className="rounded-xl border border-slate-300 bg-white p-5">
-            <div className="mb-4 flex items-center justify-between">
-              <div>
-                <div className="text-xs uppercase tracking-wider text-slate-500">Sub-Region Overall</div>
-                <h3 className="text-xl font-bold text-slate-900">{region.key} Grid KPI Score</h3>
-              </div>
-              <div className="text-right">
-                <div className="text-3xl font-bold text-cyan-400">{region.totalScore.toFixed(2)}</div>
-                <div className="text-xs text-slate-500">out of 36</div>
-              </div>
-            </div>
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-              {([region.platinum, region.pgs, region.dg] as GridKpiResult[]).map((result) => (
-                <div key={result.config.key} className="rounded-lg border border-slate-300 bg-slate-100 p-3">
-                  <div className="text-xs font-medium text-slate-600">{result.config.label}</div>
-                  <div className="mt-1 text-lg font-bold text-slate-900">{result.average === null ? "—" : `${result.average.toFixed(2)}%`}</div>
-                  <div className="mt-1 text-xs text-cyan-400">Score {result.score.toFixed(2)} / {result.config.maxScore}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
-
       {/* Category-wise exports irrespective of Grid */}
       <div className="rounded-xl border border-slate-300 bg-white p-5">
         <div className="mb-4">
@@ -4225,130 +4220,155 @@ function GridPerformanceScorecard({
         </div>
       </div>
 
-      <div className="rounded-2xl border border-slate-300 bg-[#f4f5f7] p-6 shadow-sm">
-        <div className="mb-5 flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <h3 className="text-[14px] leading-tight font-black text-slate-900">Grid Performance</h3>
-            <p className="mt-1 text-[14px] font-medium text-slate-600">Worst performing Grid shown first · Score is based on monthly Grid average.</p>
-          </div>
-          <div className="rounded-xl border-2 border-red-300 bg-red-50 px-4 py-3 text-[14px] font-bold text-red-700">
-            ⚠ Focus on low performing grids in Plat+, PGS, SB &amp; DG
-          </div>
-        </div>
+      {/* C-1 / C-6 management summary cards */}
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
+        {subRegionSummaries.map((region) => {
+          const categoryCards = [
+            { label: "Platinum+", score: region.platinumScore, max: 12, worst: region.worstPlatinum, key: "platinum" as GridKpiKey },
+            { label: "PGS", score: region.pgsScore, max: 12, worst: region.worstPgs, key: "pgs" as GridKpiKey },
+            { label: "SB", score: region.sbScore, max: 7, worst: region.worstSb, key: "sb" as GridKpiKey },
+            { label: "DG", score: region.dgScore, max: 12, worst: region.worstDg, key: "dg" as GridKpiKey },
+          ];
 
-        <div className="overflow-x-auto rounded-xl border border-slate-300 bg-white">
-          <table className="w-full min-w-[900px] border-collapse">
-            <thead>
-              <tr className="bg-slate-200 text-slate-900">
-                <th className="border-r border-slate-300 px-4 py-3 text-left text-[14px] leading-normal font-bold">#</th>
-                <th className="border-r border-slate-300 px-4 py-3 text-left text-[14px] leading-normal font-bold">Grid</th>
-                <th className="border-r border-slate-300 px-4 py-3 text-left text-[14px] leading-normal font-bold">CMPAK GTL</th>
-                <th className="border-r border-slate-300 px-4 py-3 text-center text-[14px] leading-normal font-bold">Monthly Grid CA</th>
-                <th className="border-r border-slate-300 px-4 py-3 text-center text-[14px] leading-normal font-bold">Plat+ Score</th>
-                <th className="border-r border-slate-300 px-4 py-3 text-center text-[14px] leading-normal font-bold">PGS Score</th>
-                <th className="border-r border-slate-300 px-4 py-3 text-center text-[14px] leading-normal font-bold">SB Score</th>
-                <th className="px-4 py-3 text-center text-[14px] leading-normal font-bold">DG Score</th>
-              </tr>
-            </thead>
-            <tbody>
-              {gridRows.map((row, index) => (
-                <tr key={row.grid} className={`${index % 2 === 0 ? "bg-white" : "bg-slate-50"} border-t border-slate-200 hover:bg-slate-100`}>
-                  <td className="border-r border-slate-200 px-4 py-3 text-center text-[14px] font-semibold text-slate-800">{index + 1}</td>
-                  <td className="border-r border-slate-200 px-4 py-3 text-[14px] font-bold text-blue-700">{row.grid}</td>
-                  <td className="border-r border-slate-200 px-4 py-3 text-[14px] font-medium text-slate-900">{row.cmpakGtl}</td>
-                  <td className={`border-r border-slate-200 px-4 py-3 text-center text-[14px] font-extrabold ${
-                    row.monthlyAverage === null ? "text-slate-400" : row.monthlyAverage < 95 ? "text-red-600" : row.monthlyAverage < 98 ? "text-amber-600" : "text-emerald-700"
+          return (
+            <div
+              key={`summary-card-${region.key}`}
+              className={`overflow-hidden rounded-2xl border-2 bg-white shadow-sm ${
+                region.key === "C-1" ? "border-cyan-300" : "border-indigo-300"
+              }`}
+            >
+              <div className={`flex items-center justify-between px-6 py-5 ${
+                region.key === "C-1"
+                  ? "bg-gradient-to-r from-cyan-50 via-sky-50 to-white"
+                  : "bg-gradient-to-r from-indigo-50 via-violet-50 to-white"
+              }`}>
+                <div>
+                  <div className="text-[11px] font-extrabold uppercase tracking-[0.18em] text-slate-500">Sub-Region Grid Score</div>
+                  <div className="mt-1 flex items-baseline gap-3">
+                    <h3 className="text-3xl font-black text-slate-900">{region.key}</h3>
+                    <span className="text-sm font-semibold text-slate-500">
+                      {region.rows.length}/{region.expectedGridCount} Grids
+                    </span>
+                  </div>
+                  <div className="mt-1 text-xs font-medium text-slate-500">
+                    Score = average of individual Grid scores
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Overall Score</div>
+                  <div className={`mt-1 text-4xl font-black ${
+                    region.totalScore >= 36 ? "text-emerald-600" : region.totalScore >= 28 ? "text-amber-600" : "text-red-600"
                   }`}>
-                    {row.monthlyAverage === null ? "—" : `${row.monthlyAverage.toFixed(2)}%`}
-                  </td>
-                  <td className="border-r border-slate-200 px-6 py-3 text-center"><GridScoreBadge score={row.platinum.score} max={12} /></td>
-                  <td className="border-r border-slate-200 px-6 py-3 text-center"><GridScoreBadge score={row.pgs.score} max={12} /></td>
-                  <td className="border-r border-slate-200 px-6 py-3 text-center"><GridScoreBadge score={row.sb.score} max={7} /></td>
-                  <td className="px-6 py-3 text-center"><GridScoreBadge score={row.dg.score} max={12} /></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                    {region.totalScore.toFixed(2)}
+                  </div>
+                  <div className="text-sm font-bold text-slate-500">/ 43</div>
+                </div>
+              </div>
 
-        <div className="mt-5 flex flex-wrap items-center gap-6 rounded-xl border border-slate-300 bg-slate-100 px-5 py-4 text-[22px] font-bold text-slate-700">
-          <span className="inline-flex items-center gap-2"><span className="h-8 w-12 rounded-md border border-red-300 bg-red-100" /> ≤ 5 Critical</span>
-          <span className="inline-flex items-center gap-2"><span className="h-8 w-12 rounded-md border border-amber-300 bg-amber-100" /> &gt; 5 and ≤ 10 Needs Attention</span>
-          <span className="inline-flex items-center gap-2"><span className="h-8 w-12 rounded-md border border-emerald-300 bg-emerald-100" /> &gt; 10 Good</span>
-        </div>
+              <div className="grid grid-cols-2 gap-3 p-5 lg:grid-cols-4">
+                {categoryCards.map((item) => (
+                  <div key={`${region.key}-${item.key}`} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="text-xs font-extrabold uppercase tracking-wide text-slate-600">{item.label}</div>
+                      <div className="text-[10px] font-semibold text-slate-400">/{item.max}</div>
+                    </div>
+                    <div className="mt-2">
+                      <GridScoreBadge score={item.score} max={item.max} />
+                    </div>
+                    <div className="mt-3 border-t border-slate-200 pt-2">
+                      {region.rows.length > 0 && region.rows.every((r) => r[item.key].score >= item.max) ? (
+                        <>
+                          <div className="text-[10px] font-bold uppercase tracking-wide text-emerald-600">Status</div>
+                          <div className="mt-0.5 text-sm font-black text-emerald-700">All at Stretch</div>
+                          <div className="text-[11px] font-semibold text-slate-500">
+                            All {region.rows.length} grids achieved {item.max.toFixed(0)} / {item.max.toFixed(0)}
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <div className="text-[10px] font-bold uppercase tracking-wide text-red-500">Worst Grid</div>
+                          <div className="mt-0.5 text-sm font-black text-red-700">
+                            {item.worst ? item.worst.grid : "—"}
+                          </div>
+                          <div className="text-[11px] font-semibold text-slate-500">
+                            {item.worst ? `${item.worst[item.key].score.toFixed(2)} / ${item.max}` : "No data"}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })}
       </div>
 
-      {/* Detailed / legacy Grid Performance table retained for operational review.
-          This keeps latest 3 daily Grid averages, actual KPI values and View buttons. */}
+      {/* Grid-wise operational performance table */}
       <div className="rounded-2xl border border-slate-300 bg-white p-6 shadow-sm">
         <div className="mb-5 flex flex-wrap items-end justify-between gap-4">
           <div>
-            <h3 className="text-[14px] leading-tight font-black text-slate-900">Detailed Grid Performance</h3>
-            <p className="mt-1 text-[18px] font-medium text-slate-600">Latest 3 days + monthly KPI values + View Sites buttons.</p>
+            <h3 className="text-[14px] leading-tight font-black text-slate-900">Grid-wise Performance Detail</h3>
+            <p className="mt-1 text-[15px] font-medium text-slate-600">
+              Individual Grid performance only. C-1 and C-6 overall scoring is shown separately in the management cards above.
+            </p>
           </div>
           <div className="rounded-lg border border-slate-300 bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-700">
-            Worst performing Grid shown first
+            Worst-performing Grid shown first within each sub-region
           </div>
         </div>
 
         <div className="overflow-x-auto rounded-xl border border-slate-300">
-          <table className="w-full min-w-[1900px] border-collapse bg-white text-[15px]">
+          <table className="w-full min-w-[2050px] border-collapse bg-white text-[15px]">
             <thead>
               <tr className="border-b border-slate-300 bg-slate-200 text-slate-900">
-                <th className="px-4 py-4 text-left text-[16px] font-extrabold">Grid</th>
-                <th className="px-4 py-4 text-left text-[16px] font-extrabold">CMPAK GTL</th>
-                {latestDateHeaders.map((header) => (
-                  <th key={`detail-grid-${header}`} className="px-4 py-4 text-center text-[16px] font-extrabold">{header}</th>
-                ))}
-                <th className="px-4 py-4 text-center text-[16px] font-extrabold">Monthly Grid CA</th>
-                <th className="px-4 py-4 text-center text-[16px] font-extrabold">Platinum+</th>
-                <th className="px-4 py-4 text-center text-[16px] font-extrabold">Plat+ Score</th>
-                <th className="px-4 py-4 text-center text-[16px] font-extrabold">PGS</th>
-                <th className="px-4 py-4 text-center text-[16px] font-extrabold">PGS Score</th>
-                <th className="px-4 py-4 text-center text-[16px] font-extrabold">SB</th>
-                <th className="px-4 py-4 text-center text-[16px] font-extrabold">SB Score</th>
-                <th className="px-4 py-4 text-center text-[16px] font-extrabold">DG</th>
-                <th className="px-4 py-4 text-center text-[16px] font-extrabold">DG Score</th>
-                <th className="px-4 py-4 text-center text-[16px] font-extrabold">Total Score</th>
+                <th className="px-4 py-4 text-left font-extrabold">Grid</th>
+                <th className="px-4 py-4 text-left font-extrabold">CMPAK GTL</th>
+                {latestDateHeaders.map((header) => <th key={header} className="px-4 py-4 text-center font-extrabold">{header}</th>)}
+                <th className="px-4 py-4 text-center font-extrabold">Monthly Grid CA</th>
+                <th className="px-4 py-4 text-center font-extrabold">Platinum+</th>
+                <th className="px-4 py-4 text-center font-extrabold">Plat+ Score</th>
+                <th className="px-4 py-4 text-center font-extrabold">PGS</th>
+                <th className="px-4 py-4 text-center font-extrabold">PGS Score</th>
+                <th className="px-4 py-4 text-center font-extrabold">SB</th>
+                <th className="px-4 py-4 text-center font-extrabold">SB Score</th>
+                <th className="px-4 py-4 text-center font-extrabold">DG</th>
+                <th className="px-4 py-4 text-center font-extrabold">DG Score</th>
+                <th className="px-4 py-4 text-center font-extrabold">Total Score</th>
               </tr>
             </thead>
             <tbody>
-              {gridRows.map((row, rowIndex) => (
-                <tr key={`detail-${row.grid}`} className={`${rowIndex % 2 === 0 ? "bg-white" : "bg-slate-50"} border-b border-slate-200 hover:bg-cyan-50/60`}>
-                  <td className="px-4 py-4 text-left text-[17px] font-black text-blue-700">{row.grid}</td>
-                  <td className="px-4 py-4 text-left text-[16px] font-semibold text-slate-900">{row.cmpakGtl}</td>
-                  {(gridDailyAverages.get(row.grid) || []).map((value, idx) => (
-                    <td
-                      key={`${row.grid}-detail-day-${idx}`}
-                      className={`px-4 py-4 text-center text-[16px] font-extrabold ${
-                        value > 0 && value < 95 ? "text-red-600" : value > 0 && value < 98 ? "text-amber-600" : value > 0 ? "text-slate-900" : "text-slate-400"
-                      }`}
-                    >
-                      {value > 0 ? `${value.toFixed(2)}%` : "—"}
+              {subRegionSummaries.flatMap((region) =>
+                region.rows.map((row, rowIndex) => (
+                  <tr key={row.grid} className={`${rowIndex % 2 === 0 ? "bg-white" : "bg-slate-50"} border-b border-slate-200 hover:bg-cyan-50/60`}>
+                    <td className="px-4 py-4 text-left text-[16px] font-black text-blue-700">{row.grid}</td>
+                    <td className="px-4 py-4 text-left font-semibold text-slate-900">{row.cmpakGtl}</td>
+                    {(gridDailyAverages.get(row.grid) || []).map((value, idx) => (
+                      <td key={`${row.grid}-${idx}`} className={`px-4 py-4 text-center font-extrabold ${value > 0 && value < 95 ? "text-red-600" : value > 0 && value < 98 ? "text-amber-600" : value > 0 ? "text-slate-900" : "text-slate-400"}`}>
+                        {value > 0 ? `${value.toFixed(2)}%` : "—"}
+                      </td>
+                    ))}
+                    <td className={`px-4 py-4 text-center font-black ${row.monthlyAverage === null ? "text-slate-400" : row.monthlyAverage < 95 ? "text-red-600" : row.monthlyAverage < 98 ? "text-amber-600" : "text-emerald-700"}`}>
+                      {row.monthlyAverage === null ? "—" : `${row.monthlyAverage.toFixed(2)}%`}
                     </td>
-                  ))}
-                  <td className={`px-4 py-4 text-center text-[16px] font-black ${
-                    row.monthlyAverage === null ? "text-slate-400" : row.monthlyAverage < 95 ? "text-red-600" : row.monthlyAverage < 98 ? "text-amber-600" : "text-emerald-700"
-                  }`}>
-                    {row.monthlyAverage === null ? "—" : `${row.monthlyAverage.toFixed(2)}%`}
-                  </td>
-                  <td className="px-4 py-3 text-center">{kpiCell(row, row.platinum)}</td>
-                  <td className="px-4 py-3 text-center"><GridScoreBadge score={row.platinum.score} max={12} /></td>
-                  <td className="px-4 py-3 text-center">{kpiCell(row, row.pgs)}</td>
-                  <td className="px-4 py-3 text-center"><GridScoreBadge score={row.pgs.score} max={12} /></td>
-                  <td className="px-4 py-3 text-center">{kpiCell(row, row.sb)}</td>
-                  <td className="px-4 py-3 text-center"><GridScoreBadge score={row.sb.score} max={7} /></td>
-                  <td className="px-4 py-3 text-center">{kpiCell(row, row.dg)}</td>
-                  <td className="px-4 py-3 text-center"><GridScoreBadge score={row.dg.score} max={12} /></td>
-                  <td className="px-4 py-3 text-center"><GridScoreBadge score={row.totalScore} max={43} /></td>
-                </tr>
-              ))}
+                    <td className="px-4 py-3 text-center">{kpiCell(row, row.platinum)}</td>
+                    <td className="px-4 py-3 text-center"><GridScoreBadge score={row.platinum.score} max={12} /></td>
+                    <td className="px-4 py-3 text-center">{kpiCell(row, row.pgs)}</td>
+                    <td className="px-4 py-3 text-center"><GridScoreBadge score={row.pgs.score} max={12} /></td>
+                    <td className="px-4 py-3 text-center">{kpiCell(row, row.sb)}</td>
+                    <td className="px-4 py-3 text-center"><GridScoreBadge score={row.sb.score} max={7} /></td>
+                    <td className="px-4 py-3 text-center">{kpiCell(row, row.dg)}</td>
+                    <td className="px-4 py-3 text-center"><GridScoreBadge score={row.dg.score} max={12} /></td>
+                    <td className="px-4 py-3 text-center"><GridScoreBadge score={row.totalScore} max={43} /></td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>
 
-        <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-5 py-3 text-[15px] font-medium text-slate-600">
-          <span className="font-bold text-slate-900">View</span> opens the exact sites contributing to that Grid/category. Daily columns always use the latest three valid dates available up to the report update date.
+        <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-5 py-3 text-[14px] font-medium text-slate-600">
+          <span className="font-bold text-slate-900">Sub-region scoring:</span> shown in the separate C-1 and C-6 cards above. This table remains focused on individual Grid performance.
         </div>
       </div>
 
@@ -6332,5 +6352,6 @@ export default function App() {
     </div>
   );
 }
+
 
 
