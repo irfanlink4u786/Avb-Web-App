@@ -3770,6 +3770,142 @@ const LightAppTheme = () => (
     @media (max-width: 1100px) {
       .grid-performance-light-title { font-size: 14px !important; }
     }
+
+    /* ========================================================
+       GLOBAL DASHBOARD TYPOGRAPHY + TABLE THEME
+       Applies to ALL tabs, including imported components such
+       as EmployeePerformance, OverallSummary and Weather widgets.
+       ======================================================== */
+    .light-app,
+    .light-app button,
+    .light-app input,
+    .light-app select,
+    .light-app textarea,
+    .light-app table {
+      font-family: Inter, "Segoe UI", Arial, sans-serif !important;
+    }
+
+    .light-app h1, .light-app h2, .light-app h3,
+    .light-app h4, .light-app h5, .light-app h6 {
+      color: #0B2559 !important;
+      font-weight: 700 !important;
+      letter-spacing: -0.015em;
+    }
+
+    .light-app table {
+      width: 100%;
+      color: #0B2559 !important;
+      border-collapse: separate;
+      border-spacing: 0;
+      font-size: 13px !important;
+      background: #ffffff !important;
+    }
+
+    .light-app table thead,
+    .light-app table thead tr {
+      background: linear-gradient(180deg, #07599D 0%, #03477F 100%) !important;
+    }
+
+    .light-app table thead th {
+      background: transparent !important;
+      color: #ffffff !important;
+      -webkit-text-fill-color: #ffffff !important;
+      font-size: 12px !important;
+      line-height: 1.25 !important;
+      font-weight: 700 !important;
+      letter-spacing: 0 !important;
+      text-transform: none !important;
+      border-color: rgba(255,255,255,.18) !important;
+      padding-top: 11px !important;
+      padding-bottom: 11px !important;
+    }
+
+    /* Force white header content in every dashboard table, including
+       Worst 10 tables in AGM/Platinum+/PGS/SB/DG and imported tabs. */
+    .light-app table thead th *,
+    .light-app table thead th span,
+    .light-app table thead th div,
+    .light-app table thead th p,
+    .light-app table thead th button,
+    .light-app table thead th svg {
+      color: #ffffff !important;
+      -webkit-text-fill-color: #ffffff !important;
+      stroke: currentColor !important;
+    }
+
+    .light-app table thead [class*="text-slate"],
+    .light-app table thead [class*="text-gray"],
+    .light-app table thead [class*="text-blue"],
+    .light-app table thead [class*="text-cyan"] {
+      color: #ffffff !important;
+      -webkit-text-fill-color: #ffffff !important;
+    }
+
+    .light-app table tbody tr {
+      background: #ffffff !important;
+    }
+    .light-app table tbody tr:nth-child(even) {
+      background: #F1F6FA !important;
+    }
+    .light-app table tbody tr:hover {
+      background: #E7F1F8 !important;
+    }
+    .light-app table tbody td {
+      color: #0B2559 !important;
+      border-color: #D7E2ED !important;
+      font-weight: 500 !important;
+      padding-top: 9px !important;
+      padding-bottom: 9px !important;
+    }
+
+    /* IDs and key numeric values */
+    .light-app table tbody td.font-mono {
+      font-family: Inter, "Segoe UI", Arial, sans-serif !important;
+      color: #07599D !important;
+      font-weight: 600 !important;
+    }
+    .light-app table .font-bold,
+    .light-app table .font-extrabold,
+    .light-app table .font-semibold { font-weight: 700 !important; }
+
+    /* Preserve semantic KPI colours in every tab */
+    .light-app .text-emerald-300, .light-app .text-emerald-400,
+    .light-app .text-emerald-500, .light-app .text-emerald-600,
+    .light-app .text-emerald-700, .light-app .text-emerald-800,
+    .light-app .text-green-400, .light-app .text-green-700 { color: #00875A !important; }
+    .light-app .text-red-300, .light-app .text-red-400,
+    .light-app .text-red-500, .light-app .text-red-600,
+    .light-app .text-red-700, .light-app .text-red-800 { color: #D90000 !important; }
+    .light-app .text-amber-300, .light-app .text-amber-400,
+    .light-app .text-amber-500, .light-app .text-amber-600,
+    .light-app .text-amber-700, .light-app .text-amber-800 { color: #92400E !important; }
+    .light-app .text-cyan-300, .light-app .text-cyan-400,
+    .light-app .text-cyan-500, .light-app .text-blue-400 { color: #07599D !important; }
+
+    .light-app [class*="bg-emerald-"] { background-color: #D9FAE9 !important; border-color: #38DFA1 !important; }
+    .light-app [class*="bg-red-"] { background-color: #FFE1E1 !important; border-color: #FCA5A5 !important; }
+    .light-app [class*="bg-amber-"] { background-color: #FFF4CC !important; border-color: #F5B800 !important; }
+
+    /* Imported EmployeePerformance and all other tab cards */
+    .light-app main > div,
+    .light-app main section { color: #0B2559; }
+    .light-app main [class*="border-slate-"] { border-color: #D7E2ED !important; }
+    .light-app main [class*="text-slate-100"],
+    .light-app main [class*="text-slate-200"],
+    .light-app main [class*="text-slate-300"] { color: #0B2559 !important; }
+    .light-app main [class*="text-slate-400"] { color: #47617F !important; }
+    .light-app main [class*="text-slate-500"] { color: #5E7390 !important; }
+
+    .light-app input, .light-app select, .light-app textarea {
+      background: #ffffff !important;
+      color: #0B2559 !important;
+      border-color: #D7E2ED !important;
+      font-weight: 500 !important;
+    }
+    .light-app input:focus, .light-app select:focus, .light-app textarea:focus {
+      border-color: #07599D !important;
+      box-shadow: 0 0 0 2px rgba(7,89,157,.10) !important;
+    }
   `}</style>
 );
 
