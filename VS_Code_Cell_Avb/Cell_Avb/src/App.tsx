@@ -581,14 +581,58 @@ function RevenueLostSitesPage({
 
   const revenueSiteIds = useMemo(() => {
     if (!revenueLostData?.rows?.length) return [] as string[];
+
+    // Revenue Lost tab may use Site ID / SITE_ID / Site-ID / Site Id / SiteID,
+    // or may contain the site number in the first populated column.
+    // Normalize headers so Google Sheet formatting differences do not hide sites.
+    const normalizeHeader = (value: any) =>
+      String(value ?? "")
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, "");
+
+    const siteHeaderAliases = new Set([
+      "siteid",
+      "site",
+      "sitecode",
+      "siteids",
+      "sitesid",
+      "cellsiteid",
+      "btsid",
+    ]);
+
     const ids: string[] = [];
+
     revenueLostData.rows.forEach((row: Record<string, any>) => {
-      const raw =
-        row["Site ID"] ?? row["Site Id"] ?? row["SITE ID"] ?? row["SiteID"] ??
-        row["Site"] ?? row["SITE"] ?? row["site_id"] ?? "";
-      const id = String(raw).trim();
+      const entries = Object.entries(row ?? {});
+
+      // 1) Prefer a column whose normalized header clearly means Site ID.
+      let raw: any = undefined;
+      for (const [key, value] of entries) {
+        if (siteHeaderAliases.has(normalizeHeader(key))) {
+          raw = value;
+          break;
+        }
+      }
+
+      // 2) Fallback: find the first populated value that looks like a CMPAK site ID.
+      if (raw === undefined || raw === null || String(raw).trim() === "") {
+        const candidate = entries.find(([, value]) => {
+          const text = String(value ?? "").trim();
+          return /^\d{3,6}$/.test(text) || /^[A-Za-z]{0,4}\d{3,6}$/.test(text);
+        });
+        raw = candidate?.[1];
+      }
+
+      // 3) Last fallback: first non-empty cell in the row.
+      if (raw === undefined || raw === null || String(raw).trim() === "") {
+        raw = entries.find(([, value]) => String(value ?? "").trim() !== "")?.[1];
+      }
+
+      const id = String(raw ?? "").trim();
       if (id) ids.push(id);
     });
+
     return Array.from(new Set(ids));
   }, [revenueLostData]);
 
@@ -700,7 +744,7 @@ function RevenueLostSitesPage({
                 <td className="px-3 py-3 text-slate-900 whitespace-nowrap">{site?.clusterOwner || "-"}</td>
                 {latestDates.map(date => { const value = site ? empGetDailyAvb(site, date) : 0; return <td key={`${id}-${date}`} className={`px-3 py-3 text-center font-black whitespace-nowrap ${empCaTextClass(value)}`}>{value > 0 ? `${value.toFixed(2)}%` : "-"}</td>; })}
               </tr>)}
-              {rows.length === 0 && <tr><td colSpan={8 + latestDates.length} className="px-4 py-12 text-center text-slate-500">No Revenue Lost sites found.</td></tr>}
+              {rows.length === 0 && <tr><td colSpan={8 + latestDates.length} className="px-4 py-12 text-center text-slate-500">No Revenue Lost sites found. Google Sheet rows received: {revenueLostData?.rows?.length ?? 0}. Check the Site ID column if this remains zero.</td></tr>}
             </tbody>
           </table>
         </div>
