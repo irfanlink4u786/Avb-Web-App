@@ -34,6 +34,7 @@ import {
   Clock,
   CheckCircle2,
   GitCompare,
+  CircleDollarSign,
 } from "lucide-react";
 import {
   ComposedChart,
@@ -296,7 +297,7 @@ function EmployeePerformance({
       .sort((a, b) => a.avg - b.avg);
   }, [activeSites, level]);
 
-  const levelButtons: { id: Level; label: string }[] = [
+  const levelButtons: { id: EmployeePerformanceLevel; label: string }[] = [
     { id: "zongLead", label: "CMPAK GTL" },
     { id: "msGtl", label: "MPL GTL" },
     { id: "clusterOwner", label: "Cluster Owner" },
@@ -565,6 +566,150 @@ function EmployeePerformance({
 }
 
 // ============================================================
+//  REVENUE LOST SITES — SEPTEMBER DAILY CELL AVB MONITORING
+// ============================================================
+function RevenueLostSitesPage({
+  sites,
+  revenueLostData,
+  lastUpdatedDate,
+}: {
+  sites: SiteData[];
+  revenueLostData: SheetPayload | null;
+  lastUpdatedDate?: string;
+}) {
+  const [search, setSearch] = useState("");
+
+  const revenueSiteIds = useMemo(() => {
+    if (!revenueLostData?.rows?.length) return [] as string[];
+    const ids: string[] = [];
+    revenueLostData.rows.forEach((row: Record<string, any>) => {
+      const raw =
+        row["Site ID"] ?? row["Site Id"] ?? row["SITE ID"] ?? row["SiteID"] ??
+        row["Site"] ?? row["SITE"] ?? row["site_id"] ?? "";
+      const id = String(raw).trim();
+      if (id) ids.push(id);
+    });
+    return Array.from(new Set(ids));
+  }, [revenueLostData]);
+
+  const siteMap = useMemo(() => {
+    const map = new Map<string, SiteData>();
+    sites.forEach((site) => map.set(String(site.siteName ?? "").trim().toLowerCase(), site));
+    return map;
+  }, [sites]);
+
+  const latestDates = useMemo(() => {
+    const cutoff = normalizeDailyDateKey(lastUpdatedDate || "");
+    const cutoffTime = cutoff ? empDateKeyToTime(cutoff) : Number.POSITIVE_INFINITY;
+    const cutoffParts = cutoff?.split("-") ?? [];
+    const available = new Set<string>();
+
+    revenueSiteIds.forEach((id) => {
+      const site = siteMap.get(id.toLowerCase());
+      if (!site) return;
+      Object.entries(site.dailyData ?? {}).forEach(([rawKey, rawValue]) => {
+        const key = normalizeDailyDateKey(rawKey);
+        const value = Number(rawValue);
+        if (!key || !Number.isFinite(value)) return;
+        if (empDateKeyToTime(key) > cutoffTime) return;
+        if (cutoff) {
+          const [, month, year] = key.split("-");
+          if (month !== cutoffParts[1] || year !== cutoffParts[2]) return;
+        }
+        available.add(key);
+      });
+    });
+
+    return Array.from(available).sort((a, b) => empDateKeyToTime(a) - empDateKeyToTime(b));
+  }, [revenueSiteIds, siteMap, lastUpdatedDate]);
+
+  const rows = useMemo(() => revenueSiteIds.map((id) => {
+    const site = siteMap.get(id.toLowerCase());
+    return { id, site };
+  }).filter(({ id, site }) => {
+    const q = search.trim().toLowerCase();
+    if (!q) return true;
+    return [id, site?.grid, site?.subRegion, site?.revenueCategory, site?.zongLead, site?.msGtl, site?.clusterOwner]
+      .some((v) => String(v ?? "").toLowerCase().includes(q));
+  }), [revenueSiteIds, siteMap, search]);
+
+  const latestDate = latestDates[latestDates.length - 1];
+  const latestValues = rows.map(({ site }) => site && latestDate ? empGetDailyAvb(site, latestDate) : 0).filter(v => v > 0);
+  const avgLatest = latestValues.length ? latestValues.reduce((a, b) => a + b, 0) / latestValues.length : 0;
+  const below98 = latestValues.filter(v => v < 98).length;
+  const missing = revenueSiteIds.filter(id => !siteMap.has(id.toLowerCase())).length;
+
+  const exportData = rows.map(({ id, site }) => {
+    const out: Record<string, any> = {
+      "Site ID": id,
+      "Revenue Category": site?.revenueCategory || "-",
+      "Sub-Region": site?.subRegion || "-",
+      "Grid": site?.grid || "-",
+      "Current Month CA": site?.currentAvb ? site.currentAvb.toFixed(2) + "%" : "-",
+      "CMPAK GTL": site?.zongLead || "-",
+      "MPL GTL": site?.msGtl || "-",
+      "Cluster Owner": site?.clusterOwner || "-",
+    };
+    latestDates.forEach(date => {
+      const value = site ? empGetDailyAvb(site, date) : 0;
+      out[empFormatDailyDateHeader(date)] = value > 0 ? value.toFixed(2) + "%" : "-";
+    });
+    return out;
+  });
+
+  if (!revenueLostData) {
+    return <div className="rounded-xl border border-amber-300 bg-amber-50 p-8 text-center text-amber-900 font-semibold">Revenue Lost sites sheet tab is not available. Please confirm the September Google Sheet tab name is exactly <b>Revenue Lost sites</b>.</div>;
+  }
+
+  return (
+    <div className="space-y-5">
+      <SectionBanner icon={<CircleDollarSign className="w-6 h-6 text-red-500" />} title="Revenue Lost Sites — Daily Cell AVB" subtitle={`${revenueSiteIds.length} revenue-lost sites under daily availability monitoring`} gradient="from-red-500/10 to-amber-500/10" />
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-bold text-slate-500 uppercase">Revenue Lost Sites</div><div className="mt-1 text-2xl font-black text-slate-950">{revenueSiteIds.length}</div></div>
+        <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-bold text-slate-500 uppercase">Latest Daily Avg</div><div className={`mt-1 text-2xl font-black ${empCaTextClass(avgLatest)}`}>{avgLatest > 0 ? `${avgLatest.toFixed(2)}%` : "-"}</div><div className="text-[11px] text-slate-500">{latestDate ? empFormatDailyDateHeader(latestDate) : "No daily date"}</div></div>
+        <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-bold text-slate-500 uppercase">Below 98% Today</div><div className="mt-1 text-2xl font-black text-red-600">{below98}</div></div>
+        <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-bold text-slate-500 uppercase">Not Matched in AVB</div><div className={`mt-1 text-2xl font-black ${missing ? "text-amber-700" : "text-emerald-700"}`}>{missing}</div></div>
+      </div>
+
+      <div className="rounded-xl border border-slate-200 bg-white overflow-hidden shadow-sm">
+        <div className="p-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
+          <div><h3 className="font-black text-slate-950">Daily Cell AVB Monitoring</h3><p className="text-xs text-slate-500 mt-1">Daily CA is matched from the main September Cell AVB sheet by Site ID.</p></div>
+          <div className="flex flex-wrap gap-2">
+            <div className="relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" /><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search site / grid / owner" className="pl-9 pr-3 py-2 rounded-lg border border-slate-300 bg-white text-sm text-slate-900 outline-none focus:border-cyan-500" /></div>
+            <ExportButtonComponent data={exportData} filename="Revenue_Lost_Sites_Daily_Cell_AVB" label="Export" format="excel" variant="success" />
+          </div>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="min-w-[1400px] w-full text-sm">
+            <thead className="bg-[#006B3C]">
+              <tr>
+                {["Site ID","Category","Sub-Region","Grid","Current Month","CMPAK GTL","MPL GTL","Cluster Owner"].map(h => <th key={h} className="px-3 py-3 text-left text-xs font-black text-white whitespace-nowrap">{h}</th>)}
+                {latestDates.map(date => <th key={date} className="px-3 py-3 text-center text-xs font-black text-white whitespace-nowrap">{empFormatDailyDateHeader(date)}<div className="text-[9px] uppercase">Cell AVB</div></th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(({ id, site }) => <tr key={id} className="border-t border-slate-200 even:bg-slate-50 hover:bg-red-50/50">
+                <td className="px-3 py-3 font-black text-blue-700 whitespace-nowrap">{id}</td>
+                <td className="px-3 py-3 font-semibold text-slate-900 whitespace-nowrap">{site?.revenueCategory || "-"}</td>
+                <td className="px-3 py-3 font-semibold text-slate-900 whitespace-nowrap">{site?.subRegion || "-"}</td>
+                <td className="px-3 py-3 font-semibold text-slate-900 whitespace-nowrap">{site?.grid || "-"}</td>
+                <td className={`px-3 py-3 text-center font-black ${empCaTextClass(Number(site?.currentAvb || 0))}`}>{site?.currentAvb ? `${Number(site.currentAvb).toFixed(2)}%` : "-"}</td>
+                <td className="px-3 py-3 text-slate-900 whitespace-nowrap">{site?.zongLead || "-"}</td>
+                <td className="px-3 py-3 text-slate-900 whitespace-nowrap">{site?.msGtl || "-"}</td>
+                <td className="px-3 py-3 text-slate-900 whitespace-nowrap">{site?.clusterOwner || "-"}</td>
+                {latestDates.map(date => { const value = site ? empGetDailyAvb(site, date) : 0; return <td key={`${id}-${date}`} className={`px-3 py-3 text-center font-black whitespace-nowrap ${empCaTextClass(value)}`}>{value > 0 ? `${value.toFixed(2)}%` : "-"}</td>; })}
+              </tr>)}
+              {rows.length === 0 && <tr><td colSpan={8 + latestDates.length} className="px-4 py-12 text-center text-slate-500">No Revenue Lost sites found.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
 //  CONSTANTS
 // ============================================================
 
@@ -581,6 +726,7 @@ const NAV_ITEMS = [
   { id: "grid-performance", label: "Grid Performance", icon: Award },
   { id: "recurring", label: "Recurring Sites", icon: RefreshCw },
   { id: "s2s-bb", label: "S2S BB Performance", icon: Battery },
+  { id: "revenue-lost", label: "Revenue Lost Sites", icon: CircleDollarSign },
   { id: "employees", label: "Employees", icon: Users },
   { id: "platinum-plus", label: "Platinum+", icon: Crown },
   { id: "pgs", label: "PGS Sites", icon: TrendingUp },
@@ -5551,9 +5697,9 @@ function ErrorScreen({ message, onRetry }: { message: string; onRetry: () => voi
   );
 }
 
-function SectionBanner({ icon, title, subtitle, gradient }: { icon: React.ReactNode; title: string; subtitle: string; gradient: string }) {
+function SectionBanner({ icon, title, subtitle, gradient, className = "" }: { icon: React.ReactNode; title: string; subtitle: string; gradient: string; className?: string }) {
   return (
-    <div className={`rounded-xl bg-gradient-to-r ${gradient} border p-5`}>
+    <div className={`rounded-xl bg-gradient-to-r ${gradient} border p-5 ${className}`}>
       <div className="flex items-center gap-3">
         {icon}
         <div>
@@ -6365,6 +6511,7 @@ export default function App() {
   const [month5G, setMonth5G] = useState<SheetPayload | null>(null);
   const [monthCellAvbHistory, setMonthCellAvbHistory] = useState<SheetPayload | null>(null);
   const [monthS2SBB, setMonthS2SBB] = useState<SheetPayload | null>(null);
+  const [monthRevenueLost, setMonthRevenueLost] = useState<SheetPayload | null>(null);
   const [preVsPostData, setPreVsPostData] = useState<SheetPayload | null>(null);
   const [prePostSites, setPrePostSites] = useState<SiteData[]>([]);
   const [prePostLastUpdated, setPrePostLastUpdated] = useState("");
@@ -6452,6 +6599,7 @@ export default function App() {
     setMonth5G(null);
     setMonthCellAvbHistory(null);
     setMonthS2SBB(null);
+    setMonthRevenueLost(null);
     setMonthLastUpdated("");
     setMonthLastColumnIndex(0);
 
@@ -6472,7 +6620,7 @@ export default function App() {
 
       // Supporting tabs are optional. A missing supporting tab must NOT cause
       // the whole dashboard to fall back to old/mock data.
-      const [hwResult, dateResult, rcaResult, fiveGResult, historyResult, s2sResult] = await Promise.allSettled([
+      const [hwResult, dateResult, rcaResult, fiveGResult, historyResult, s2sResult, revenueLostResult] = await Promise.allSettled([
         fetchGoogleSheet(sheetId, "Hardware issues"),
         fetchGoogleSheet(sheetId, "Updated Date"),
         fetchGoogleSheet(sheetId, "RCA of Plat +"),
@@ -6485,6 +6633,9 @@ export default function App() {
         month === "september"
           ? fetchGoogleSheet(sheetId, "S2S BB installed")
           : Promise.resolve(null),
+        month === "september"
+          ? fetchGoogleSheet(sheetId, "Revenue Lost sites")
+          : Promise.resolve(null),
       ]);
 
       if (requestId !== monthLoadSeq.current) return;
@@ -6495,6 +6646,7 @@ export default function App() {
       const fiveGSheet = fiveGResult.status === "fulfilled" ? fiveGResult.value : null;
       const cellAvbHistory = historyResult.status === "fulfilled" ? historyResult.value : null;
       const s2sBBData = s2sResult.status === "fulfilled" ? s2sResult.value : null;
+      const revenueLostData = revenueLostResult.status === "fulfilled" ? revenueLostResult.value : null;
 
       if (hwResult.status === "rejected") console.warn(`[Cell AVB] ${month}: Hardware issues tab unavailable`, hwResult.reason);
       if (dateResult.status === "rejected") console.warn(`[Cell AVB] ${month}: Updated Date tab unavailable`, dateResult.reason);
@@ -6502,12 +6654,14 @@ export default function App() {
       if (fiveGResult.status === "rejected") console.warn(`[Cell AVB] ${month}: 5G tab unavailable`, fiveGResult.reason);
       if (historyResult.status === "rejected") console.warn(`[Cell AVB] ${month}: Cell Avb history tab unavailable`, historyResult.reason);
       if (s2sResult.status === "rejected") console.warn(`[Cell AVB] ${month}: S2S BB installed tab unavailable`, s2sResult.reason);
+      if (revenueLostResult.status === "rejected") console.warn(`[Cell AVB] ${month}: Revenue Lost sites tab unavailable`, revenueLostResult.reason);
 
       setMonthHardware(hwData);
       setMonthRca(rcaSheet);
       setMonth5G(fiveGSheet);
       setMonthCellAvbHistory(month === "september" ? cellAvbHistory : null);
       setMonthS2SBB(month === "september" ? s2sBBData : null);
+      setMonthRevenueLost(month === "september" ? revenueLostData : null);
 
       if (dateData && Array.isArray(dateData.rows) && dateData.rows.length > 0) {
         const row = dateData.rows[0];
@@ -6531,6 +6685,7 @@ export default function App() {
       setMonth5G(null);
       setMonthCellAvbHistory(null);
       setMonthS2SBB(null);
+      setMonthRevenueLost(null);
       setMonthLastUpdated("");
       setMonthLastColumnIndex(0);
       setUseMock(false);
@@ -6653,6 +6808,7 @@ export default function App() {
     setMonth5G(null);
     setMonthCellAvbHistory(null);
     setMonthS2SBB(null);
+    setMonthRevenueLost(null);
     setPreVsPostData(null);
     setPrePostSites([]);
     setAppState("dashboard");
@@ -6913,6 +7069,7 @@ export default function App() {
             if (item.id === "5g") return selectedMonth === "august" || selectedMonth === "september";
             if (item.id === "recurring") return selectedMonth === "september";
             if (item.id === "s2s-bb") return selectedMonth === "september";
+            if (item.id === "revenue-lost") return selectedMonth === "september";
             return true;
           }).map((item) => {
             const Icon = item.icon;
@@ -6964,6 +7121,7 @@ export default function App() {
                 {activeTab === "grid-performance" && <GridPerformanceScorecard rawData={monthData} lastUpdatedDate={monthLastUpdated} />}
                 {activeTab === "recurring" && <RecurringSitesPage sites={sites} historyData={monthCellAvbHistory} />}
                 {activeTab === "s2s-bb" && <S2SBBPerformancePage sites={sites} s2sData={monthS2SBB} historyData={monthCellAvbHistory} rawData={monthData} lastUpdatedDate={monthLastUpdated} />}
+                {activeTab === "revenue-lost" && <RevenueLostSitesPage sites={sites} revenueLostData={monthRevenueLost} lastUpdatedDate={monthLastUpdated} />}
                 {activeTab === "employees" && <><SectionBanner icon={<Users className="w-6 h-6 text-indigo-400" />} title="Employee Performance Analysis" subtitle={`${sites.filter((s) => s.currentAvb > 0).length} active sites`} gradient="from-indigo-500/10 to-purple-500/10 border-indigo-500/20" /><div className="employee-performance-light"><style>{`
   .employee-performance-light .employee-all-sites-header,
   .employee-performance-light .employee-all-sites-header tr,
