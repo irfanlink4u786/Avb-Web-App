@@ -1099,9 +1099,9 @@ function FuelDashboard({ data, onBack }: { data: SheetPayload | null; onBack: ()
     "Last 2 Months (L)":Math.round(x.lastTwo)
   }));
 
-  const tableClass = "w-full text-sm";
-  const th = "px-3 py-3 text-left text-xs font-black text-white whitespace-nowrap";
-  const td = "px-3 py-2.5 text-slate-800 whitespace-nowrap";
+  const tableClass = "w-full text-[15px]";
+  const th = "px-4 py-3.5 text-left text-[12px] font-black uppercase tracking-wide text-white whitespace-nowrap";
+  const td = "px-4 py-3 text-[14px] font-medium text-slate-800 whitespace-nowrap";
 
   if (!data) return <div className="min-h-screen bg-slate-100 p-8"><button onClick={onBack} className="mb-5 rounded-lg bg-slate-800 px-4 py-2 text-white">← Home</button><div className="rounded-xl border border-amber-300 bg-amber-50 p-10 text-center font-bold text-amber-900">Fuel History tab is not available. Confirm the Google Sheet tab name is exactly <b>Fuel History</b>.</div></div>;
 
@@ -1127,8 +1127,8 @@ function FuelDashboard({ data, onBack }: { data: SheetPayload | null; onBack: ()
         <div className="border-t border-slate-800 p-4 text-[11px] text-emerald-100/60">Fuel History · Live Google Sheet</div>
       </aside>
 
-      <div className="min-w-0 flex-1 lg:ml-64 bg-[#eef0f3] text-slate-900">
-        <header className="sticky top-0 z-30 border-b border-slate-300 bg-white/95 backdrop-blur">
+      <div className="min-w-0 flex-1 lg:ml-64 bg-gradient-to-br from-slate-50 via-[#f4f8f6] to-emerald-50/40 text-slate-900">
+        <header className="sticky top-0 z-30 border-b border-emerald-100 bg-white/95 shadow-sm backdrop-blur">
           <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-4 sm:px-6">
             <div>
               <div className="flex items-center gap-2 lg:hidden"><button onClick={onBack} className="rounded-lg bg-slate-800 px-3 py-2 text-xs font-bold text-white">← Home</button><Fuel className="h-5 w-5 text-emerald-600"/></div>
@@ -1251,24 +1251,24 @@ function FuelDashboard({ data, onBack }: { data: SheetPayload | null; onBack: ()
         </>}
 
         {tab==="currentMonth" && <>
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><div className="text-xs font-black uppercase text-slate-500">{currentMonthLabel} Fuel</div><div className="mt-1 text-2xl font-black text-[#006B3C]">{Math.round(currentMonthTotal).toLocaleString()} L</div></div>
-            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><div className="text-xs font-black uppercase text-slate-500">Sites Fueled</div><div className="mt-1 text-2xl font-black">{currentMonthSites}</div></div>
-            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><div className="text-xs font-black uppercase text-slate-500">Fuel Fill Events</div><div className="mt-1 text-2xl font-black">{currentMonthFills}</div></div>
-            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><div className="text-xs font-black uppercase text-slate-500">Average / Active Day</div><div className="mt-1 text-2xl font-black">{Math.round(currentMonthAvgDay).toLocaleString()} L</div></div>
+          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+            <div className="rounded-2xl border border-emerald-200 bg-gradient-to-br from-white to-emerald-50 p-5 shadow-md"><div className="text-[11px] font-black uppercase tracking-wider text-emerald-700">{currentMonthLabel} Fuel</div><div className="mt-2 text-3xl font-black tracking-tight text-[#006B3C]">{Math.round(currentMonthTotal).toLocaleString()} <span className="text-lg">L</span></div></div>
+            <div className="rounded-2xl border border-blue-100 bg-gradient-to-br from-white to-blue-50 p-5 shadow-md"><div className="text-[11px] font-black uppercase tracking-wider text-blue-700">Sites Fueled</div><div className="mt-2 text-3xl font-black tracking-tight text-slate-950">{currentMonthSites}</div></div>
+            <div className="rounded-2xl border border-amber-100 bg-gradient-to-br from-white to-amber-50 p-5 shadow-md"><div className="text-[11px] font-black uppercase tracking-wider text-amber-700">Fuel Fill Events</div><div className="mt-2 text-3xl font-black tracking-tight text-slate-950">{currentMonthFills}</div></div>
+            <div className="rounded-2xl border border-violet-100 bg-gradient-to-br from-white to-violet-50 p-5 shadow-md"><div className="text-[11px] font-black uppercase tracking-wider text-violet-700">Average / Active Day</div><div className="mt-2 text-3xl font-black tracking-tight text-slate-950">{Math.round(currentMonthAvgDay).toLocaleString()} <span className="text-lg">L</span></div></div>
           </div>
 
           <div className="grid gap-5 xl:grid-cols-2">
-            <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-              <div className="border-b border-slate-200 p-4"><h3 className="font-black">{currentMonthLabel} · Grid-wise Summary</h3><p className="text-xs text-slate-500">Total fuel filled by grid during current month</p></div>
+            <div className="rounded-2xl border border-slate-200 bg-white shadow-md overflow-hidden">
+              <div className="border-b border-emerald-100 bg-gradient-to-r from-emerald-50 to-white p-5"><h3 className="text-base font-black text-slate-950">{currentMonthLabel} · Grid-wise Summary</h3><p className="text-xs text-slate-500">Total fuel filled by grid during current month</p></div>
               <div className="max-h-[390px] overflow-auto">
                 <table className={tableClass}><thead className="sticky top-0 bg-[#006B3C]"><tr><th className={th}>Grid</th><th className={th}>Fuel (L)</th><th className={th}>Share</th></tr></thead>
                   <tbody>{[...currentMonthGridMatrix].sort((a,b)=>b.total-a.total).map(x=><tr key={x.grid} className="border-b border-slate-200 even:bg-slate-50"><td className={td+" font-black text-[#006B3C]"}>{x.grid}</td><td className={td+" font-black"}>{Math.round(x.total).toLocaleString()}</td><td className={td}>{currentMonthTotal?((x.total/currentMonthTotal)*100).toFixed(1):"0.0"}%</td></tr>)}</tbody>
                 </table>
               </div>
             </div>
-            <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-              <div className="border-b border-slate-200 p-4"><h3 className="font-black">{currentMonthLabel} · Day-wise Summary</h3><p className="text-xs text-slate-500">Daily fuel, fill events and unique sites</p></div>
+            <div className="rounded-2xl border border-slate-200 bg-white shadow-md overflow-hidden">
+              <div className="border-b border-blue-100 bg-gradient-to-r from-blue-50 to-white p-5"><h3 className="text-base font-black text-slate-950">{currentMonthLabel} · Day-wise Summary</h3><p className="text-xs text-slate-500">Daily fuel, fill events and unique sites</p></div>
               <div className="max-h-[390px] overflow-auto">
                 <table className={tableClass}><thead className="sticky top-0 bg-[#006B3C]"><tr>{["Date","Fuel L","Fill Events","Sites"].map(h=><th key={h} className={th}>{h}</th>)}</tr></thead>
                   <tbody>{currentMonthDaySummary.map(x=><tr key={x.day} className="border-b border-slate-200 even:bg-slate-50"><td className={td+" font-black"}>{x.date}</td><td className={td+" font-black"}>{Math.round(x.fuel).toLocaleString()}</td><td className={td}>{x.fills}</td><td className={td}>{x.sites}</td></tr>)}</tbody>
@@ -1277,29 +1277,29 @@ function FuelDashboard({ data, onBack }: { data: SheetPayload | null; onBack: ()
             </div>
           </div>
 
-          <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 p-4">
-              <div><h3 className="font-black">{currentMonthLabel} · Grid × Date Fuel Matrix</h3><p className="text-xs text-slate-500">Grid IDs in rows · calendar dates in columns · values are Fuel Quantity Filled (L)</p></div>
+          <div className="rounded-2xl border border-emerald-200 bg-white shadow-lg overflow-hidden">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-emerald-100 bg-gradient-to-r from-[#ecfdf5] via-white to-[#f0fdfa] p-5">
+              <div><h3 className="text-lg font-black text-slate-950">{currentMonthLabel} · Grid × Date Fuel Matrix</h3><p className="text-xs text-slate-500">Grid IDs in rows · calendar dates in columns · values are Fuel Quantity Filled (L)</p></div>
               <ExportButtonComponent data={currentMonthMatrixExport} filename={`Fuel_${currentMonthLabel}_Grid_Day_Matrix_${view}`} label="Export Matrix" format="excel" variant="success"/>
             </div>
             <div className="max-h-[570px] overflow-auto">
-              <table className="min-w-max w-full text-xs">
+              <table className="min-w-max w-full text-[13px]">
                 <thead className="sticky top-0 z-20 bg-[#006B3C] text-white">
                   <tr>
-                    <th className="sticky left-0 z-30 bg-[#006B3C] px-3 py-3 text-left font-black">Grid ID</th>
-                    {currentMonthDates.map(day=><th key={day} className="min-w-[64px] px-2 py-3 text-center font-black">{day}</th>)}
-                    <th className="sticky right-0 z-30 bg-[#005A33] px-3 py-3 text-center font-black">Total</th>
+                    <th className="sticky left-0 z-30 bg-[#005c36] px-4 py-4 text-left text-[13px] font-black uppercase tracking-wide">Grid ID</th>
+                    {currentMonthDates.map(day=><th key={day} className="min-w-[72px] border-l border-white/10 px-2 py-4 text-center text-[13px] font-black">{day}</th>)}
+                    <th className="sticky right-0 z-30 bg-[#004f30] px-4 py-4 text-center text-[13px] font-black uppercase">Total</th>
                   </tr>
                 </thead>
                 <tbody>
                   {currentMonthGridMatrix.map(row=><tr key={row.grid} className="border-b border-slate-200 even:bg-slate-50">
-                    <td className="sticky left-0 z-10 bg-white px-3 py-2.5 font-black text-[#006B3C]"><button type="button" onClick={()=>setMonthDrillGrid(row.grid)} className="inline-flex items-center gap-1 rounded-md px-2 py-1 font-black text-[#006B3C] hover:bg-emerald-100 hover:text-emerald-900" title={`View all fueled sites in ${row.grid}`}>{row.grid}<ChevronDown className="h-3.5 w-3.5"/></button></td>
-                    {currentMonthDates.map(day=>{const v=row.days[String(day)]||0;return <td key={day} className={`px-2 py-2.5 text-center font-bold ${v>0?"text-slate-900":"text-slate-300"}`}>{v>0?Math.round(v).toLocaleString():"-"}</td>})}
-                    <td className="sticky right-0 z-10 bg-emerald-50 px-3 py-2.5 text-center font-black text-emerald-800">{Math.round(row.total).toLocaleString()}</td>
+                    <td className="sticky left-0 z-10 bg-white px-3 py-2.5 font-black text-[#006B3C]"><button type="button" onClick={()=>setMonthDrillGrid(row.grid)} className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-[14px] font-black text-[#006B3C] hover:bg-emerald-100 hover:text-emerald-900" title={`View all fueled sites in ${row.grid}`}>{row.grid}<ChevronDown className="h-3.5 w-3.5"/></button></td>
+                    {currentMonthDates.map(day=>{const v=row.days[String(day)]||0;const heat=v>=500?"bg-rose-50 text-rose-800":v>=300?"bg-amber-50 text-amber-800":v>=150?"bg-emerald-50 text-emerald-800":v>0?"text-slate-900":"text-slate-300";return <td key={day} className={`border-l border-slate-100 px-2 py-3.5 text-center text-[13px] font-bold ${heat}`}>{v>0?Math.round(v).toLocaleString():"-"}</td>})}
+                    <td className="sticky right-0 z-10 bg-emerald-100 px-4 py-3.5 text-center text-[14px] font-black text-emerald-900">{Math.round(row.total).toLocaleString()}</td>
                   </tr>)}
-                  <tr className="sticky bottom-0 z-20 bg-slate-900 text-white">
-                    <td className="sticky left-0 bg-slate-900 px-3 py-3 font-black">Daily Total</td>
-                    {currentMonthDates.map(day=>{const v=currentMonthGridMatrix.reduce((a,r)=>a+(r.days[String(day)]||0),0);return <td key={day} className="px-2 py-3 text-center font-black">{Math.round(v).toLocaleString()}</td>})}
+                  <tr className="sticky bottom-0 z-20 bg-[#12372a] text-white">
+                    <td className="sticky left-0 bg-[#12372a] px-4 py-4 text-[13px] font-black uppercase">Daily Total</td>
+                    {currentMonthDates.map(day=>{const v=currentMonthGridMatrix.reduce((a,r)=>a+(r.days[String(day)]||0),0);return <td key={day} className="border-l border-white/10 px-2 py-4 text-center text-[13px] font-black">{Math.round(v).toLocaleString()}</td>})}
                     <td className="sticky right-0 bg-emerald-700 px-3 py-3 text-center font-black">{Math.round(currentMonthTotal).toLocaleString()}</td>
                   </tr>
                 </tbody>
@@ -1313,7 +1313,7 @@ function FuelDashboard({ data, onBack }: { data: SheetPayload | null; onBack: ()
                   <button type="button" onClick={()=>setMonthDrillGrid(null)} className="rounded-lg border border-emerald-300 bg-white px-3 py-2 text-xs font-black text-emerald-800">× Close</button>
                   <div>
                     <div className="text-[10px] font-black uppercase tracking-wide text-emerald-700">Sep-26 Site Drill-down</div>
-                    <h3 className="text-lg font-black text-slate-950">{monthDrillGrid} · Which Sites Consumed More Fuel?</h3>
+                    <h3 className="text-xl font-black text-slate-950">{monthDrillGrid} · Which Sites Consumed More Fuel?</h3>
                     <p className="text-xs text-slate-600">{currentMonthDrillSites.length} fueled sites · ranked highest Sep consumption first · daily liters shown by date</p>
                   </div>
                 </div>
@@ -1321,14 +1321,14 @@ function FuelDashboard({ data, onBack }: { data: SheetPayload | null; onBack: ()
               </div>
 
               <div className="grid grid-cols-2 gap-3 border-b border-slate-200 p-4 sm:grid-cols-4">
-                <div><div className="text-[10px] font-black uppercase text-slate-500">Grid Fuel</div><div className="text-xl font-black text-[#006B3C]">{Math.round(currentMonthDrillTotal).toLocaleString()} L</div></div>
+                <div><div className="text-[10px] font-black uppercase text-slate-500">Grid Fuel</div><div className="text-2xl font-black text-[#006B3C]">{Math.round(currentMonthDrillTotal).toLocaleString()} L</div></div>
                 <div><div className="text-[10px] font-black uppercase text-slate-500">Fueled Sites</div><div className="text-xl font-black">{currentMonthDrillSites.length}</div></div>
-                <div><div className="text-[10px] font-black uppercase text-slate-500">Highest Fuel Site</div><div className="text-xl font-black text-red-600">{currentMonthDrillSites[0]?.siteId || "-"}</div></div>
-                <div><div className="text-[10px] font-black uppercase text-slate-500">Highest Site Fuel</div><div className="text-xl font-black text-red-600">{Math.round(currentMonthDrillSites[0]?.total || 0).toLocaleString()} L</div></div>
+                <div><div className="text-[10px] font-black uppercase text-slate-500">Highest Fuel Site</div><div className="text-2xl font-black text-red-600">{currentMonthDrillSites[0]?.siteId || "-"}</div></div>
+                <div><div className="text-[10px] font-black uppercase text-slate-500">Highest Site Fuel</div><div className="text-2xl font-black text-red-600">{Math.round(currentMonthDrillSites[0]?.total || 0).toLocaleString()} L</div></div>
               </div>
 
               <div className="max-h-[600px] overflow-auto">
-                <table className="min-w-max w-full text-xs">
+                <table className="min-w-max w-full text-[13px]">
                   <thead className="sticky top-0 z-20 bg-[#006B3C] text-white">
                     <tr>
                       <th className="sticky left-0 z-30 bg-[#006B3C] px-3 py-3 text-left font-black">Site ID</th>
