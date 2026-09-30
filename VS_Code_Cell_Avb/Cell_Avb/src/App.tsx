@@ -32,6 +32,7 @@ import {
   Fuel,
   ListChecks,
   Clock,
+  CalendarDays,
   CheckCircle2,
   GitCompare,
   CircleDollarSign,
@@ -711,7 +712,7 @@ function RevenueLostSitesPage({
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-bold text-slate-500 uppercase">Revenue Lost Sites</div><div className="mt-1 text-2xl font-black text-slate-950">{revenueSiteIds.length}</div></div>
-        <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-bold text-slate-500 uppercase">Latest Daily Avg</div><div className={`mt-1 text-2xl font-black ${empCaTextClass(avgLatest)}`}>{avgLatest > 0 ? `${avgLatest.toFixed(2)}%` : "-"}</div><div className="text-[11px] text-slate-500">{latestDate ? empFormatDailyDateHeader(latestDate) : "No daily date"}</div></div>
+        <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-bold text-slate-500 uppercase">Latest Daily Avg</div><div className={`mt-1 text-2xl font-black ${empCaTextClass(avgLatest)}`}>{avgLatest > 0 ? `${avgLatest.toFixed(2)}%` : "-"}</div><div className="text-[11px] text-emerald-100/60">{latestDate ? empFormatDailyDateHeader(latestDate) : "No daily date"}</div></div>
         <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-bold text-slate-500 uppercase">Below 98% Today</div><div className="mt-1 text-2xl font-black text-red-600">{below98}</div></div>
         <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-bold text-slate-500 uppercase">Not Matched in AVB</div><div className={`mt-1 text-2xl font-black ${missing ? "text-amber-700" : "text-emerald-700"}`}>{missing}</div></div>
       </div>
@@ -753,6 +754,626 @@ function RevenueLostSitesPage({
   );
 }
 
+
+// ============================================================
+//  FUEL HISTORY — YEAR-ON-YEAR / WORST SITES / DAILY MONITORING
+// ============================================================
+
+type FuelSubTab = "summary" | "yoy" | "monitoring" | "currentMonth";
+type FuelView = "overall" | "C-1" | "C-6";
+
+type FuelRow = {
+  siteId: string;
+  grid: string;
+  month: string;
+  refuelingTime: string;
+  beforeQty: number;
+  filledQty: number;
+  year: number;
+  date: Date | null;
+};
+
+const FUEL_MONTH_ORDER = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+
+// Google Fuel History uses both "Sep" and "Sept". Normalize before ALL calculations.
+function fuelMonthLabel(raw: any): string {
+  const token = String(raw ?? "").trim().split("-")[0];
+  if (/^sept$/i.test(token) || /^sep$/i.test(token)) return "Sep";
+  const found = FUEL_MONTH_ORDER.find(m => m.toLowerCase() === token.toLowerCase());
+  return found || token;
+}
+
+function fuelNumber(value: any): number {
+  const n = Number(String(value ?? "").replace(/,/g, "").trim());
+  return Number.isFinite(n) ? n : 0;
+}
+
+function fuelRegion(grid: string): "C-1" | "C-6" | "Other" {
+  const g = String(grid ?? "").trim().toUpperCase();
+  if (g.startsWith("C1")) return "C-1";
+  if (g.startsWith("C6")) return "C-6";
+  return "Other";
+}
+
+function fuelDate(value: any): Date | null {
+  if (value instanceof Date && Number.isFinite(value.getTime())) return value;
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+  const normalized = raw.includes(" ") ? raw.replace(" ", "T") : raw;
+  const d = new Date(normalized);
+  return Number.isFinite(d.getTime()) ? d : null;
+}
+
+function parseFuelRows(data: SheetPayload | null): FuelRow[] {
+  if (!data?.rows?.length) return [];
+  return data.rows.map((row: Record<string, any>) => {
+    const siteId = String(row["Site ID Name"] ?? row["Site ID"] ?? row["Site"] ?? "").trim();
+    const grid = String(row["Grid"] ?? "").trim();
+    const month = String(row["Month"] ?? "").trim();
+    const refuelingTime = String(row["Refueling Time"] ?? row["Refilling Time"] ?? "").trim();
+    const yearFromCol = fuelNumber(row["Year"]);
+    const yearFromMonth = month.match(/-(\d{2,4})$/);
+    const year = yearFromCol || (yearFromMonth ? Number(yearFromMonth[1].length === 2 ? `20${yearFromMonth[1]}` : yearFromMonth[1]) : 0);
+    return {
+      siteId,
+      grid,
+      month,
+      refuelingTime,
+      beforeQty: fuelNumber(row["Before Filling Fuel Quantity"]),
+      filledQty: fuelNumber(row["Fuel Quantity Filled"]),
+      year,
+      date: fuelDate(refuelingTime),
+    };
+  }).filter(r => r.siteId && r.filledQty >= 0);
+}
+
+function FuelDashboard({ data, onBack }: { data: SheetPayload | null; onBack: () => void }) {
+  const [tab, setTab] = useState<FuelSubTab>("summary");
+  const [view, setView] = useState<FuelView>("overall");
+  const [gridFilter, setGridFilter] = useState("__all");
+  const [siteSearch, setSiteSearch] = useState("");
+  const [monitorGrid, setMonitorGrid] = useState("");
+  const [gridTableView, setGridTableView] = useState<"all" | "saving" | "increase">("all");
+  const [allSitesGrid, setAllSitesGrid] = useState("__all");
+  const [allSitesSearch, setAllSitesSearch] = useState("");
+  const [drillGrid, setDrillGrid] = useState<string | null>(null);
+  const [monthDrillGrid, setMonthDrillGrid] = useState<string | null>(null);
+
+  const rows = useMemo(() => parseFuelRows(data), [data]);
+  const siteRows = useMemo(() => rows.filter(r => !r.siteId.toLowerCase().startsWith("mobile dg")), [rows]);
+
+  const years = useMemo(() => Array.from(new Set(rows.map(r => r.year).filter(Boolean))).sort(), [rows]);
+  const currentYear = years.includes(2026) ? 2026 : (years[years.length - 1] || 2026);
+  const previousYear = years.includes(currentYear - 1) ? currentYear - 1 : (years[years.length - 2] || 2025);
+
+  const latestMonthIndex = useMemo(() => {
+    const indexes = rows.filter(r => r.year === currentYear).map(r => {
+      const label = fuelMonthLabel(r.month);
+      return FUEL_MONTH_ORDER.indexOf(label);
+    }).filter(i => i >= 0);
+    return indexes.length ? Math.max(...indexes) : 8;
+  }, [rows, currentYear]);
+
+  const comparableMonths = FUEL_MONTH_ORDER.slice(0, latestMonthIndex + 1);
+  const lastTwoMonths = comparableMonths.slice(-2);
+
+  const inView = (r: FuelRow) => view === "overall" || fuelRegion(r.grid) === view;
+  const inGrid = (r: FuelRow) => gridFilter === "__all" || r.grid === gridFilter;
+  const scoped = useMemo(() => rows.filter(r => inView(r) && inGrid(r)), [rows, view, gridFilter]);
+  const scopedSites = useMemo(() => siteRows.filter(r => inView(r) && inGrid(r)), [siteRows, view, gridFilter]);
+
+  const grids = useMemo(() => Array.from(new Set(rows.filter(inView).map(r => r.grid).filter(g => g && g !== "MDV"))).sort(), [rows, view]);
+
+  useEffect(() => {
+    if (gridFilter !== "__all" && !grids.includes(gridFilter)) setGridFilter("__all");
+  }, [view, grids, gridFilter]);
+  useEffect(() => {
+    if (allSitesGrid !== "__all" && !grids.includes(allSitesGrid)) setAllSitesGrid("__all");
+  }, [view, grids, allSitesGrid]);
+
+  const isComparable = (r: FuelRow) => comparableMonths.includes(fuelMonthLabel(r.month));
+  const totalFor = (source: FuelRow[], year: number) => source.filter(r => r.year === year && isComparable(r)).reduce((s, r) => s + r.filledQty, 0);
+
+  const prevTotal = totalFor(scoped, previousYear);
+  const currTotal = totalFor(scoped, currentYear);
+  const saving = prevTotal - currTotal;
+  const savingPct = prevTotal ? (saving / prevTotal) * 100 : 0;
+
+  const monthData = useMemo(() => comparableMonths.map(month => {
+    const p = scoped.filter(r => r.year === previousYear && fuelMonthLabel(r.month) === month).reduce((s,r) => s + r.filledQty,0);
+    const c = scoped.filter(r => r.year === currentYear && fuelMonthLabel(r.month) === month).reduce((s,r) => s + r.filledQty,0);
+    return { month, previous: p, current: c, saving: p - c };
+  }), [scoped, previousYear, currentYear, comparableMonths.join("|")]);
+
+  const groupSummary = (source: FuelRow[], keyFn: (r: FuelRow) => string) => {
+    const map = new Map<string, { key: string; previous: number; current: number }>();
+    source.filter(isComparable).forEach(r => {
+      const key = keyFn(r);
+      if (!key) return;
+      if (!map.has(key)) map.set(key, { key, previous: 0, current: 0 });
+      const x = map.get(key)!;
+      if (r.year === previousYear) x.previous += r.filledQty;
+      if (r.year === currentYear) x.current += r.filledQty;
+    });
+    return Array.from(map.values()).map(x => ({
+      ...x,
+      saving: x.previous - x.current,
+      savingPct: x.previous ? ((x.previous - x.current) / x.previous) * 100 : 0,
+    }));
+  };
+
+  const regionSummary = useMemo(() => groupSummary(rows.filter(r => ["C-1","C-6"].includes(fuelRegion(r.grid))), r => fuelRegion(r.grid)), [rows, previousYear, currentYear, comparableMonths.join("|")]);
+  const gridSummary = useMemo(() => groupSummary(rows.filter(r => r.grid !== "MDV"), r => r.grid).sort((a,b) => a.key.localeCompare(b.key)), [rows, previousYear, currentYear, comparableMonths.join("|")]);
+  const scopedGridSummary = useMemo(() => gridSummary.filter(x => view === "overall" || fuelRegion(x.key) === view), [gridSummary, view]);
+  const visibleGridSummary = useMemo(() => scopedGridSummary.filter(x => {
+    if (gridTableView === "saving") return x.saving > 0;
+    if (gridTableView === "increase") return x.saving < 0;
+    return true;
+  }), [scopedGridSummary, gridTableView]);
+
+  const siteSummary = useMemo(() => {
+    const map = new Map<string, { siteId:string; grid:string; previous:number; current:number; lastTwo:number }>();
+    scopedSites.forEach(r => {
+      const key = `${r.siteId}|${r.grid}`;
+      if (!map.has(key)) map.set(key,{siteId:r.siteId,grid:r.grid,previous:0,current:0,lastTwo:0});
+      const x=map.get(key)!;
+      if (r.year === previousYear && isComparable(r)) x.previous += r.filledQty;
+      if (r.year === currentYear && isComparable(r)) x.current += r.filledQty;
+      if (r.year === currentYear && lastTwoMonths.includes(fuelMonthLabel(r.month))) x.lastTwo += r.filledQty;
+    });
+    return Array.from(map.values()).map(x => ({
+      ...x,
+      variance: x.current - x.previous,
+      saving: x.previous - x.current,
+      yoyPct: x.previous ? ((x.current - x.previous) / x.previous) * 100 : 0,
+    }));
+  }, [scopedSites, previousYear, currentYear, comparableMonths.join("|"), lastTwoMonths.join("|")]);
+
+  const allGridSites = useMemo(() => {
+    const base = siteSummary.filter(x => allSitesGrid === "__all" || x.grid === allSitesGrid);
+    return base
+      .filter(x => !allSitesSearch.trim() || `${x.siteId} ${x.grid}`.toLowerCase().includes(allSitesSearch.trim().toLowerCase()))
+      .sort((a,b) => b.current - a.current);
+  }, [siteSummary, allSitesGrid, allSitesSearch]);
+
+  const allGridSitesExport = useMemo(() => allGridSites.map((x,i) => ({
+    Rank: i + 1,
+    "Site ID": x.siteId,
+    Grid: x.grid,
+    [`${previousYear} Fuel (L)`]: Math.round(x.previous),
+    [`${currentYear} Fuel (L)`]: Math.round(x.current),
+    "Saving / (Increase) L": Math.round(x.saving),
+    "Saving %": x.previous ? `${((x.saving/x.previous)*100).toFixed(2)}%` : "0.00%",
+    "Last 2 Months (L)": Math.round(x.lastTwo),
+    Status: x.saving > 0 ? "Saving" : x.saving < 0 ? "Increase" : "Flat",
+  })), [allGridSites, previousYear, currentYear]);
+
+  const gridDrillSummary = useMemo(() => {
+    return scopedGridSummary.map(g => {
+      const sites = siteSummary.filter(x => x.grid === g.key);
+      return {
+        ...g,
+        siteCount: sites.length,
+        lastTwo: sites.reduce((a,x)=>a+x.lastTwo,0),
+      };
+    }).sort((a,b) => a.key.localeCompare(b.key));
+  }, [scopedGridSummary, siteSummary]);
+
+  const drilledSites = useMemo(() => {
+    if (!drillGrid) return [];
+    return siteSummary
+      .filter(x => x.grid === drillGrid)
+      .filter(x => !allSitesSearch.trim() || x.siteId.toLowerCase().includes(allSitesSearch.trim().toLowerCase()))
+      .sort((a,b) => b.current - a.current);
+  }, [siteSummary, drillGrid, allSitesSearch]);
+
+
+  const worstYtd = useMemo(() => [...siteSummary].sort((a,b) => b.current - a.current).slice(0,20), [siteSummary]);
+  const worstLastTwo = useMemo(() => [...siteSummary].sort((a,b) => b.lastTwo - a.lastTwo).slice(0,20), [siteSummary]);
+  const persistent = useMemo(() => {
+    const prevTop = new Set([...siteSummary].sort((a,b) => b.previous - a.previous).slice(0,20).map(x => x.siteId));
+    return [...siteSummary].filter(x => prevTop.has(x.siteId)).sort((a,b) => b.current - a.current).slice(0,20);
+  }, [siteSummary]);
+
+  const worstGrid = useMemo(() => {
+    const candidates = scopedGridSummary.filter(x => x.current > x.previous).sort((a,b) => (b.current-b.previous) - (a.current-a.previous));
+    return candidates[0]?.key || [...scopedGridSummary].sort((a,b) => b.current-a.current)[0]?.key || "";
+  }, [scopedGridSummary]);
+
+  useEffect(() => {
+    if (!monitorGrid || !scopedGridSummary.some(x => x.key === monitorGrid)) setMonitorGrid(worstGrid);
+  }, [worstGrid, view, scopedGridSummary]);
+
+  const dailyMonitoring = useMemo(() => {
+    const filtered = siteRows.filter(r => r.year === currentYear && r.grid === monitorGrid && r.date);
+    const bySite = new Map<string, {siteId:string; grid:string; total:number; fills:number; lastFill:string; lastQty:number; before:number}>();
+    filtered.forEach(r => {
+      const x=bySite.get(r.siteId) || {siteId:r.siteId,grid:r.grid,total:0,fills:0,lastFill:"",lastQty:0,before:0};
+      x.total += r.filledQty; x.fills += r.filledQty > 0 ? 1 : 0;
+      const stamp=r.date?.getTime() || 0;
+      const old=x.lastFill ? (fuelDate(x.lastFill)?.getTime() || 0) : 0;
+      if (stamp >= old) { x.lastFill=r.refuelingTime; x.lastQty=r.filledQty; x.before=r.beforeQty; }
+      bySite.set(r.siteId,x);
+    });
+    return Array.from(bySite.values()).sort((a,b) => b.total-a.total);
+  }, [siteRows,currentYear,monitorGrid]);
+
+  // Current month fuel summary — latest available month in current year
+  const currentMonthName = comparableMonths[comparableMonths.length - 1] || "Sep";
+  const currentMonthLabel = `${currentMonthName}-${String(currentYear).slice(-2)}`;
+
+  const currentMonthRows = useMemo(() => rows.filter(r =>
+    r.year === currentYear &&
+    fuelMonthLabel(r.month) === currentMonthName &&
+    (view === "overall" || fuelRegion(r.grid) === view) &&
+    (gridFilter === "__all" || r.grid === gridFilter)
+  ), [rows, currentYear, currentMonthName, view, gridFilter]);
+
+  const currentMonthSiteRows = useMemo(() =>
+    currentMonthRows.filter(r => !r.siteId.toLowerCase().startsWith("mobile dg")),
+    [currentMonthRows]
+  );
+
+  const currentMonthDates = useMemo(() => {
+    const days = new Set<number>();
+    currentMonthRows.forEach(r => { if (r.date) days.add(r.date.getDate()); });
+    return Array.from(days).sort((a,b) => a-b);
+  }, [currentMonthRows]);
+
+  const currentMonthGridMatrix = useMemo(() => {
+    const map = new Map<string, Record<string, number>>();
+    currentMonthRows.filter(r => r.grid && r.grid !== "MDV").forEach(r => {
+      if (!r.date) return;
+      if (!map.has(r.grid)) map.set(r.grid, {});
+      const obj = map.get(r.grid)!;
+      const key = String(r.date.getDate());
+      obj[key] = (obj[key] || 0) + r.filledQty;
+    });
+    return Array.from(map.entries()).map(([grid, days]) => ({
+      grid, days, total: Object.values(days).reduce((a,b) => a + Number(b), 0)
+    })).sort((a,b) => a.grid.localeCompare(b.grid));
+  }, [currentMonthRows]);
+
+  const currentMonthDaySummary = useMemo(() => currentMonthDates.map(day => {
+    const dayRows = currentMonthRows.filter(r => r.date?.getDate() === day);
+    return {
+      day,
+      date: `${String(day).padStart(2,"0")}-${currentMonthName}-${String(currentYear).slice(-2)}`,
+      fuel: dayRows.reduce((a,r) => a + r.filledQty, 0),
+      fills: dayRows.filter(r => r.filledQty > 0).length,
+      sites: new Set(dayRows.filter(r => !r.siteId.toLowerCase().startsWith("mobile dg")).map(r => r.siteId)).size,
+    };
+  }), [currentMonthRows, currentMonthDates, currentMonthName, currentYear]);
+
+  const currentMonthTotal = currentMonthRows.reduce((a,r) => a + r.filledQty, 0);
+  const currentMonthSites = new Set(currentMonthSiteRows.map(r => r.siteId)).size;
+  const currentMonthFills = currentMonthRows.filter(r => r.filledQty > 0).length;
+  const currentMonthAvgDay = currentMonthDates.length ? currentMonthTotal / currentMonthDates.length : 0;
+
+  const currentMonthMatrixExport = useMemo(() => currentMonthGridMatrix.map(row => {
+    const obj: Record<string, any> = { Grid: row.grid };
+    currentMonthDates.forEach(day => { obj[`${day}-${currentMonthName}`] = Math.round(row.days[String(day)] || 0); });
+    obj["Total L"] = Math.round(row.total);
+    return obj;
+  }), [currentMonthGridMatrix, currentMonthDates, currentMonthName]);
+
+  const currentMonthDrillSites = useMemo(() => {
+    if (!monthDrillGrid) return [];
+    const gridRows = currentMonthSiteRows.filter(r => r.grid === monthDrillGrid);
+    const map = new Map<string, {siteId:string; days:Record<string,number>; total:number; fills:number}>();
+    gridRows.forEach(r => {
+      if (!r.date) return;
+      const x = map.get(r.siteId) || {siteId:r.siteId,days:{},total:0,fills:0};
+      const day = String(r.date.getDate());
+      x.days[day] = (x.days[day] || 0) + r.filledQty;
+      x.total += r.filledQty;
+      if (r.filledQty > 0) x.fills += 1;
+      map.set(r.siteId,x);
+    });
+    return Array.from(map.values()).sort((a,b)=>b.total-a.total);
+  }, [currentMonthSiteRows, monthDrillGrid]);
+
+  const currentMonthDrillTotal = currentMonthDrillSites.reduce((a,x)=>a+x.total,0);
+
+  const currentMonthDrillExport = useMemo(() => currentMonthDrillSites.map((row,i) => {
+    const out:any = {
+      Rank:i+1,
+      "Site ID":row.siteId,
+      Grid:monthDrillGrid || "",
+    };
+    currentMonthDates.forEach(day => { out[`${day}-${currentMonthName}`] = Math.round(row.days[String(day)] || 0); });
+    out["Sep Total L"] = Math.round(row.total);
+    out["Fill Events"] = row.fills;
+    out["Avg / Fill L"] = row.fills ? Math.round(row.total/row.fills) : 0;
+    out["Grid Contribution %"] = currentMonthDrillTotal ? `${((row.total/currentMonthDrillTotal)*100).toFixed(1)}%` : "0.0%";
+    return out;
+  }), [currentMonthDrillSites,currentMonthDates,currentMonthName,monthDrillGrid,currentMonthDrillTotal]);
+
+  const exportSummary = visibleGridSummary.map(x => ({
+    Grid:x.key, [`${previousYear} Fuel (L)`]:Math.round(x.previous), [`${currentYear} Fuel (L)`]:Math.round(x.current),
+    "Saving / (Increase) L":Math.round(x.saving), "Saving %":`${x.savingPct.toFixed(2)}%`,
+  }));
+  const exportWorst = worstYtd.map((x,i) => ({
+    Rank:i+1,"Site ID":x.siteId,Grid:x.grid,[`${previousYear} Fuel (L)`]:Math.round(x.previous),
+    [`${currentYear} Fuel (L)`]:Math.round(x.current),"YoY Increase / (Reduction)":Math.round(x.variance),
+    "Last 2 Months (L)":Math.round(x.lastTwo)
+  }));
+
+  const tableClass = "w-full text-sm";
+  const th = "px-3 py-3 text-left text-xs font-black text-white whitespace-nowrap";
+  const td = "px-3 py-2.5 text-slate-800 whitespace-nowrap";
+
+  if (!data) return <div className="min-h-screen bg-slate-100 p-8"><button onClick={onBack} className="mb-5 rounded-lg bg-slate-800 px-4 py-2 text-white">← Home</button><div className="rounded-xl border border-amber-300 bg-amber-50 p-10 text-center font-bold text-amber-900">Fuel History tab is not available. Confirm the Google Sheet tab name is exactly <b>Fuel History</b>.</div></div>;
+
+  return (
+    <div className="min-h-screen bg-[#073B2A] text-slate-100 flex">
+      {/* Fuel left navigation — same interaction pattern as Sep AVB dashboard */}
+      <aside className="fixed inset-y-0 left-0 z-40 hidden w-64 flex-col border-r border-emerald-900/60 bg-gradient-to-b from-[#064E3B] via-[#075E36] to-[#043927] lg:flex">
+        <div className="border-b border-emerald-300/15 p-5">
+          <button onClick={onBack} className="mb-4 flex items-center gap-2 text-xs font-bold text-emerald-100/70 hover:text-white">← Home</button>
+          <div className="flex items-center gap-3">
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/10"><Fuel className="h-6 w-6 text-emerald-400" /></div>
+            <div><h1 className="font-black text-white">Fuel Management</h1><p className="text-[11px] text-emerald-100/60">{previousYear} vs {currentYear} · Jan–{comparableMonths[comparableMonths.length-1]}</p></div>
+          </div>
+        </div>
+        <nav className="flex-1 space-y-1 p-3">
+          {([
+            ["summary","Overall Summary",LayoutDashboard],
+            ["yoy","YoY & Worst Sites",TrendingDown],
+            ["monitoring","Worst Grid Monitoring",Activity],
+            ["currentMonth",`Current Month · ${currentMonthLabel}`,CalendarDays],
+          ] as const).map(([id,label,Icon]) => <button key={id} onClick={()=>setTab(id as FuelSubTab)} className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-bold transition ${tab===id?"bg-white text-[#075E36] shadow-lg shadow-black/10":"text-emerald-50/75 hover:bg-white/10 hover:text-white"}`}><Icon className="h-4 w-4"/><span>{label}</span></button>)}
+        </nav>
+        <div className="border-t border-slate-800 p-4 text-[11px] text-emerald-100/60">Fuel History · Live Google Sheet</div>
+      </aside>
+
+      <div className="min-w-0 flex-1 lg:ml-64 bg-[#eef0f3] text-slate-900">
+        <header className="sticky top-0 z-30 border-b border-slate-300 bg-white/95 backdrop-blur">
+          <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-4 sm:px-6">
+            <div>
+              <div className="flex items-center gap-2 lg:hidden"><button onClick={onBack} className="rounded-lg bg-slate-800 px-3 py-2 text-xs font-bold text-white">← Home</button><Fuel className="h-5 w-5 text-emerald-600"/></div>
+              <h2 className="mt-1 text-xl font-black text-slate-950">{tab==="summary"?"Overall Fuel Summary":tab==="yoy"?"YoY & Worst Sites":tab==="monitoring"?"Worst Grid Daily Monitoring":`${currentMonthLabel} Fuel Summary`}</h2>
+              <p className="text-xs text-slate-500">Fuel History · {previousYear} vs {currentYear} · comparable through {comparableMonths[comparableMonths.length-1]}</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {(["overall","C-1","C-6"] as FuelView[]).map(v => <button key={v} onClick={()=>setView(v)} className={`rounded-lg px-4 py-2 text-sm font-black ${view===v?"bg-[#006B3C] text-white":"bg-slate-200 text-slate-700"}`}>{v==="overall"?"Overall":v}</button>)}
+              <select value={gridFilter} onChange={e=>setGridFilter(e.target.value)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-bold"><option value="__all">All Grids</option>{grids.map(g=><option key={g}>{g}</option>)}</select>
+            </div>
+          </div>
+          <div className="flex gap-2 overflow-x-auto border-t border-slate-100 px-4 py-2 lg:hidden sm:px-6">
+            {[["summary","Summary"],["yoy","YoY / Worst Sites"],["monitoring","Worst Grid"],["currentMonth",currentMonthLabel]].map(([id,label])=><button key={id} onClick={()=>setTab(id as FuelSubTab)} className={`whitespace-nowrap rounded-lg px-3 py-2 text-xs font-black ${tab===id?"bg-emerald-600 text-white":"bg-slate-100 text-slate-700"}`}>{label}</button>)}
+          </div>
+        </header>
+
+        <main className="space-y-5 p-4 sm:p-6">
+        {tab==="summary" && <>
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+            <b>Calculation basis:</b> Jan–Sep comparable period. The source uses both <b>Sep</b> and <b>Sept</b>; both are now normalized to September before YoY, grid and site calculations. This corrects the earlier Aug-only result.
+          </div>
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            {[["2025 Comparable",prevTotal,"text-slate-950"],["2026 Comparable",currTotal,"text-slate-950"],["Fuel Saving",saving,saving>=0?"text-emerald-700":"text-red-600"],["Saving %",savingPct,savingPct>=0?"text-emerald-700":"text-red-600"]].map(([label,value,color],i)=><div key={String(label)} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><div className="text-xs font-black uppercase text-slate-500">{label}</div><div className={`mt-1 text-2xl font-black ${color}`}>{i===3?`${Number(value).toFixed(2)}%`:`${Math.round(Number(value)).toLocaleString()} L`}</div></div>)}
+          </div>
+          <div className="grid gap-5 xl:grid-cols-2">
+            <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><div className="mb-4 flex items-center justify-between"><div><h3 className="font-black">Monthly YoY Fuel</h3><p className="text-xs text-slate-500">Comparable months only</p></div><ExportButtonComponent data={monthData} filename="Fuel_Monthly_YoY" label="Export" format="excel" variant="success"/></div><div className="h-[330px]"><ResponsiveContainer width="100%" height="100%"><ComposedChart data={monthData} margin={{top:20,right:20,left:10,bottom:5}}><CartesianGrid strokeDasharray="3 3"/><XAxis dataKey="month"/><YAxis/><Tooltip formatter={(v:any)=>`${Number(v).toLocaleString()} L`}/><Legend/><Bar dataKey="previous" name={`${previousYear}`} fill="#94a3b8"><LabelList dataKey="previous" position="top" formatter={(v:any)=>Math.round(Number(v)/1000)+"K"}/></Bar><Bar dataKey="current" name={`${currentYear}`} fill="#059669"><LabelList dataKey="current" position="top" formatter={(v:any)=>Math.round(Number(v)/1000)+"K"}/></Bar></ComposedChart></ResponsiveContainer></div></div>
+            <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><h3 className="font-black">Sub-Region Control</h3><div className="mt-4 overflow-x-auto"><table className={tableClass}><thead className="bg-[#006B3C]"><tr>{["Sub-Region",previousYear,currentYear,"Saving L","Saving %"].map(h=><th key={String(h)} className={th}>{h}</th>)}</tr></thead><tbody>{regionSummary.map(x=><tr key={x.key} className="border-b border-slate-200"><td className={td+" font-black"}>{x.key}</td><td className={td}>{Math.round(x.previous).toLocaleString()}</td><td className={td}>{Math.round(x.current).toLocaleString()}</td><td className={`${td} font-black ${x.saving>=0?"text-emerald-700":"text-red-600"}`}>{Math.round(x.saving).toLocaleString()}</td><td className={`${td} font-black ${x.savingPct>=0?"text-emerald-700":"text-red-600"}`}>{x.savingPct.toFixed(2)}%</td></tr>)}</tbody></table></div></div>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden"><div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 p-4"><div><h3 className="font-black">Grid-wise Fuel Control</h3><p className="text-xs text-slate-500">Positive saving = lower fuel than last year</p></div><div className="flex flex-wrap items-center gap-2"><div className="flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-100 p-1"><span className="px-2 text-[11px] font-black uppercase text-slate-500">View</span>{(["all","saving","increase"] as const).map(v => <button key={v} onClick={()=>setGridTableView(v)} className={`rounded-md px-3 py-1.5 text-xs font-black transition ${gridTableView===v ? (v==="increase"?"bg-red-600 text-white":v==="saving"?"bg-emerald-600 text-white":"bg-slate-800 text-white") : "bg-white text-slate-600 hover:bg-slate-200"}`}>{v==="all"?"All":v==="saving"?"Saving":"Increase"}</button>)}</div><ExportButtonComponent data={exportSummary} filename={`Fuel_Grid_Summary_${view}_${gridTableView}`} label="Export Grid View" format="excel" variant="success"/></div></div><div className="overflow-x-auto"><table className={tableClass}><thead className="bg-[#006B3C]"><tr>{["Grid",`${previousYear} L`,`${currentYear} L`,"Saving / (Increase)","Saving %","Status"].map(h=><th key={h} className={th}>{h}</th>)}</tr></thead><tbody>{visibleGridSummary.map(x=><tr key={x.key} className="border-b border-slate-200 even:bg-slate-50"><td className={td+" font-black"}>{x.key}</td><td className={td}>{Math.round(x.previous).toLocaleString()}</td><td className={td}>{Math.round(x.current).toLocaleString()}</td><td className={`${td} font-black ${x.saving>=0?"text-emerald-700":"text-red-600"}`}>{x.saving>=0?"+":""}{Math.round(x.saving).toLocaleString()}</td><td className={`${td} font-black ${x.savingPct>=0?"text-emerald-700":"text-red-600"}`}>{x.savingPct.toFixed(2)}%</td><td className={td}>{x.saving>0?"Saving":x.saving<0?"Increase":"Flat"}</td></tr>)}</tbody></table></div></div>
+
+          {/* GRID-FIRST ALL SITES DRILL-DOWN */}
+          <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 p-4">
+              <div>
+                <h3 className="font-black">Grid-wise All Sites View</h3>
+                <p className="text-xs text-slate-500">Grid ID first · use View in the last column to open all sites of that grid</p>
+              </div>
+              <ExportButtonComponent
+                data={drillGrid
+                  ? drilledSites.map((x,i)=>({Rank:i+1,"Site ID":x.siteId,Grid:x.grid,[`${previousYear} Fuel (L)`]:Math.round(x.previous),[`${currentYear} Fuel (L)`]:Math.round(x.current),"Saving / (Increase) L":Math.round(x.saving),"Saving %":x.previous?`${((x.saving/x.previous)*100).toFixed(2)}%`:"0.00%","Last 2M L":Math.round(x.lastTwo),Status:x.saving>0?"Saving":x.saving<0?"Increase":"Flat"}))
+                  : gridDrillSummary.map(x=>({Grid:x.key,Sites:x.siteCount,[`${previousYear} Fuel (L)`]:Math.round(x.previous),[`${currentYear} Fuel (L)`]:Math.round(x.current),"Saving / (Increase) L":Math.round(x.saving),"Saving %":`${x.savingPct.toFixed(2)}%`,"Last 2M L":Math.round(x.lastTwo)}))
+                }
+                filename={drillGrid?`Fuel_Sites_${drillGrid}`:`Fuel_All_Grid_Summary_${view}`}
+                label={drillGrid?`Export ${drillGrid} Sites`:"Export Grid Summary"}
+                format="excel"
+                variant="success"
+              />
+            </div>
+
+            {!drillGrid ? (
+              <div className="overflow-x-auto">
+                <table className={tableClass}>
+                  <thead className="bg-[#006B3C]">
+                    <tr>{["Grid ID","Sites",`${previousYear} L`,`${currentYear} L`,"Saving / (Increase)","Saving %","Last 2M L","Status","View"].map(h=><th key={h} className={th}>{h}</th>)}</tr>
+                  </thead>
+                  <tbody>
+                    {gridDrillSummary.map(x => <tr key={x.key} className="border-b border-slate-200 even:bg-slate-50">
+                      <td className={td+" text-base font-black text-[#006B3C]"}>{x.key}</td>
+                      <td className={td+" font-black"}>{x.siteCount}</td>
+                      <td className={td}>{Math.round(x.previous).toLocaleString()}</td>
+                      <td className={td+" font-black"}>{Math.round(x.current).toLocaleString()}</td>
+                      <td className={`${td} font-black ${x.saving>=0?"text-emerald-700":"text-red-600"}`}>{x.saving>=0?"+":""}{Math.round(x.saving).toLocaleString()}</td>
+                      <td className={`${td} font-black ${x.savingPct>=0?"text-emerald-700":"text-red-600"}`}>{x.savingPct.toFixed(2)}%</td>
+                      <td className={td+" font-black"}>{Math.round(x.lastTwo).toLocaleString()}</td>
+                      <td className={td}><span className={`rounded-full px-2 py-1 text-[11px] font-black ${x.saving>0?"bg-emerald-100 text-emerald-700":x.saving<0?"bg-red-100 text-red-700":"bg-slate-100 text-slate-600"}`}>{x.saving>0?"Saving":x.saving<0?"Increase":"Flat"}</span></td>
+                      <td className={td}>
+                        <button onClick={()=>{setDrillGrid(x.key);setAllSitesSearch("");}} className="rounded-lg bg-[#006B3C] px-4 py-2 text-xs font-black text-white shadow-sm hover:bg-emerald-800">View Sites →</button>
+                      </td>
+                    </tr>)}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <>
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-emerald-50 p-4">
+                  <div className="flex items-center gap-3">
+                    <button onClick={()=>{setDrillGrid(null);setAllSitesSearch("");}} className="rounded-lg border border-emerald-300 bg-white px-3 py-2 text-xs font-black text-emerald-800">← All Grids</button>
+                    <div><div className="text-[10px] font-black uppercase text-emerald-700">Selected Grid</div><div className="text-2xl font-black text-[#006B3C]">{drillGrid}</div></div>
+                    <div className="rounded-lg bg-white px-3 py-2"><div className="text-[10px] font-black uppercase text-slate-500">Sites</div><div className="font-black">{drilledSites.length}</div></div>
+                  </div>
+                  <input value={allSitesSearch} onChange={e=>setAllSitesSearch(e.target.value)} placeholder={`Search site in ${drillGrid}`} className="w-56 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"/>
+                </div>
+                <div className="max-h-[540px] overflow-auto">
+                  <table className={tableClass}>
+                    <thead className="sticky top-0 z-10 bg-[#006B3C]">
+                      <tr>{["#","Site ID","Grid",`${previousYear} L`,`${currentYear} L`,"Saving / (Increase)","Saving %","Last 2M L","Status"].map(h=><th key={h} className={th}>{h}</th>)}</tr>
+                    </thead>
+                    <tbody>
+                      {drilledSites.map((x,i)=>{
+                        const pct=x.previous?(x.saving/x.previous)*100:0;
+                        return <tr key={`${x.grid}-${x.siteId}`} className="border-b border-slate-200 even:bg-slate-50">
+                          <td className={td}>{i+1}</td>
+                          <td className={td+" font-black text-blue-700"}>{x.siteId}</td>
+                          <td className={td+" font-black"}>{x.grid}</td>
+                          <td className={td}>{Math.round(x.previous).toLocaleString()}</td>
+                          <td className={td+" font-black"}>{Math.round(x.current).toLocaleString()}</td>
+                          <td className={`${td} font-black ${x.saving>=0?"text-emerald-700":"text-red-600"}`}>{x.saving>=0?"+":""}{Math.round(x.saving).toLocaleString()}</td>
+                          <td className={`${td} font-black ${pct>=0?"text-emerald-700":"text-red-600"}`}>{pct.toFixed(2)}%</td>
+                          <td className={td+" font-black"}>{Math.round(x.lastTwo).toLocaleString()}</td>
+                          <td className={td}><span className={`rounded-full px-2 py-1 text-[11px] font-black ${x.saving>0?"bg-emerald-100 text-emerald-700":x.saving<0?"bg-red-100 text-red-700":"bg-slate-100 text-slate-600"}`}>{x.saving>0?"Saving":x.saving<0?"Increase":"Flat"}</span></td>
+                        </tr>
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+          </div>
+        </>}
+
+        {tab==="yoy" && <>
+          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="text-lg font-black">YoY & Worst Sites</h3><p className="text-xs text-slate-500">YTD high fuel, last two months ({lastTwoMonths.join(" + ")}), and persistent high consumers</p></div><ExportButtonComponent data={exportWorst} filename={`Fuel_Worst_Sites_${view}`} label="Export Worst Sites" format="excel" variant="danger"/></div><div className="mt-4"><input value={siteSearch} onChange={e=>setSiteSearch(e.target.value)} placeholder="Search Site ID / Grid" className="w-full max-w-md rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"/></div></div>
+          {[["2026 YTD Highest Fuel",worstYtd,"current"],[`Last Two Months · ${lastTwoMonths.join(" + ")}`,worstLastTwo,"lastTwo"],["Persistent High Fuel · Top-20 overlap",persistent,"current"]].map(([title,list,metric]:any)=><div key={title} className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden"><div className="border-b border-slate-200 p-4 font-black">{title}</div><div className="overflow-x-auto"><table className={tableClass}><thead className="bg-[#006B3C]"><tr>{["#","Site ID","Grid",`${previousYear} L`,`${currentYear} L`,"YoY Increase/(Reduction)",`Last 2M L`].map(h=><th key={h} className={th}>{h}</th>)}</tr></thead><tbody>{(list as any[]).filter(x=>!siteSearch.trim()||`${x.siteId} ${x.grid}`.toLowerCase().includes(siteSearch.toLowerCase())).map((x,i)=><tr key={`${title}-${x.siteId}`} className="border-b border-slate-200 even:bg-slate-50"><td className={td}>{i+1}</td><td className={td+" font-black text-blue-700"}>{x.siteId}</td><td className={td}>{x.grid}</td><td className={td}>{Math.round(x.previous).toLocaleString()}</td><td className={td+" font-black"}>{Math.round(x.current).toLocaleString()}</td><td className={`${td} font-black ${x.variance>0?"text-red-600":"text-emerald-700"}`}>{x.variance>0?"+":""}{Math.round(x.variance).toLocaleString()}</td><td className={td+" font-black"}>{Math.round(x.lastTwo).toLocaleString()}</td></tr>)}</tbody></table></div></div>)}
+        </>}
+
+        {tab==="monitoring" && <>
+          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="text-lg font-black">Worst Grid Daily Fuel Monitoring</h3><p className="text-xs text-slate-500">Default grid is the highest YoY fuel-increase grid in the selected view.</p></div><select value={monitorGrid} onChange={e=>setMonitorGrid(e.target.value)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 font-bold">{scopedGridSummary.map(x=><option key={x.key}>{x.key}</option>)}</select></div></div>
+          <div className="grid gap-4 lg:grid-cols-3"><div className="rounded-xl border border-red-200 bg-red-50 p-4"><div className="text-xs font-black uppercase text-red-600">Monitoring Grid</div><div className="mt-1 text-3xl font-black text-red-700">{monitorGrid||"-"}</div></div><div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-black uppercase text-slate-500">Sites Fueled YTD</div><div className="mt-1 text-3xl font-black">{dailyMonitoring.length}</div></div><div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-black uppercase text-slate-500">YTD Fuel</div><div className="mt-1 text-3xl font-black">{Math.round(dailyMonitoring.reduce((s,x)=>s+x.total,0)).toLocaleString()} L</div></div></div>
+          <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden"><div className="flex items-center justify-between border-b border-slate-200 p-4"><div><h3 className="font-black">Site Monitoring · {monitorGrid}</h3><p className="text-xs text-slate-500">Latest fill event and cumulative current-year fuel</p></div><ExportButtonComponent data={dailyMonitoring} filename={`Fuel_Daily_Monitoring_${monitorGrid}`} label="Export Monitoring" format="excel" variant="success"/></div><div className="overflow-x-auto"><table className={tableClass}><thead className="bg-[#006B3C]"><tr>{["Rank","Site ID","Grid","YTD Fuel L","Fill Events","Latest Refueling","Latest Filled L","Before Filling L"].map(h=><th key={h} className={th}>{h}</th>)}</tr></thead><tbody>{dailyMonitoring.map((x,i)=><tr key={x.siteId} className="border-b border-slate-200 even:bg-slate-50"><td className={td}>{i+1}</td><td className={td+" font-black text-blue-700"}>{x.siteId}</td><td className={td}>{x.grid}</td><td className={td+" font-black"}>{Math.round(x.total).toLocaleString()}</td><td className={td}>{x.fills}</td><td className={td}>{x.lastFill||"-"}</td><td className={td}>{Math.round(x.lastQty).toLocaleString()}</td><td className={td}>{Math.round(x.before).toLocaleString()}</td></tr>)}</tbody></table></div></div>
+        </>}
+
+        {tab==="currentMonth" && <>
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><div className="text-xs font-black uppercase text-slate-500">{currentMonthLabel} Fuel</div><div className="mt-1 text-2xl font-black text-[#006B3C]">{Math.round(currentMonthTotal).toLocaleString()} L</div></div>
+            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><div className="text-xs font-black uppercase text-slate-500">Sites Fueled</div><div className="mt-1 text-2xl font-black">{currentMonthSites}</div></div>
+            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><div className="text-xs font-black uppercase text-slate-500">Fuel Fill Events</div><div className="mt-1 text-2xl font-black">{currentMonthFills}</div></div>
+            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><div className="text-xs font-black uppercase text-slate-500">Average / Active Day</div><div className="mt-1 text-2xl font-black">{Math.round(currentMonthAvgDay).toLocaleString()} L</div></div>
+          </div>
+
+          <div className="grid gap-5 xl:grid-cols-2">
+            <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+              <div className="border-b border-slate-200 p-4"><h3 className="font-black">{currentMonthLabel} · Grid-wise Summary</h3><p className="text-xs text-slate-500">Total fuel filled by grid during current month</p></div>
+              <div className="max-h-[390px] overflow-auto">
+                <table className={tableClass}><thead className="sticky top-0 bg-[#006B3C]"><tr><th className={th}>Grid</th><th className={th}>Fuel (L)</th><th className={th}>Share</th></tr></thead>
+                  <tbody>{[...currentMonthGridMatrix].sort((a,b)=>b.total-a.total).map(x=><tr key={x.grid} className="border-b border-slate-200 even:bg-slate-50"><td className={td+" font-black text-[#006B3C]"}>{x.grid}</td><td className={td+" font-black"}>{Math.round(x.total).toLocaleString()}</td><td className={td}>{currentMonthTotal?((x.total/currentMonthTotal)*100).toFixed(1):"0.0"}%</td></tr>)}</tbody>
+                </table>
+              </div>
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+              <div className="border-b border-slate-200 p-4"><h3 className="font-black">{currentMonthLabel} · Day-wise Summary</h3><p className="text-xs text-slate-500">Daily fuel, fill events and unique sites</p></div>
+              <div className="max-h-[390px] overflow-auto">
+                <table className={tableClass}><thead className="sticky top-0 bg-[#006B3C]"><tr>{["Date","Fuel L","Fill Events","Sites"].map(h=><th key={h} className={th}>{h}</th>)}</tr></thead>
+                  <tbody>{currentMonthDaySummary.map(x=><tr key={x.day} className="border-b border-slate-200 even:bg-slate-50"><td className={td+" font-black"}>{x.date}</td><td className={td+" font-black"}>{Math.round(x.fuel).toLocaleString()}</td><td className={td}>{x.fills}</td><td className={td}>{x.sites}</td></tr>)}</tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 p-4">
+              <div><h3 className="font-black">{currentMonthLabel} · Grid × Date Fuel Matrix</h3><p className="text-xs text-slate-500">Grid IDs in rows · calendar dates in columns · values are Fuel Quantity Filled (L)</p></div>
+              <ExportButtonComponent data={currentMonthMatrixExport} filename={`Fuel_${currentMonthLabel}_Grid_Day_Matrix_${view}`} label="Export Matrix" format="excel" variant="success"/>
+            </div>
+            <div className="max-h-[570px] overflow-auto">
+              <table className="min-w-max w-full text-xs">
+                <thead className="sticky top-0 z-20 bg-[#006B3C] text-white">
+                  <tr>
+                    <th className="sticky left-0 z-30 bg-[#006B3C] px-3 py-3 text-left font-black">Grid ID</th>
+                    {currentMonthDates.map(day=><th key={day} className="min-w-[64px] px-2 py-3 text-center font-black">{day}</th>)}
+                    <th className="sticky right-0 z-30 bg-[#005A33] px-3 py-3 text-center font-black">Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {currentMonthGridMatrix.map(row=><tr key={row.grid} className="border-b border-slate-200 even:bg-slate-50">
+                    <td className="sticky left-0 z-10 bg-white px-3 py-2.5 font-black text-[#006B3C]"><button type="button" onClick={()=>setMonthDrillGrid(row.grid)} className="inline-flex items-center gap-1 rounded-md px-2 py-1 font-black text-[#006B3C] hover:bg-emerald-100 hover:text-emerald-900" title={`View all fueled sites in ${row.grid}`}>{row.grid}<ChevronDown className="h-3.5 w-3.5"/></button></td>
+                    {currentMonthDates.map(day=>{const v=row.days[String(day)]||0;return <td key={day} className={`px-2 py-2.5 text-center font-bold ${v>0?"text-slate-900":"text-slate-300"}`}>{v>0?Math.round(v).toLocaleString():"-"}</td>})}
+                    <td className="sticky right-0 z-10 bg-emerald-50 px-3 py-2.5 text-center font-black text-emerald-800">{Math.round(row.total).toLocaleString()}</td>
+                  </tr>)}
+                  <tr className="sticky bottom-0 z-20 bg-slate-900 text-white">
+                    <td className="sticky left-0 bg-slate-900 px-3 py-3 font-black">Daily Total</td>
+                    {currentMonthDates.map(day=>{const v=currentMonthGridMatrix.reduce((a,r)=>a+(r.days[String(day)]||0),0);return <td key={day} className="px-2 py-3 text-center font-black">{Math.round(v).toLocaleString()}</td>})}
+                    <td className="sticky right-0 bg-emerald-700 px-3 py-3 text-center font-black">{Math.round(currentMonthTotal).toLocaleString()}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          {monthDrillGrid && (
+            <div className="rounded-xl border-2 border-emerald-300 bg-white shadow-sm overflow-hidden">
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-emerald-200 bg-emerald-50 p-4">
+                <div className="flex items-center gap-3">
+                  <button type="button" onClick={()=>setMonthDrillGrid(null)} className="rounded-lg border border-emerald-300 bg-white px-3 py-2 text-xs font-black text-emerald-800">× Close</button>
+                  <div>
+                    <div className="text-[10px] font-black uppercase tracking-wide text-emerald-700">Sep-26 Site Drill-down</div>
+                    <h3 className="text-lg font-black text-slate-950">{monthDrillGrid} · Which Sites Consumed More Fuel?</h3>
+                    <p className="text-xs text-slate-600">{currentMonthDrillSites.length} fueled sites · ranked highest Sep consumption first · daily liters shown by date</p>
+                  </div>
+                </div>
+                <ExportButtonComponent data={currentMonthDrillExport} filename={`Fuel_${currentMonthLabel}_${monthDrillGrid}_Site_Daily`} label={`Export ${monthDrillGrid} Sites`} format="excel" variant="success"/>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 border-b border-slate-200 p-4 sm:grid-cols-4">
+                <div><div className="text-[10px] font-black uppercase text-slate-500">Grid Fuel</div><div className="text-xl font-black text-[#006B3C]">{Math.round(currentMonthDrillTotal).toLocaleString()} L</div></div>
+                <div><div className="text-[10px] font-black uppercase text-slate-500">Fueled Sites</div><div className="text-xl font-black">{currentMonthDrillSites.length}</div></div>
+                <div><div className="text-[10px] font-black uppercase text-slate-500">Highest Fuel Site</div><div className="text-xl font-black text-red-600">{currentMonthDrillSites[0]?.siteId || "-"}</div></div>
+                <div><div className="text-[10px] font-black uppercase text-slate-500">Highest Site Fuel</div><div className="text-xl font-black text-red-600">{Math.round(currentMonthDrillSites[0]?.total || 0).toLocaleString()} L</div></div>
+              </div>
+
+              <div className="max-h-[600px] overflow-auto">
+                <table className="min-w-max w-full text-xs">
+                  <thead className="sticky top-0 z-20 bg-[#006B3C] text-white">
+                    <tr>
+                      <th className="sticky left-0 z-30 bg-[#006B3C] px-3 py-3 text-left font-black">Site ID</th>
+                      {currentMonthDates.map(day=><th key={day} className="min-w-[60px] px-2 py-3 text-center font-black">{day}</th>)}
+                      <th className="bg-[#005A33] px-3 py-3 text-center font-black">Sep Total</th>
+                      <th className="bg-[#005A33] px-3 py-3 text-center font-black">Fills</th>
+                      <th className="bg-[#005A33] px-3 py-3 text-center font-black">Avg/Fill</th>
+                      <th className="sticky right-0 z-30 bg-[#004C2B] px-3 py-3 text-center font-black">Grid %</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {currentMonthDrillSites.map((row,i)=>{
+                      const contribution=currentMonthDrillTotal?(row.total/currentMonthDrillTotal)*100:0;
+                      return <tr key={row.siteId} className={`border-b border-slate-200 ${i<3?"bg-red-50":"even:bg-slate-50"}`}>
+                        <td className="sticky left-0 z-10 bg-inherit px-3 py-2.5 font-black text-blue-700">{row.siteId}{i<3?<span className="ml-2 rounded bg-red-100 px-1.5 py-0.5 text-[9px] font-black text-red-700">TOP {i+1}</span>:null}</td>
+                        {currentMonthDates.map(day=>{const v=row.days[String(day)]||0;return <td key={day} className={`px-2 py-2.5 text-center font-bold ${v>0?"text-slate-950":"text-slate-300"}`}>{v>0?Math.round(v).toLocaleString():"-"}</td>})}
+                        <td className="bg-emerald-50 px-3 py-2.5 text-center font-black text-emerald-900">{Math.round(row.total).toLocaleString()}</td>
+                        <td className="px-3 py-2.5 text-center font-black">{row.fills}</td>
+                        <td className="px-3 py-2.5 text-center font-black">{row.fills?Math.round(row.total/row.fills).toLocaleString():"-"}</td>
+                        <td className="sticky right-0 z-10 bg-emerald-50 px-3 py-2.5 text-center font-black text-emerald-900">{contribution.toFixed(1)}%</td>
+                      </tr>
+                    })}
+                    <tr className="sticky bottom-0 z-20 bg-slate-900 text-white">
+                      <td className="sticky left-0 bg-slate-900 px-3 py-3 font-black">Grid Daily Total</td>
+                      {currentMonthDates.map(day=>{const v=currentMonthDrillSites.reduce((a,r)=>a+(r.days[String(day)]||0),0);return <td key={day} className="px-2 py-3 text-center font-black">{v?Math.round(v).toLocaleString():"-"}</td>})}
+                      <td className="bg-emerald-700 px-3 py-3 text-center font-black">{Math.round(currentMonthDrillTotal).toLocaleString()}</td>
+                      <td className="px-3 py-3 text-center font-black">{currentMonthDrillSites.reduce((a,r)=>a+r.fills,0)}</td>
+                      <td className="px-3 py-3 text-center font-black">-</td>
+                      <td className="sticky right-0 bg-emerald-700 px-3 py-3 text-center font-black">100%</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+        </>}
+
+        </main>
+      </div>
+    </div>
+  );
+}
+
+
 // ============================================================
 //  CONSTANTS
 // ============================================================
@@ -788,7 +1409,7 @@ const NAV_ITEMS = [
 
 type Month = "june" | "july" | "august" | "september";
 type AppState = "loading" | "dashboard" | "error";
-type ViewMode = "home" | "month" | "prepost" | "hardware";
+type ViewMode = "home" | "month" | "prepost" | "hardware" | "fuel";
 type PrePostSubView = "analysis" | "query";
 
 // ============================================================
@@ -962,7 +1583,7 @@ const MOCK_SITES: SiteData[] = [
 // ============================================================
 
 function CaBadge({ value, threshold }: { value: number; threshold: number }) {
-  const color = value >= threshold ? "bg-emerald-500/15 text-emerald-400" : "bg-red-500/15 text-red-400";
+  const color = value >= threshold ? "bg-white/10 text-emerald-400" : "bg-red-500/15 text-red-400";
   return <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${color}`}>{value.toFixed(2)}%</span>;
 }
 
@@ -1917,7 +2538,7 @@ function CategoryPage({
                       <td className="py-3 px-3 text-center">
                         <span
                           className={`text-xs px-2 py-0.5 rounded ${
-                            g.avgCa >= threshold ? "bg-emerald-500/15 text-emerald-400" : "bg-red-500/15 text-red-400"
+                            g.avgCa >= threshold ? "bg-white/10 text-emerald-400" : "bg-red-500/15 text-red-400"
                           }`}
                         >
                           {g.avgCa >= threshold ? "Healthy" : "Critical"}
@@ -2414,7 +3035,7 @@ function S2SBBPerformancePage({
           <div key={k.label} className="bg-white border border-slate-300 rounded-xl p-4 shadow-sm">
             <div className="text-2xl font-extrabold text-slate-900">{k.value}</div>
             <div className="text-sm font-semibold text-slate-700 mt-1">{k.label}</div>
-            <div className="text-[11px] text-slate-500 mt-1">{k.note}</div>
+            <div className="text-[11px] text-emerald-100/60 mt-1">{k.note}</div>
           </div>
         ))}
       </div>
@@ -2760,9 +3381,9 @@ function RecurringSitesPage({
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="bg-slate-800 border border-slate-700 rounded-xl p-4"><p className="text-xs text-slate-500">Recurring Sites</p><p className="text-2xl font-bold text-white">{filtered.length}</p></div>
-        <div className="bg-slate-800 border border-slate-700 rounded-xl p-4"><p className="text-xs text-slate-500">C-1 3M Regional AVB</p><p className="text-2xl font-bold text-cyan-300">{analysis.regionStats["C-1"]?.avg?.toFixed(2) || "0.00"}%</p><p className="text-[11px] text-slate-500">Top culprit: {topC1?.site.siteName || "—"}</p></div>
-        <div className="bg-slate-800 border border-slate-700 rounded-xl p-4"><p className="text-xs text-slate-500">C-6 3M Regional AVB</p><p className="text-2xl font-bold text-cyan-300">{analysis.regionStats["C-6"]?.avg?.toFixed(2) || "0.00"}%</p><p className="text-[11px] text-slate-500">Top culprit: {topC6?.site.siteName || "—"}</p></div>
-        <div className="bg-slate-800 border border-slate-700 rounded-xl p-4"><p className="text-xs text-slate-500">Recurring Rule</p><p className="text-lg font-bold text-amber-300">{minimumRecurringMonths}/3 months &lt; {threshold}%</p><p className="text-[11px] text-slate-500">Complete 3-month history required</p></div>
+        <div className="bg-slate-800 border border-slate-700 rounded-xl p-4"><p className="text-xs text-slate-500">C-1 3M Regional AVB</p><p className="text-2xl font-bold text-cyan-300">{analysis.regionStats["C-1"]?.avg?.toFixed(2) || "0.00"}%</p><p className="text-[11px] text-emerald-100/60">Top culprit: {topC1?.site.siteName || "—"}</p></div>
+        <div className="bg-slate-800 border border-slate-700 rounded-xl p-4"><p className="text-xs text-slate-500">C-6 3M Regional AVB</p><p className="text-2xl font-bold text-cyan-300">{analysis.regionStats["C-6"]?.avg?.toFixed(2) || "0.00"}%</p><p className="text-[11px] text-emerald-100/60">Top culprit: {topC6?.site.siteName || "—"}</p></div>
+        <div className="bg-slate-800 border border-slate-700 rounded-xl p-4"><p className="text-xs text-slate-500">Recurring Rule</p><p className="text-lg font-bold text-amber-300">{minimumRecurringMonths}/3 months &lt; {threshold}%</p><p className="text-[11px] text-emerald-100/60">Complete 3-month history required</p></div>
       </div>
 
       <div className="bg-slate-800/70 border border-slate-700 rounded-xl p-4 space-y-3">
@@ -3006,7 +3627,7 @@ function SiteQuery({ sites, historyData = null, rawData = null }: { sites: SiteD
             </tbody>
           </table>
         </div>
-        <p className="text-[11px] text-slate-500 mt-3">Difference is shown in percentage points (pp). A comparatively lower RAT can be used as a quick indicator for technology-specific investigation.</p>
+        <p className="text-[11px] text-emerald-100/60 mt-3">Difference is shown in percentage points (pp). A comparatively lower RAT can be used as a quick indicator for technology-specific investigation.</p>
       </div>
     );
   }
@@ -5364,7 +5985,7 @@ function GridPerformanceScorecard({
                             ))}
                             <td className={`px-3 py-2 ${gap > 0 ? "text-red-400" : "text-emerald-400"}`}>{gap.toFixed(2)}%</td>
                             <td className="px-3 py-2">
-                              <span className={`rounded px-2 py-1 text-[10px] font-semibold ${status === "Stretch Achieved" ? "bg-emerald-500/15 text-emerald-400" : status === "Target to Stretch" ? "bg-cyan-500/15 text-cyan-400" : status === "Base to Target" ? "bg-amber-500/15 text-amber-400" : "bg-red-500/15 text-red-400"}`}>{status}</span>
+                              <span className={`rounded px-2 py-1 text-[10px] font-semibold ${status === "Stretch Achieved" ? "bg-white/10 text-emerald-400" : status === "Target to Stretch" ? "bg-cyan-500/15 text-cyan-400" : status === "Base to Target" ? "bg-amber-500/15 text-amber-400" : "bg-red-500/15 text-red-400"}`}>{status}</span>
                             </td>
                             <td className="px-3 py-2 text-slate-800">{site.group || "—"}</td>
                             <td className="px-3 py-2 text-slate-800">{site.revenueCategory || "—"}</td>
@@ -6556,6 +7177,7 @@ export default function App() {
   const [monthCellAvbHistory, setMonthCellAvbHistory] = useState<SheetPayload | null>(null);
   const [monthS2SBB, setMonthS2SBB] = useState<SheetPayload | null>(null);
   const [monthRevenueLost, setMonthRevenueLost] = useState<SheetPayload | null>(null);
+  const [fuelHistory, setFuelHistory] = useState<SheetPayload | null>(null);
   const [preVsPostData, setPreVsPostData] = useState<SheetPayload | null>(null);
   const [prePostSites, setPrePostSites] = useState<SiteData[]>([]);
   const [prePostLastUpdated, setPrePostLastUpdated] = useState("");
@@ -6743,6 +7365,25 @@ export default function App() {
   };
 
 
+  const loadFuelDashboard = async () => {
+    setAppState("loading");
+    setErrorMsg("");
+    try {
+      // Fuel History is maintained in the September / live workbook.
+      const data = await fetchGoogleSheet(SHEET_IDS.september, "Fuel History");
+      if (!data || !Array.isArray(data.rows)) throw new Error("Fuel History tab returned no rows");
+      setFuelHistory(data);
+      setViewMode("fuel");
+      setAppState("dashboard");
+    } catch (error) {
+      console.error("Error loading Fuel History:", error);
+      setFuelHistory(null);
+      setViewMode("fuel");
+      setErrorMsg("Failed to load Fuel History. Confirm the tab name is exactly 'Fuel History'.");
+      setAppState("error");
+    }
+  };
+
   const load5GPage = async () => {
     setAppState("loading");
     setErrorMsg("");
@@ -6916,7 +7557,7 @@ export default function App() {
   const activeLabel = NAV_ITEMS.find((item) => item.id === activeTab)?.label ?? "";
 
   if (appState === "loading") return <LoadingScreen />;
-  if (appState === "error") return <ErrorScreen message={errorMsg} onRetry={viewMode === "prepost" ? loadPreVsPost : viewMode === "hardware" ? loadHardwareIssues : () => loadMonthData(selectedMonth || "june")} />;
+  if (appState === "error") return <ErrorScreen message={errorMsg} onRetry={viewMode === "prepost" ? loadPreVsPost : viewMode === "hardware" ? loadHardwareIssues : viewMode === "fuel" ? loadFuelDashboard : () => loadMonthData(selectedMonth || "june")} />;
   if (!isAuthenticated) return <LoginScreen onLogin={handleLogin} />;
 
   // ----- HOME SCREEN (four buttons) -----
@@ -6946,6 +7587,10 @@ export default function App() {
             <motion.button variants={{ hidden: { opacity: 0, y: 30 }, show: { opacity: 1, y: 0 } }} whileHover={{ scale: 1.03, boxShadow: "0 0 40px rgba(16, 185, 129, 0.35)" }} whileTap={{ scale: 0.98 }} onClick={() => loadMonthData("september")} className="group relative flex-1 min-w-[180px] px-8 py-7 rounded-2xl bg-gradient-to-br from-emerald-500/20 to-green-500/20 border border-emerald-400/30 hover:border-emerald-300 transition-all duration-300 shadow-xl hover:shadow-emerald-500/40 backdrop-blur-sm overflow-hidden">
               <span className="absolute inset-0 bg-gradient-to-r from-emerald-400/20 to-green-400/20 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
               <div className="relative text-center"><span className="block text-2xl font-bold text-white">September 2026</span><span className="text-slate-300 text-sm">Live updates · Progressive</span></div>
+            </motion.button>
+            <motion.button variants={{ hidden: { opacity: 0, y: 30 }, show: { opacity: 1, y: 0 } }} whileHover={{ scale: 1.03, boxShadow: "0 0 40px rgba(34, 197, 94, 0.35)" }} whileTap={{ scale: 0.98 }} onClick={loadFuelDashboard} className="group relative flex-1 min-w-[180px] px-8 py-7 rounded-2xl bg-gradient-to-br from-green-500/25 to-emerald-700/25 border border-green-400/40 hover:border-green-300 transition-all duration-300 shadow-xl hover:shadow-green-500/40 backdrop-blur-sm overflow-hidden">
+              <span className="absolute inset-0 bg-gradient-to-r from-green-400/20 to-emerald-400/20 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+              <div className="relative text-center"><Fuel className="mx-auto mb-2 h-7 w-7 text-green-300"/><span className="block text-2xl font-bold text-white">Fuel</span><span className="text-slate-300 text-sm">2025 vs 2026 · Saving & Control</span></div>
             </motion.button>
             <motion.button
               variants={{ hidden: { opacity: 0, y: 30 }, show: { opacity: 1, y: 0 } }}
@@ -6977,6 +7622,11 @@ export default function App() {
         </motion.div>
       </div>
     );
+  }
+
+  // ----- FUEL MANAGEMENT FULL PAGE -----
+  if (viewMode === "fuel") {
+    return <FuelDashboard data={fuelHistory} onBack={goHome} />;
   }
 
   // ----- PRE‑VS‑POST FULL PAGE WITH SIDEBAR -----
@@ -7144,7 +7794,7 @@ export default function App() {
                   {activeLabel} — {monthLabel}
                   {isLive && <span className="ml-3 align-middle text-sm text-emerald-700 bg-emerald-100 px-3 py-1 rounded-lg">LIVE</span>}
                 </h2>
-                <p className="text-[11px] text-slate-500 truncate flex items-center gap-2 flex-wrap">
+                <p className="text-[11px] text-emerald-100/60 truncate flex items-center gap-2 flex-wrap">
                   {monthLastUpdated && <span className="text-cyan-400 font-medium">Report Updated: {monthLastUpdated}</span>}
                   {!monthLastUpdated && useMock && <span className="text-cyan-400 font-medium">Report Updated: {selectedMonth === "june" ? "30-Jun-26" : selectedMonth === "july" ? "31-Jul-26" : selectedMonth === "august" ? "31-Aug-26" : "1-Sep-26"}</span>}
                 </p>
