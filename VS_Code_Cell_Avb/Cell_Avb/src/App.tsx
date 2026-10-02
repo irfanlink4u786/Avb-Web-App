@@ -703,7 +703,7 @@ function RevenueLostSitesPage({
   });
 
   if (!revenueLostData) {
-    return <div className="rounded-xl border border-amber-300 bg-amber-50 p-8 text-center text-amber-900 font-semibold">Revenue Lost sites sheet tab is not available. Please confirm the September Google Sheet tab name is exactly <b>Revenue Lost sites</b>.</div>;
+    return <div className="rounded-xl border border-amber-300 bg-amber-50 p-8 text-center text-amber-900 font-semibold">Revenue Lost sites sheet tab is not available. Please confirm the active-month Google Sheet tab name is exactly <b>Revenue Lost sites</b>.</div>;
   }
 
   return (
@@ -719,7 +719,7 @@ function RevenueLostSitesPage({
 
       <div className="rounded-xl border border-slate-200 bg-white overflow-hidden shadow-sm">
         <div className="p-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
-          <div><h3 className="font-black text-slate-950">Daily Cell AVB Monitoring</h3><p className="text-xs text-slate-500 mt-1">Daily CA is matched from the main September Cell AVB sheet by Site ID.</p></div>
+          <div><h3 className="font-black text-slate-950">Daily Cell AVB Monitoring</h3><p className="text-xs text-slate-500 mt-1">Daily CA is matched from the active month Cell AVB sheet by Site ID.</p></div>
           <div className="flex flex-wrap gap-2">
             <div className="relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" /><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search site / grid / owner" className="pl-9 pr-3 py-2 rounded-lg border border-slate-300 bg-white text-sm text-slate-900 outline-none focus:border-cyan-500" /></div>
             <ExportButtonComponent data={exportData} filename="Revenue_Lost_Sites_Daily_Cell_AVB" label="Export" format="excel" variant="success" />
@@ -1082,7 +1082,7 @@ function FuelDashboard({ data, onBack }: { data: SheetPayload | null; onBack: ()
       Grid:monthDrillGrid || "",
     };
     currentMonthDates.forEach(day => { out[`${day}-${currentMonthName}`] = Math.round(row.days[String(day)] || 0); });
-    out["Sep Total L"] = Math.round(row.total);
+    out[`${currentMonthName} Total L`] = Math.round(row.total);
     out["Fill Events"] = row.fills;
     out["Avg / Fill L"] = row.fills ? Math.round(row.total/row.fills) : 0;
     out["Grid Contribution %"] = currentMonthDrillTotal ? `${((row.total/currentMonthDrillTotal)*100).toFixed(1)}%` : "0.0%";
@@ -1312,9 +1312,9 @@ function FuelDashboard({ data, onBack }: { data: SheetPayload | null; onBack: ()
                 <div className="flex items-center gap-3">
                   <button type="button" onClick={()=>setMonthDrillGrid(null)} className="rounded-lg border border-emerald-300 bg-white px-3 py-2 text-xs font-black text-emerald-800">× Close</button>
                   <div>
-                    <div className="text-[10px] font-black uppercase tracking-wide text-emerald-700">Sep-26 Site Drill-down</div>
+                    <div className="text-[10px] font-black uppercase tracking-wide text-emerald-700">{currentMonthName}-{String(currentYear).slice(-2)} Site Drill-down</div>
                     <h3 className="text-xl font-black text-slate-950">{monthDrillGrid} · Which Sites Consumed More Fuel?</h3>
-                    <p className="text-xs text-slate-600">{currentMonthDrillSites.length} fueled sites · ranked highest Sep consumption first · daily liters shown by date</p>
+                    <p className="text-xs text-slate-600">{currentMonthDrillSites.length} fueled sites · ranked highest current-month consumption first · daily liters shown by date</p>
                   </div>
                 </div>
                 <ExportButtonComponent data={currentMonthDrillExport} filename={`Fuel_${currentMonthLabel}_${monthDrillGrid}_Site_Daily`} label={`Export ${monthDrillGrid} Sites`} format="excel" variant="success"/>
@@ -1333,7 +1333,7 @@ function FuelDashboard({ data, onBack }: { data: SheetPayload | null; onBack: ()
                     <tr>
                       <th className="sticky left-0 z-30 bg-[#006B3C] px-3 py-3 text-left font-black">Site ID</th>
                       {currentMonthDates.map(day=><th key={day} className="min-w-[60px] px-2 py-3 text-center font-black">{day}</th>)}
-                      <th className="bg-[#005A33] px-3 py-3 text-center font-black">Sep Total</th>
+                      <th className="bg-[#005A33] px-3 py-3 text-center font-black">{currentMonthName} Total</th>
                       <th className="bg-[#005A33] px-3 py-3 text-center font-black">Fills</th>
                       <th className="bg-[#005A33] px-3 py-3 text-center font-black">Avg/Fill</th>
                       <th className="sticky right-0 z-30 bg-[#004C2B] px-3 py-3 text-center font-black">Grid %</th>
@@ -1383,6 +1383,7 @@ const SHEET_IDS = {
   july: "1aLTAisv5jjRuIkTVa6MjWZ-QFOSYn8FvMlJ09GWUpX0",
   august: "1ds17me8tjnsV-JoQnx6SThCSGM3AkULPsnqP3H0M30w",
   september: "1vyHPFzh28wf0a4b__Cv65bcuFh-pylnkGRcUuX1XpEA",
+  october: "1po40LvnGZL8Nnd4BBk-P6uC_tL4Fi9Q8PuMQZ7aQSdc",
 } as const;
 
 // Month dashboard sidebar – Pre‑Vs‑Post and Hardware Issues are removed
@@ -1407,7 +1408,7 @@ const NAV_ITEMS = [
   { id: "weather", label: "Weather Radar", icon: CloudRain },
 ] as const;
 
-type Month = "june" | "july" | "august" | "september";
+type Month = "june" | "july" | "august" | "september" | "october";
 type AppState = "loading" | "dashboard" | "error";
 type ViewMode = "home" | "month" | "prepost" | "hardware" | "fuel";
 type PrePostSubView = "analysis" | "query";
@@ -2808,7 +2809,14 @@ function S2SBBPerformancePage({
     }
 
     const allMonths = Array.from(months.values()).sort((a, b) => a.timestamp - b.timestamp);
-    const preCurrentMonths = allMonths.filter((m) => m.key < "2026-09");
+    const currentMonthToken = (() => {
+      const d = normalizeDateLabel(lastUpdatedDate || "");
+      const m = d.match(/-(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)-(\d{2})$/i);
+      if (!m) return "2026-09";
+      const monthMap: Record<string, string> = { jan:"01", feb:"02", mar:"03", apr:"04", may:"05", jun:"06", jul:"07", aug:"08", sep:"09", oct:"10", nov:"11", dec:"12" };
+      return `20${m[2]}-${monthMap[m[1].toLowerCase()]}`;
+    })();
+    const preCurrentMonths = allMonths.filter((m) => m.key < currentMonthToken);
     return { bySite, preCurrentMonths };
   }, [historyData]);
 
@@ -2898,7 +2906,12 @@ function S2SBBPerformancePage({
         const normalized = normalizeDailyDateKey(key);
         if (normalized && Number.isFinite(value) && Number(value) > 0) normalizedDaily.set(normalized, Number(value));
       });
-      const currentMonthKeys = Array.from(normalizedDaily.keys()).filter((key) => /-Sep-26$/i.test(key)).sort((a, b) => {
+      const currentMonthSuffix = (() => {
+        const d = normalizeDateLabel(lastUpdatedDate || "");
+        const m = d.match(/-(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)-(\d{2})$/i);
+        return m ? new RegExp(`-${m[1]}-${m[2]}$`, "i") : /-Sep-26$/i;
+      })();
+      const currentMonthKeys = Array.from(normalizedDaily.keys()).filter((key) => currentMonthSuffix.test(key)).sort((a, b) => {
         const da = Number(a.split("-")[0]);
         const db = Number(b.split("-")[0]);
         return da - db;
@@ -3015,8 +3028,8 @@ function S2SBBPerformancePage({
               <Battery className="w-6 h-6 text-cyan-700" />
               <h3 className="text-xl font-extrabold text-slate-900">S2S Battery Bank Performance</h3>
             </div>
-            <p className="text-sm text-slate-600 mt-1">Investment effectiveness: compare current September monthly CA against the latest historical CA before September.</p>
-            <p className="text-xs text-slate-500 mt-1">Current source: September main AVB sheet · Baseline source: Cell Avb history · S2S population: S2S BB installed {lastUpdatedDate ? `· Updated ${lastUpdatedDate}` : ""}</p>
+            <p className="text-sm text-slate-600 mt-1">Investment effectiveness: compare current active-month CA against the latest historical CA before the active month.</p>
+            <p className="text-xs text-slate-500 mt-1">Current source: active-month main AVB sheet · Baseline source: Cell Avb history · S2S population: S2S BB installed {lastUpdatedDate ? `· Updated ${lastUpdatedDate}` : ""}</p>
             <p className="text-[11px] text-cyan-800 mt-1 font-semibold">Join check: S2S rows {joinDiagnostics.source} · Site IDs detected {joinDiagnostics.extracted} · Matched Sheet1 {joinDiagnostics.matchedSheet1} · Matched History {joinDiagnostics.matchedHistory}</p>
           </div>
           <ExportButtonComponent data={exportRows} filename="s2s_bb_performance_sep26" label={`Export ${filtered.length} Sites`} format="excel" variant="primary" />
@@ -3030,7 +3043,7 @@ function S2SBBPerformancePage({
           { label: "Improved", value: stats.improved, note: "Gain ≥ 0.50 pp" },
           { label: "CA ≥ 98%", value: stats.stable, note: "Currently stable" },
           { label: "Needs Attention", value: stats.attention, note: "Still weak / declined" },
-          { label: "Average Gain", value: `${stats.avgGain >= 0 ? "+" : ""}${stats.avgGain.toFixed(2)} pp`, note: "Vs latest pre-Sep CA" },
+          { label: "Average Gain", value: `${stats.avgGain >= 0 ? "+" : ""}${stats.avgGain.toFixed(2)} pp`, note: "Vs latest pre-month CA" },
         ].map((k) => (
           <div key={k.label} className="bg-white border border-slate-300 rounded-xl p-4 shadow-sm">
             <div className="text-2xl font-extrabold text-slate-900">{k.value}</div>
@@ -3068,7 +3081,7 @@ function S2SBBPerformancePage({
           <table className="w-full text-[12px] min-w-[1500px]">
             <thead className="bg-slate-100 text-slate-700">
               <tr>
-                {["Site ID", "Grid", "CO", "Installed Capacity", "Installed", "Baseline", "Baseline CA", "Pre-3M Avg", "Current Sep CA", ...latestFiveDateKeys, "Gain / Loss", "Days CA <98", "Latest 3D Avg", "Assessment"].map((h) => (
+                {["Site ID", "Grid", "CO", "Installed Capacity", "Installed", "Baseline", "Baseline CA", "Pre-3M Avg", "Current Month CA", ...latestFiveDateKeys, "Gain / Loss", "Days CA <98", "Latest 3D Avg", "Assessment"].map((h) => (
                   <th key={h} className="px-3 py-3 text-left font-bold whitespace-nowrap">{h}</th>
                 ))}
               </tr>
@@ -3102,7 +3115,7 @@ function S2SBBPerformancePage({
       </div>
 
       <div className="bg-slate-50 border border-slate-300 rounded-xl p-4 text-xs text-slate-600">
-        <span className="font-bold text-slate-800">Assessment logic:</span> Improved = current monthly CA gain ≥ 0.50 percentage point versus latest available pre-September history. Stable = current CA ≥ 98%. Sites still below 98% or declining by ≥ 0.50 pp are flagged for attention. Pre-3M average is displayed to avoid judging investment only against one abnormal month.
+        <span className="font-bold text-slate-800">Assessment logic:</span> Improved = current monthly CA gain ≥ 0.50 percentage point versus latest available pre-month history. Stable = current CA ≥ 98%. Sites still below 98% or declining by ≥ 0.50 pp are flagged for attention. Pre-3M average is displayed to avoid judging investment only against one abnormal month.
       </div>
     </motion.div>
   );
@@ -3360,7 +3373,7 @@ function RecurringSitesPage({
   }), [filtered, history.months]);
 
   if (!historyData?.rows?.length) {
-    return <div className="bg-slate-800 border border-slate-700 rounded-xl p-10 text-center text-slate-400">Cell Avb history is not available in the September workbook.</div>;
+    return <div className="bg-slate-800 border border-slate-700 rounded-xl p-10 text-center text-slate-400">Cell Avb history is not available in the active-month workbook.</div>;
   }
 
   if (history.months.length < 3) {
@@ -3775,7 +3788,7 @@ function SiteQuery({ sites, historyData = null, rawData = null }: { sites: SiteD
         <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
           <div>
             <h3 className="text-white font-semibold text-sm">{siteName} — Year 2026 Cell AVB History</h3>
-            <p className="text-xs text-slate-500 mt-1">Source: September → Cell Avb history · Table view</p>
+            <p className="text-xs text-slate-500 mt-1">Source: Active month → Cell Avb history · Table view</p>
           </div>
           {historyExport.length > 0 && (
             <ExportButton
@@ -6978,7 +6991,7 @@ function FiveGPage({
         <Radio className="w-10 h-10 text-slate-500 mx-auto mb-3" />
         <h3 className="text-lg font-semibold text-white">5G Data Not Available</h3>
         <p className="text-sm text-slate-400 mt-1">
-          The 5G worksheet could not be loaded from the September 2026 workbook.
+          The 5G worksheet could not be loaded from the active-month workbook.
         </p>
       </div>
     );
@@ -7290,16 +7303,16 @@ export default function App() {
         fetchGoogleSheet(sheetId, "Hardware issues"),
         fetchGoogleSheet(sheetId, "Updated Date"),
         fetchGoogleSheet(sheetId, "RCA of Plat +"),
-        (month === "august" || month === "september")
+        (month === "august" || month === "september" || month === "october")
           ? fetchGoogleSheet(sheetId, "5G")
           : Promise.resolve(null),
-        month === "september"
+        (month === "september" || month === "october")
           ? fetchGoogleSheet(sheetId, "Cell Avb history")
           : Promise.resolve(null),
-        month === "september"
+        (month === "september" || month === "october")
           ? fetchGoogleSheet(sheetId, "S2S BB installed")
           : Promise.resolve(null),
-        month === "september"
+        (month === "september" || month === "october")
           ? fetchGoogleSheet(sheetId, "Revenue Lost sites")
           : Promise.resolve(null),
       ]);
@@ -7325,9 +7338,9 @@ export default function App() {
       setMonthHardware(hwData);
       setMonthRca(rcaSheet);
       setMonth5G(fiveGSheet);
-      setMonthCellAvbHistory(month === "september" ? cellAvbHistory : null);
-      setMonthS2SBB(month === "september" ? s2sBBData : null);
-      setMonthRevenueLost(month === "september" ? revenueLostData : null);
+      setMonthCellAvbHistory((month === "september" || month === "october") ? cellAvbHistory : null);
+      setMonthS2SBB((month === "september" || month === "october") ? s2sBBData : null);
+      setMonthRevenueLost((month === "september" || month === "october") ? revenueLostData : null);
 
       if (dateData && Array.isArray(dateData.rows) && dateData.rows.length > 0) {
         const row = dateData.rows[0];
@@ -7369,8 +7382,8 @@ export default function App() {
     setAppState("loading");
     setErrorMsg("");
     try {
-      // Fuel History is maintained in the September / live workbook.
-      const data = await fetchGoogleSheet(SHEET_IDS.september, "Fuel History");
+      // Fuel History is maintained in the latest / live workbook.
+      const data = await fetchGoogleSheet(SHEET_IDS.october, "Fuel History");
       if (!data || !Array.isArray(data.rows)) throw new Error("Fuel History tab returned no rows");
       setFuelHistory(data);
       setViewMode("fuel");
@@ -7389,7 +7402,7 @@ export default function App() {
     setErrorMsg("");
 
     try {
-      const sheetId = SHEET_IDS.september;
+      const sheetId = SHEET_IDS.october;
 
       const [data, fiveGSheet, dateData] = await Promise.all([
         fetchGoogleSheet(sheetId),
@@ -7399,7 +7412,7 @@ export default function App() {
 
       setMonthData(data);
       setMonth5G(fiveGSheet);
-      setSelectedMonth("september");
+      setSelectedMonth("october");
       setUseMock(false);
 
       if (dateData && dateData.rows && dateData.rows.length > 0) {
@@ -7588,6 +7601,10 @@ export default function App() {
               <span className="absolute inset-0 bg-gradient-to-r from-emerald-400/20 to-green-400/20 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
               <div className="relative text-center"><span className="block text-2xl font-bold text-white">September 2026</span><span className="text-slate-300 text-sm">Live updates · Progressive</span></div>
             </motion.button>
+            <motion.button variants={{ hidden: { opacity: 0, y: 30 }, show: { opacity: 1, y: 0 } }} whileHover={{ scale: 1.03, boxShadow: "0 0 40px rgba(34, 211, 238, 0.35)" }} whileTap={{ scale: 0.98 }} onClick={() => loadMonthData("october")} className="group relative flex-1 min-w-[180px] px-8 py-7 rounded-2xl bg-gradient-to-br from-cyan-500/20 to-emerald-500/20 border border-cyan-400/30 hover:border-cyan-300 transition-all duration-300 shadow-xl hover:shadow-cyan-500/40 backdrop-blur-sm overflow-hidden">
+              <span className="absolute inset-0 bg-gradient-to-r from-cyan-400/20 to-emerald-400/20 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+              <div className="relative text-center"><span className="block text-2xl font-bold text-white">October 2026</span><span className="text-cyan-200 text-sm">LIVE · Active data</span></div>
+            </motion.button>
             <motion.button variants={{ hidden: { opacity: 0, y: 30 }, show: { opacity: 1, y: 0 } }} whileHover={{ scale: 1.03, boxShadow: "0 0 40px rgba(34, 197, 94, 0.35)" }} whileTap={{ scale: 0.98 }} onClick={loadFuelDashboard} className="group relative flex-1 min-w-[180px] px-8 py-7 rounded-2xl bg-gradient-to-br from-green-500/25 to-emerald-700/25 border border-green-400/40 hover:border-green-300 transition-all duration-300 shadow-xl hover:shadow-green-500/40 backdrop-blur-sm overflow-hidden">
               <span className="absolute inset-0 bg-gradient-to-r from-green-400/20 to-emerald-400/20 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
               <div className="relative text-center"><Fuel className="mx-auto mb-2 h-7 w-7 text-green-300"/><span className="block text-2xl font-bold text-white">Fuel</span><span className="text-slate-300 text-sm">2025 vs 2026 · Saving & Control</span></div>
@@ -7739,8 +7756,10 @@ export default function App() {
         ? "July 2026"
         : selectedMonth === "august"
           ? "August 2026"
-          : "September 2026";
-  const isLive = selectedMonth === "september";
+          : selectedMonth === "september"
+            ? "September 2026"
+            : "October 2026";
+  const isLive = selectedMonth === "october";
 
   return (
     <div className="light-app min-h-screen bg-[#eef0f3] text-slate-900 flex">
@@ -7760,10 +7779,10 @@ export default function App() {
         </div>
         <nav className="flex-1 overflow-y-auto p-3 space-y-1">
           {NAV_ITEMS.filter((item) => {
-            if (item.id === "5g") return selectedMonth === "august" || selectedMonth === "september";
-            if (item.id === "recurring") return selectedMonth === "september";
-            if (item.id === "s2s-bb") return selectedMonth === "september";
-            if (item.id === "revenue-lost") return selectedMonth === "september";
+            if (item.id === "5g") return selectedMonth === "august" || selectedMonth === "september" || selectedMonth === "october";
+            if (item.id === "recurring") return selectedMonth === "september" || selectedMonth === "october";
+            if (item.id === "s2s-bb") return selectedMonth === "september" || selectedMonth === "october";
+            if (item.id === "revenue-lost") return selectedMonth === "september" || selectedMonth === "october";
             return true;
           }).map((item) => {
             const Icon = item.icon;
@@ -7796,7 +7815,7 @@ export default function App() {
                 </h2>
                 <p className="text-[11px] text-emerald-100/60 truncate flex items-center gap-2 flex-wrap">
                   {monthLastUpdated && <span className="text-cyan-400 font-medium">Report Updated: {monthLastUpdated}</span>}
-                  {!monthLastUpdated && useMock && <span className="text-cyan-400 font-medium">Report Updated: {selectedMonth === "june" ? "30-Jun-26" : selectedMonth === "july" ? "31-Jul-26" : selectedMonth === "august" ? "31-Aug-26" : "1-Sep-26"}</span>}
+                  {!monthLastUpdated && useMock && <span className="text-cyan-400 font-medium">Report Updated: {selectedMonth === "june" ? "30-Jun-26" : selectedMonth === "july" ? "31-Jul-26" : selectedMonth === "august" ? "31-Aug-26" : selectedMonth === "september" ? "30-Sep-26" : "1-Oct-26"}</span>}
                 </p>
               </div>
             </div>
@@ -7854,7 +7873,7 @@ export default function App() {
                 {activeTab === "agm" && <CategoryPage sites={sites} title="AGM Battery Backup Sites" description={`${agmRows.length} sites with AGM battery banks`} threshold={95} filterFn={(s) => hasAGM(s)} lastUpdatedDate={monthLastUpdated} lastColumnIndex={monthLastColumnIndex} />}
                 {activeTab === "rca" && <RcaSummary rcaData={rcaData} />}
                 {activeTab === "hardware" && hardwareData && <HardwareIssues data={hardwareData} />}
-                {activeTab === "query" && <SiteQuery sites={sites} rawData={monthData} historyData={selectedMonth === "september" ? monthCellAvbHistory : null} />}
+                {activeTab === "query" && <SiteQuery sites={sites} rawData={monthData} historyData={(selectedMonth === "september" || selectedMonth === "october") ? monthCellAvbHistory : null} />}
                 {activeTab === "weather" && <WeatherRadar />}
               </motion.div>
             </AnimatePresence>
