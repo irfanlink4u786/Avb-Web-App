@@ -123,6 +123,36 @@ const MONTH_LABELS: Record<string, string> = {
  *
  * Returns D-Mmm-YY, e.g. 18-Sep-26.
  */
+function normalizeDateLabel(value: string): string {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+
+  const match = raw.match(
+    /^(\d{1,2})[-\s\/]([A-Za-z]{3,9})[-\s\/](\d{2,4})$/
+  );
+
+  if (match) {
+    const day = String(Number(match[1])).padStart(2, "0");
+    const rawMonth = match[2].slice(0, 3);
+    const month = rawMonth.charAt(0).toUpperCase() + rawMonth.slice(1).toLowerCase();
+    const year = match[3].length === 4 ? match[3].slice(-2) : match[3].padStart(2, "0");
+
+    if (EMP_MONTHS[month] !== undefined) {
+      return `${day}-${month}-${year}`;
+    }
+  }
+
+  const parsed = new Date(raw);
+  if (!Number.isNaN(parsed.getTime())) {
+    const day = String(parsed.getDate()).padStart(2, "0");
+    const month = Object.keys(EMP_MONTHS)[parsed.getMonth()];
+    const year = String(parsed.getFullYear()).slice(-2);
+    return `${day}-${month}-${year}`;
+  }
+
+  return raw;
+}
+
 function empNormalizeDailyDateKey(raw: string): string | null {
   const text = String(raw ?? "").trim();
   if (!text) return null;
@@ -2812,7 +2842,7 @@ function S2SBBPerformancePage({
     const currentMonthToken = (() => {
       const d = normalizeDateLabel(lastUpdatedDate || "");
       const m = d.match(/-(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)-(\d{2})$/i);
-      if (!m) return "2026-09";
+      if (!m) return "2026-10";
       const monthMap: Record<string, string> = { jan:"01", feb:"02", mar:"03", apr:"04", may:"05", jun:"06", jul:"07", aug:"08", sep:"09", oct:"10", nov:"11", dec:"12" };
       return `20${m[2]}-${monthMap[m[1].toLowerCase()]}`;
     })();
@@ -2909,7 +2939,7 @@ function S2SBBPerformancePage({
       const currentMonthSuffix = (() => {
         const d = normalizeDateLabel(lastUpdatedDate || "");
         const m = d.match(/-(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)-(\d{2})$/i);
-        return m ? new RegExp(`-${m[1]}-${m[2]}$`, "i") : /-Sep-26$/i;
+        return m ? new RegExp(`-${m[1]}-${m[2]}$`, "i") : /-Oct-26$/i;
       })();
       const currentMonthKeys = Array.from(normalizedDaily.keys()).filter((key) => currentMonthSuffix.test(key)).sort((a, b) => {
         const da = Number(a.split("-")[0]);
