@@ -123,36 +123,6 @@ const MONTH_LABELS: Record<string, string> = {
  *
  * Returns D-Mmm-YY, e.g. 18-Sep-26.
  */
-function normalizeDateLabel(value: string): string {
-  const raw = String(value ?? "").trim();
-  if (!raw) return "";
-
-  const match = raw.match(
-    /^(\d{1,2})[-\s\/]([A-Za-z]{3,9})[-\s\/](\d{2,4})$/
-  );
-
-  if (match) {
-    const day = String(Number(match[1])).padStart(2, "0");
-    const rawMonth = match[2].slice(0, 3);
-    const month = rawMonth.charAt(0).toUpperCase() + rawMonth.slice(1).toLowerCase();
-    const year = match[3].length === 4 ? match[3].slice(-2) : match[3].padStart(2, "0");
-
-    if (EMP_MONTHS[month] !== undefined) {
-      return `${day}-${month}-${year}`;
-    }
-  }
-
-  const parsed = new Date(raw);
-  if (!Number.isNaN(parsed.getTime())) {
-    const day = String(parsed.getDate()).padStart(2, "0");
-    const month = Object.keys(EMP_MONTHS)[parsed.getMonth()];
-    const year = String(parsed.getFullYear()).slice(-2);
-    return `${day}-${month}-${year}`;
-  }
-
-  return raw;
-}
-
 function empNormalizeDailyDateKey(raw: string): string | null {
   const text = String(raw ?? "").trim();
   if (!text) return null;
@@ -3546,7 +3516,7 @@ function SiteQuery({ sites, historyData = null, rawData = null }: { sites: SiteD
   }, [selectedSite]);
 
 
-  // September technology-wise Cell AVB from Sheet1.
+  // October technology-wise Cell AVB from Sheet1.
   // TCH = 2G, Cell_U = 3G, Cell_EU = 4G.
   const technologyWiseAvb = useMemo(() => {
     if (!selectedSite) return null;
@@ -3586,11 +3556,11 @@ function SiteQuery({ sites, historyData = null, rawData = null }: { sites: SiteD
       return 0;
     };
 
-    // Prefer the exact September-2026 Sheet1 headers. Fall back to normalized SiteData fields
-    // only when the raw Sheet1 value is unavailable.
-    const g2 = findByHeader([/^sep26tch$/, /^september26tch$/, /sep26.*tch/]) || Number(selectedSite.ca2G || 0);
-    const g3 = findByHeader([/^sep26cellu$/, /^september26cellu$/, /sep26.*cellu/]) || Number(selectedSite.ca3G || 0);
-    const g4 = findByHeader([/^sep26celleu$/, /^september26celleu$/, /sep26.*celleu/]) || Number(selectedSite.ca4G || 0);
+    // Prefer October-2026 technology-wise Cell AVB headers from active Sheet1.
+    // Fall back to normalized SiteData fields only when the raw Sheet1 value is unavailable.
+    const g2 = findByHeader([/^oct26tch$/, /^october26tch$/, /oct26.*tch/, /october26.*tch/]) || Number(selectedSite.ca2G || 0);
+    const g3 = findByHeader([/^oct26cellu$/, /^october26cellu$/, /oct26.*cellu/, /october26.*cellu/]) || Number(selectedSite.ca3G || 0);
+    const g4 = findByHeader([/^oct26celleu$/, /^october26celleu$/, /oct26.*celleu/, /october26.*celleu/]) || Number(selectedSite.ca4G || 0);
 
     const makeGap = (aLabel: string, a: number, bLabel: string, b: number) => {
       if (!(a > 0) || !(b > 0)) return { pair: `${aLabel}–${bLabel}`, gap: 0, lower: "—", available: false };
@@ -3603,7 +3573,7 @@ function SiteQuery({ sites, historyData = null, rawData = null }: { sites: SiteD
     };
 
     return {
-      month: "Sep'26",
+      month: "Oct'26",
       g2,
       g3,
       g4,
@@ -7193,6 +7163,25 @@ function LoginScreen({ onLogin }: { onLogin: (success: boolean) => void }) {
 // ============================================================
 //  MAIN APP
 // ============================================================
+
+const normalizeDateLabel = (value: string): string => {
+  if (!value) return "";
+  const raw = String(value).trim();
+  const dmy = raw.match(/^(\d{1,2})[-\/\s](Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[-\/\s](\d{2,4})$/i);
+  if (dmy) {
+    const day = dmy[1].padStart(2, "0");
+    const month = dmy[2].charAt(0).toUpperCase() + dmy[2].slice(1, 3).toLowerCase();
+    let year = dmy[3];
+    if (year.length === 4) year = year.slice(-2);
+    return `${day}-${month}-${year}`;
+  }
+  const parsed = new Date(raw);
+  if (!Number.isNaN(parsed.getTime())) {
+    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    return `${String(parsed.getDate()).padStart(2, "0")}-${months[parsed.getMonth()]}-${String(parsed.getFullYear()).slice(-2)}`;
+  }
+  return raw;
+};
 
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
