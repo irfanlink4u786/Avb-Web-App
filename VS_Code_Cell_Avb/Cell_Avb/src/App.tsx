@@ -6960,13 +6960,24 @@ function OverallSummaryWithExport({ sites, rawData, lastUpdatedDate }: { sites: 
                             </div>
 
                             <div className="overflow-x-auto">
-                              <table className="w-full min-w-[1580px] text-sm">
-                                <thead className="bg-slate-100 text-black" style={{ color: "#000000" }}>
+                              {/* Keep STYLE outside TABLE: <style> directly inside <table> is invalid HTML
+                                  and browsers may discard/move it, which caused the white header text. */}
+                              <style>{`
+                                table.guest-omo-site-table > thead.guest-omo-site-header,
+                                table.guest-omo-site-table > thead.guest-omo-site-header > tr,
+                                table.guest-omo-site-table > thead.guest-omo-site-header > tr > th {
+                                  color: #000000 !important;
+                                  opacity: 1 !important;
+                                  -webkit-text-fill-color: #000000 !important;
+                                }
+                              `}</style>
+                              <table className="guest-omo-site-table w-full min-w-[1580px] text-sm">
+                              <thead className="guest-omo-site-header bg-slate-100 !text-black">
                                   <tr>
-                                    <th className="px-3 py-3 text-center text-xs font-black !text-black" style={{ color: "#000000" }} style={{ color: "#000000" }}>#</th>
-                                    <th className="px-3 py-3 text-left text-xs font-black !text-black" style={{ color: "#000000" }} style={{ color: "#000000" }}>Site ID</th>
-                                    <th className="px-3 py-3 text-left text-xs font-black !text-black" style={{ color: "#000000" }} style={{ color: "#000000" }}>OMO ID</th>
-                                    <th className="px-3 py-3 text-center text-xs font-black !text-black" style={{ color: "#000000" }} style={{ color: "#000000" }}>CA%</th>
+                                    <th className="px-3 py-3 text-center text-xs font-black !text-black [color:#000!important] [-webkit-text-fill-color:#000!important]" style={{ color: "#000000" }}>#</th>
+                                    <th className="px-3 py-3 text-left text-xs font-black !text-black [color:#000!important] [-webkit-text-fill-color:#000!important]" style={{ color: "#000000" }}>Site ID</th>
+                                    <th className="px-3 py-3 text-left text-xs font-black !text-black [color:#000!important] [-webkit-text-fill-color:#000!important]" style={{ color: "#000000" }}>OMO ID</th>
+                                    <th className="px-3 py-3 text-center text-xs font-black !text-black [color:#000!important] [-webkit-text-fill-color:#000!important]" style={{ color: "#000000" }}>CA%</th>
 
                                     {guestOmoData.latest3Dates.map((date) => (
                                       <th
@@ -6977,15 +6988,15 @@ function OverallSummaryWithExport({ sites, rawData, lastUpdatedDate }: { sites: 
                                       </th>
                                     ))}
 
-                                    <th className="px-3 py-3 text-left text-xs font-black !text-black" style={{ color: "#000000" }}>Category</th>
-                                    <th className="px-3 py-3 text-center text-xs font-black !text-black" style={{ color: "#000000" }}>Sub-Region</th>
-                                    <th className="px-3 py-3 text-center text-xs font-black !text-black" style={{ color: "#000000" }}>Grid</th>
-                                    <th className="px-3 py-3 text-center text-xs font-black !text-black" style={{ color: "#000000" }}>DG</th>
-                                    <th className="px-3 py-3 text-center text-xs font-black !text-black" style={{ color: "#000000" }}>Li-ion</th>
-                                    <th className="px-3 py-3 text-center text-xs font-black !text-black" style={{ color: "#000000" }}>BB Status</th>
-                                    <th className="px-3 py-3 text-left text-xs font-black !text-black" style={{ color: "#000000" }}>Cluster Owner</th>
-                                    <th className="px-3 py-3 text-left text-xs font-black !text-black" style={{ color: "#000000" }}>MS GTL</th>
-                                    <th className="px-3 py-3 text-left text-xs font-black !text-black" style={{ color: "#000000" }}>Zone Lead</th>
+                                    <th className="px-3 py-3 text-left text-xs font-black !text-black [color:#000!important] [-webkit-text-fill-color:#000!important]" style={{ color: "#000000" }}>Category</th>
+                                    <th className="px-3 py-3 text-center text-xs font-black !text-black [color:#000!important] [-webkit-text-fill-color:#000!important]" style={{ color: "#000000" }}>Sub-Region</th>
+                                    <th className="px-3 py-3 text-center text-xs font-black !text-black [color:#000!important] [-webkit-text-fill-color:#000!important]" style={{ color: "#000000" }}>Grid</th>
+                                    <th className="px-3 py-3 text-center text-xs font-black !text-black [color:#000!important] [-webkit-text-fill-color:#000!important]" style={{ color: "#000000" }}>DG</th>
+                                    <th className="px-3 py-3 text-center text-xs font-black !text-black [color:#000!important] [-webkit-text-fill-color:#000!important]" style={{ color: "#000000" }}>Li-ion</th>
+                                    <th className="px-3 py-3 text-center text-xs font-black !text-black [color:#000!important] [-webkit-text-fill-color:#000!important]" style={{ color: "#000000" }}>BB Status</th>
+                                    <th className="px-3 py-3 text-left text-xs font-black !text-black [color:#000!important] [-webkit-text-fill-color:#000!important]" style={{ color: "#000000" }}>Cluster Owner</th>
+                                    <th className="px-3 py-3 text-left text-xs font-black !text-black [color:#000!important] [-webkit-text-fill-color:#000!important]" style={{ color: "#000000" }}>MS GTL</th>
+                                    <th className="px-3 py-3 text-left text-xs font-black !text-black [color:#000!important] [-webkit-text-fill-color:#000!important]" style={{ color: "#000000" }}>Zone Lead</th>
                                   </tr>
                                 </thead>
 
