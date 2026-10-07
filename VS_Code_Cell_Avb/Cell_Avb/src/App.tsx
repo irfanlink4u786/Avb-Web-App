@@ -6476,6 +6476,7 @@ function EnhancedOverallSummary({
 
 function OverallSummaryWithExport({ sites, rawData, lastUpdatedDate }: { sites: SiteData[]; rawData?: SheetPayload | null; lastUpdatedDate?: string }) {
   const [targetRegion, setTargetRegion] = useState<"C-1" | "C-6" | null>(null);
+  const [expandedOmo, setExpandedOmo] = useState<string | null>(null);
   const TARGET_CA = 99;
 
   const fullExportData = useMemo(() => {
@@ -6608,6 +6609,156 @@ function OverallSummaryWithExport({ sites, rawData, lastUpdatedDate }: { sites: 
       "Zone Lead": row.site.zongLead || "-",
     }));
 
+
+  // ============================================================
+  //  SHARING AS GUEST — OMO-WISE SUMMARY
+  //  Source: active month's Sheet1 raw columns "Sharing Status" + "OMO Name".
+  // ============================================================
+  const guestOmoData = useMemo(() => {
+    if (!rawData?.rows?.length) {
+      return {
+        rows: [] as Array<{ omo: string; sites: SiteData[]; avgCa: number; critical: number }>,
+        latest3Dates: [] as string[],
+      };
+    }
+
+    const normalizeHeader = (value: unknown) =>
+      String(value ?? "")
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, "");
+
+    const findValue = (row: Record<string, any>, aliases: string[]) => {
+      const aliasSet = new Set(aliases.map(normalizeHeader));
+      for (const [key, value] of Object.entries(row ?? {})) {
+        if (aliasSet.has(normalizeHeader(key))) return value;
+      }
+      return "";
+    };
+
+    const siteById = new Map<string, SiteData>();
+    sites.forEach((site) => {
+      const id = String(site.siteName ?? "").trim();
+      if (id) siteById.set(id, site);
+    });
+
+    const omoMap = new Map<string, SiteData[]>();
+
+    rawData.rows.forEach((row: Record<string, any>) => {
+      const sharing = String(
+        findValue(row, ["Sharing Status", "Sharing", "SharingStatus"])
+      ).trim();
+
+      // Guest-only population. Supports values such as:
+      // "Sharing as Guest", "Shared as Guest", "Guest", "CMPAK as Guest".
+      const sharingKey = sharing.toLowerCase().replace(/[^a-z]/g, "");
+      const isGuest =
+        sharingKey.includes("guest") &&
+        !sharingKey.includes("host");
+
+      if (!isGuest) return;
+
+      const omo = String(
+        findValue(row, ["OMO Name", "OMO", "OMOName", "TowerCo", "Tower Co"])
+      ).trim();
+
+      if (!omo || /^self\s*site$/i.test(omo)) return;
+
+      const siteId = String(
+        findValue(row, ["Site ID", "SiteID", "Site Id", "Site", "SITE_ID"])
+      ).trim();
+
+      const site = siteById.get(siteId);
+      if (!site) return;
+
+      if (!omoMap.has(omo)) omoMap.set(omo, []);
+      omoMap.get(omo)!.push(site);
+    });
+
+    // Latest 3 actual populated dates from the active month.
+    const availableDates = new Set<string>();
+    const cutoff = empNormalizeDailyDateKey(lastUpdatedDate || "");
+    const cutoffTime = cutoff ? empDateKeyToTime(cutoff) : Number.POSITIVE_INFINITY;
+    const cutoffParts = cutoff?.split("-") ?? [];
+
+    Array.from(omoMap.values()).flat().forEach((site) => {
+      Object.entries(site.dailyData ?? {}).forEach(([rawKey, rawValue]) => {
+        const date = empNormalizeDailyDateKey(rawKey);
+        const value = Number(rawValue);
+        if (!date || !Number.isFinite(value) || value <= 0) return;
+
+        const time = empDateKeyToTime(date);
+        if (!Number.isFinite(time) || time > cutoffTime) return;
+
+        if (cutoff) {
+          const [, month, year] = date.split("-");
+          if (month !== cutoffParts[1] || year !== cutoffParts[2]) return;
+        }
+        availableDates.add(date);
+      });
+    });
+
+    const latest3Dates = Array.from(availableDates)
+      .sort((a, b) => empDateKeyToTime(a) - empDateKeyToTime(b))
+      .slice(-3);
+
+    const rows = Array.from(omoMap.entries())
+      .map(([omo, omoSites]) => {
+        const uniqueSites = Array.from(
+          new Map(omoSites.map((site) => [site.siteName, site])).values()
+        );
+
+        const validCa = uniqueSites
+          .map((site) => Number(site.currentAvb || 0))
+          .filter((value) => Number.isFinite(value) && value > 0);
+
+        const avgCa = validCa.length
+          ? validCa.reduce((sum, value) => sum + value, 0) / validCa.length
+          : 0;
+
+        return {
+          omo,
+          sites: [...uniqueSites].sort(
+            (a, b) => Number(a.currentAvb || 0) - Number(b.currentAvb || 0)
+          ),
+          avgCa,
+          critical: validCa.filter((value) => value < 98).length,
+        };
+      })
+      .sort((a, b) => a.avgCa - b.avgCa || b.critical - a.critical);
+
+    return { rows, latest3Dates };
+  }, [rawData, sites, lastUpdatedDate]);
+
+  const guestOmoExport = (omoRow: (typeof guestOmoData.rows)[number]) =>
+    omoRow.sites.map((site, index) => {
+      const out: Record<string, any> = {
+        Rank: index + 1,
+        "OMO Name": omoRow.omo,
+        "Site ID": site.siteName,
+        "Current CA": Number(site.currentAvb || 0) > 0
+          ? `${Number(site.currentAvb).toFixed(2)}%`
+          : "-",
+      };
+
+      guestOmoData.latest3Dates.forEach((date) => {
+        const value = empGetDailyAvb(site, date);
+        out[`${empFormatDailyDateHeader(date)} AVB`] =
+          value > 0 ? `${value.toFixed(2)}%` : "-";
+      });
+
+      out["Category"] = site.revenueCategory || "-";
+      out["Sub-Region"] = site.subRegion || "-";
+      out["Grid"] = site.grid || "-";
+      out["DG"] = site.dgStatus || site.dgInstalled || "-";
+      out["Li-ion"] = site.liIonInstalled || "-";
+      out["BB Status"] = site.bbStatus || "-";
+      out["Cluster Owner"] = site.clusterOwner || "-";
+      out["MS GTL"] = site.msGtl || "-";
+      out["Zone Lead"] = site.zongLead || "-";
+      return out;
+    });
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-4">
@@ -6702,6 +6853,180 @@ function OverallSummaryWithExport({ sites, rawData, lastUpdatedDate }: { sites: 
               </div>
             );
           })}
+        </div>
+      </div>
+
+
+      {/* Sharing as Guest — OMO-wise summary */}
+      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-5 py-4">
+          <div>
+            <h3 className="text-lg font-black text-slate-950">
+              Sharing as Guest · OMO-wise Summary
+            </h3>
+            <p className="mt-1 text-xs font-semibold text-slate-500">
+              Guest sites only · OMO-wise performance · Open View to see worst CA sites first with latest 3 days AVB.
+            </p>
+          </div>
+          <div className="rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-extrabold text-blue-700">
+            {guestOmoData.rows.reduce((sum, row) => sum + row.sites.length, 0)} Guest Sites
+          </div>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[900px] text-sm">
+            <thead className="bg-[#075b94]">
+              <tr>
+                <th className="px-4 py-3 text-left text-xs font-black text-white">OMO Name</th>
+                <th className="px-4 py-3 text-center text-xs font-black text-white">Guest Sites</th>
+                <th className="px-4 py-3 text-center text-xs font-black text-white">Avg CA</th>
+                <th className="px-4 py-3 text-center text-xs font-black text-white">CA &lt;98%</th>
+                <th className="px-4 py-3 text-center text-xs font-black text-white">Actions</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {guestOmoData.rows.map((omoRow) => {
+                const isOpen = expandedOmo === omoRow.omo;
+
+                return (
+                  <Fragment key={omoRow.omo}>
+                    <tr className="border-b border-slate-200 even:bg-slate-50/80 hover:bg-blue-50/50">
+                      <td className="px-4 py-3 font-extrabold text-slate-950">{omoRow.omo}</td>
+                      <td className="px-4 py-3 text-center font-black text-slate-900">{omoRow.sites.length}</td>
+                      <td className={`px-4 py-3 text-center font-black ${empCaTextClass(omoRow.avgCa)}`}>
+                        {omoRow.avgCa > 0 ? `${omoRow.avgCa.toFixed(2)}%` : "-"}
+                      </td>
+                      <td className="px-4 py-3 text-center font-black text-red-600">{omoRow.critical}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center justify-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setExpandedOmo(isOpen ? null : omoRow.omo)}
+                            className="inline-flex items-center gap-1 rounded-md bg-sky-100 px-3 py-1.5 text-xs font-extrabold text-sky-800 hover:bg-sky-200"
+                          >
+                            {isOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                            {isOpen ? "Hide" : "View"}
+                          </button>
+
+                          <ExportButtonComponent
+                            data={guestOmoExport(omoRow)}
+                            filename={`Guest_OMO_${omoRow.omo.replace(/[^a-z0-9]+/gi, "_")}`}
+                            label="Export"
+                            format="excel"
+                            variant="success"
+                          />
+                        </div>
+                      </td>
+                    </tr>
+
+                    {isOpen && (
+                      <tr>
+                        <td colSpan={5} className="bg-slate-50 p-4">
+                          <div className="overflow-hidden rounded-xl border border-slate-300 bg-white">
+                            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 px-4 py-3">
+                              <div>
+                                <h4 className="font-black text-slate-950">
+                                  {omoRow.omo} · Guest Sites ({omoRow.sites.length})
+                                </h4>
+                                <p className="mt-1 text-xs font-semibold text-slate-500">
+                                  Sorted by CA% · Lowest to Highest
+                                </p>
+                              </div>
+                              <div className="text-xs font-bold text-slate-500">
+                                Latest AVB:{" "}
+                                <span className="text-slate-900">
+                                  {guestOmoData.latest3Dates.length
+                                    ? guestOmoData.latest3Dates.map(empFormatDailyDateHeader).join(" | ")
+                                    : "No populated dates"}
+                                </span>
+                              </div>
+                            </div>
+
+                            <div className="overflow-x-auto">
+                              <table className="w-full min-w-[1450px] text-sm">
+                                <thead className="bg-slate-100">
+                                  <tr>
+                                    <th className="px-3 py-3 text-center text-xs font-black !text-black">#</th>
+                                    <th className="px-3 py-3 text-left text-xs font-black !text-black">Site ID</th>
+                                    <th className="px-3 py-3 text-center text-xs font-black !text-black">CA%</th>
+
+                                    {guestOmoData.latest3Dates.map((date) => (
+                                      <th
+                                        key={date}
+                                        className="min-w-[95px] px-3 py-3 text-center text-xs font-black !text-black whitespace-nowrap"
+                                      >
+                                        {empFormatDailyDateHeader(date)} AVB
+                                      </th>
+                                    ))}
+
+                                    <th className="px-3 py-3 text-left text-xs font-black !text-black">Category</th>
+                                    <th className="px-3 py-3 text-center text-xs font-black !text-black">Sub-Region</th>
+                                    <th className="px-3 py-3 text-center text-xs font-black !text-black">Grid</th>
+                                    <th className="px-3 py-3 text-center text-xs font-black !text-black">DG</th>
+                                    <th className="px-3 py-3 text-center text-xs font-black !text-black">Li-ion</th>
+                                    <th className="px-3 py-3 text-center text-xs font-black !text-black">BB Status</th>
+                                    <th className="px-3 py-3 text-left text-xs font-black !text-black">Cluster Owner</th>
+                                    <th className="px-3 py-3 text-left text-xs font-black !text-black">MS GTL</th>
+                                    <th className="px-3 py-3 text-left text-xs font-black !text-black">Zone Lead</th>
+                                  </tr>
+                                </thead>
+
+                                <tbody>
+                                  {omoRow.sites.map((site, index) => (
+                                    <tr
+                                      key={`${omoRow.omo}-${site.siteName}`}
+                                      className="border-t border-slate-200 even:bg-slate-50/80 hover:bg-blue-50/60"
+                                    >
+                                      <td className="px-3 py-3 text-center font-bold text-slate-500">{index + 1}</td>
+                                      <td className="px-3 py-3 font-black text-blue-700">{site.siteName}</td>
+                                      <td className={`px-3 py-3 text-center font-black ${empCaTextClass(Number(site.currentAvb || 0))}`}>
+                                        {Number(site.currentAvb || 0) > 0 ? `${Number(site.currentAvb).toFixed(2)}%` : "-"}
+                                      </td>
+
+                                      {guestOmoData.latest3Dates.map((date) => {
+                                        const value = empGetDailyAvb(site, date);
+                                        return (
+                                          <td
+                                            key={`${site.siteName}-${date}`}
+                                            className={`px-3 py-3 text-center font-black whitespace-nowrap ${empCaTextClass(value)}`}
+                                          >
+                                            {value > 0 ? `${value.toFixed(2)}%` : "-"}
+                                          </td>
+                                        );
+                                      })}
+
+                                      <td className="px-3 py-3 font-bold text-slate-900">{site.revenueCategory || "-"}</td>
+                                      <td className="px-3 py-3 text-center font-semibold text-slate-900">{site.subRegion || "-"}</td>
+                                      <td className="px-3 py-3 text-center font-semibold text-slate-900">{site.grid || "-"}</td>
+                                      <td className="px-3 py-3 text-center font-semibold text-slate-900">{site.dgStatus || site.dgInstalled || "-"}</td>
+                                      <td className="px-3 py-3 text-center font-semibold text-slate-900">{site.liIonInstalled || "-"}</td>
+                                      <td className="px-3 py-3 text-center font-semibold text-slate-900">{site.bbStatus || "-"}</td>
+                                      <td className="px-3 py-3 font-semibold text-slate-900">{site.clusterOwner || "-"}</td>
+                                      <td className="px-3 py-3 font-semibold text-slate-900">{site.msGtl || "-"}</td>
+                                      <td className="px-3 py-3 font-semibold text-slate-900">{site.zongLead || "-"}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                );
+              })}
+
+              {guestOmoData.rows.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="px-4 py-10 text-center font-semibold text-slate-500">
+                    No "Sharing as Guest" sites found. Please confirm Sheet1 contains the columns "Sharing Status" and "OMO Name".
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
 
