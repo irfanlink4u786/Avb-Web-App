@@ -6619,6 +6619,7 @@ function OverallSummaryWithExport({ sites, rawData, lastUpdatedDate }: { sites: 
       return {
         rows: [] as Array<{ omo: string; sites: SiteData[]; avgCa: number; critical: number }>,
         latest3Dates: [] as string[],
+        omoIdBySite: new Map<string, string>(),
       };
     }
 
@@ -6643,6 +6644,7 @@ function OverallSummaryWithExport({ sites, rawData, lastUpdatedDate }: { sites: 
     });
 
     const omoMap = new Map<string, SiteData[]>();
+    const omoIdBySite = new Map<string, string>();
 
     rawData.rows.forEach((row: Record<string, any>) => {
       const sharing = String(
@@ -6670,6 +6672,19 @@ function OverallSummaryWithExport({ sites, rawData, lastUpdatedDate }: { sites: 
 
       const site = siteById.get(siteId);
       if (!site) return;
+
+      const omoId = String(
+        findValue(row, [
+          "OMO ID",
+          "OMOID",
+          "OMO Id",
+          "OMO Site ID",
+          "OMO SiteID",
+          "TowerCo Site ID",
+          "Tower Co Site ID",
+        ])
+      ).trim();
+      if (omoId) omoIdBySite.set(siteId, omoId);
 
       if (!omoMap.has(omo)) omoMap.set(omo, []);
       omoMap.get(omo)!.push(site);
@@ -6727,7 +6742,7 @@ function OverallSummaryWithExport({ sites, rawData, lastUpdatedDate }: { sites: 
       })
       .sort((a, b) => a.avgCa - b.avgCa || b.critical - a.critical);
 
-    return { rows, latest3Dates };
+    return { rows, latest3Dates, omoIdBySite };
   }, [rawData, sites, lastUpdatedDate]);
 
   const guestOmoExport = (omoRow: (typeof guestOmoData.rows)[number]) =>
@@ -6736,6 +6751,7 @@ function OverallSummaryWithExport({ sites, rawData, lastUpdatedDate }: { sites: 
         Rank: index + 1,
         "OMO Name": omoRow.omo,
         "Site ID": site.siteName,
+        "OMO ID": guestOmoData.omoIdBySite.get(String(site.siteName ?? "").trim()) || "-",
         "Current CA": Number(site.currentAvb || 0) > 0
           ? `${Number(site.currentAvb).toFixed(2)}%`
           : "-",
@@ -6944,31 +6960,32 @@ function OverallSummaryWithExport({ sites, rawData, lastUpdatedDate }: { sites: 
                             </div>
 
                             <div className="overflow-x-auto">
-                              <table className="w-full min-w-[1450px] text-sm">
-                                <thead className="bg-slate-100">
+                              <table className="w-full min-w-[1580px] text-sm">
+                                <thead className="bg-slate-100 text-black" style={{ color: "#000000" }}>
                                   <tr>
-                                    <th className="px-3 py-3 text-center text-xs font-black !text-black">#</th>
-                                    <th className="px-3 py-3 text-left text-xs font-black !text-black">Site ID</th>
-                                    <th className="px-3 py-3 text-center text-xs font-black !text-black">CA%</th>
+                                    <th className="px-3 py-3 text-center text-xs font-black !text-black" style={{ color: "#000000" }} style={{ color: "#000000" }}>#</th>
+                                    <th className="px-3 py-3 text-left text-xs font-black !text-black" style={{ color: "#000000" }} style={{ color: "#000000" }}>Site ID</th>
+                                    <th className="px-3 py-3 text-left text-xs font-black !text-black" style={{ color: "#000000" }} style={{ color: "#000000" }}>OMO ID</th>
+                                    <th className="px-3 py-3 text-center text-xs font-black !text-black" style={{ color: "#000000" }} style={{ color: "#000000" }}>CA%</th>
 
                                     {guestOmoData.latest3Dates.map((date) => (
                                       <th
                                         key={date}
-                                        className="min-w-[95px] px-3 py-3 text-center text-xs font-black !text-black whitespace-nowrap"
+                                        className="min-w-[95px] px-3 py-3 text-center text-xs font-black !text-black whitespace-nowrap" style={{ color: "#000000" }}
                                       >
                                         {empFormatDailyDateHeader(date)} AVB
                                       </th>
                                     ))}
 
-                                    <th className="px-3 py-3 text-left text-xs font-black !text-black">Category</th>
-                                    <th className="px-3 py-3 text-center text-xs font-black !text-black">Sub-Region</th>
-                                    <th className="px-3 py-3 text-center text-xs font-black !text-black">Grid</th>
-                                    <th className="px-3 py-3 text-center text-xs font-black !text-black">DG</th>
-                                    <th className="px-3 py-3 text-center text-xs font-black !text-black">Li-ion</th>
-                                    <th className="px-3 py-3 text-center text-xs font-black !text-black">BB Status</th>
-                                    <th className="px-3 py-3 text-left text-xs font-black !text-black">Cluster Owner</th>
-                                    <th className="px-3 py-3 text-left text-xs font-black !text-black">MS GTL</th>
-                                    <th className="px-3 py-3 text-left text-xs font-black !text-black">Zone Lead</th>
+                                    <th className="px-3 py-3 text-left text-xs font-black !text-black" style={{ color: "#000000" }}>Category</th>
+                                    <th className="px-3 py-3 text-center text-xs font-black !text-black" style={{ color: "#000000" }}>Sub-Region</th>
+                                    <th className="px-3 py-3 text-center text-xs font-black !text-black" style={{ color: "#000000" }}>Grid</th>
+                                    <th className="px-3 py-3 text-center text-xs font-black !text-black" style={{ color: "#000000" }}>DG</th>
+                                    <th className="px-3 py-3 text-center text-xs font-black !text-black" style={{ color: "#000000" }}>Li-ion</th>
+                                    <th className="px-3 py-3 text-center text-xs font-black !text-black" style={{ color: "#000000" }}>BB Status</th>
+                                    <th className="px-3 py-3 text-left text-xs font-black !text-black" style={{ color: "#000000" }}>Cluster Owner</th>
+                                    <th className="px-3 py-3 text-left text-xs font-black !text-black" style={{ color: "#000000" }}>MS GTL</th>
+                                    <th className="px-3 py-3 text-left text-xs font-black !text-black" style={{ color: "#000000" }}>Zone Lead</th>
                                   </tr>
                                 </thead>
 
@@ -6980,6 +6997,9 @@ function OverallSummaryWithExport({ sites, rawData, lastUpdatedDate }: { sites: 
                                     >
                                       <td className="px-3 py-3 text-center font-bold text-slate-500">{index + 1}</td>
                                       <td className="px-3 py-3 font-black text-blue-700">{site.siteName}</td>
+                                      <td className="px-3 py-3 font-bold text-slate-900 whitespace-nowrap">
+                                        {guestOmoData.omoIdBySite.get(String(site.siteName ?? "").trim()) || "-"}
+                                      </td>
                                       <td className={`px-3 py-3 text-center font-black ${empCaTextClass(Number(site.currentAvb || 0))}`}>
                                         {Number(site.currentAvb || 0) > 0 ? `${Number(site.currentAvb).toFixed(2)}%` : "-"}
                                       </td>
