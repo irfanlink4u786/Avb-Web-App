@@ -1400,6 +1400,7 @@ function ThreeBasicsKpiPage({
 }) {
   const [expandedGrid, setExpandedGrid] = useState<string | null>(null);
   const [kpiFilter, setKpiFilter] = useState<string>("All");
+  const [revenueFilter, setRevenueFilter] = useState<string>("All");
   const [statusFilter, setStatusFilter] = useState<string>("All");
   const [coFilter, setCoFilter] = useState<string>("All");
   const [gtlFilter, setGtlFilter] = useState<string>("All");
@@ -1480,8 +1481,36 @@ function ThreeBasicsKpiPage({
 
   const statusIsOpen = (v: string) => !/clos|resolv|done/i.test(v);
 
+  const revenueLabel = (value: string) => {
+    const n = norm(value);
+    if (n === "platinum" && /\+/.test(value)) return "Plat+";
+    if (n === "platinumplus") return "Plat+";
+    if (n === "platinum") return "Plat";
+    return value;
+  };
+
+  const revenueOptions = useMemo(() => {
+    const preferred = ["platinumplus", "platinum", "gold", "silver", "bronze"];
+    const values = Array.from(new Set(rows.map(r => r.revenue).filter(Boolean)));
+    return values.sort((a, b) => {
+      const key = (v: string) => /\+/.test(v) && norm(v) === "platinum" ? "platinumplus" : norm(v);
+      const ai = preferred.indexOf(key(a));
+      const bi = preferred.indexOf(key(b));
+      if (ai >= 0 && bi >= 0) return ai - bi;
+      if (ai >= 0) return -1;
+      if (bi >= 0) return 1;
+      return a.localeCompare(b);
+    });
+  }, [rows]);
+
+  const ownerFilteredRows = useMemo(() => rows.filter(r =>
+    (revenueFilter === "All" || norm(r.revenue) === norm(revenueFilter)) &&
+    (coFilter === "All" || r.co === coFilter) &&
+    (gtlFilter === "All" || r.gtl === gtlFilter)
+  ), [rows, revenueFilter, coFilter, gtlFilter]);
+
   const regionSummary = useMemo(() => ["C-1","C-6"].map(region => {
-    const rr = rows.filter(r => regionKey(r) === region);
+    const rr = ownerFilteredRows.filter(r => regionKey(r) === region);
     const counts: Record<string, number> = {};
     THREE_BASIC_KPIS.forEach(k => counts[k] = rr.filter(r => r.kpi === k).length);
     return {
@@ -1491,12 +1520,7 @@ function ThreeBasicsKpiPage({
       closed: rr.filter(r => !statusIsOpen(r.status)).length,
       counts,
     };
-  }), [rows]);
-
-  const ownerFilteredRows = useMemo(() => rows.filter(r =>
-    (coFilter === "All" || r.co === coFilter) &&
-    (gtlFilter === "All" || r.gtl === gtlFilter)
-  ), [rows, coFilter, gtlFilter]);
+  }), [ownerFilteredRows]);
 
   const gridSummary = useMemo(() => {
     const map = new Map<string, any>();
@@ -1527,6 +1551,7 @@ function ThreeBasicsKpiPage({
   const visibleRows = useMemo(() => rows.filter(r => {
     if (expandedGrid && r.grid !== expandedGrid) return false;
     if (kpiFilter !== "All" && r.kpi !== kpiFilter) return false;
+    if (revenueFilter !== "All" && norm(r.revenue) !== norm(revenueFilter)) return false;
     if (statusFilter === "Open" && !statusIsOpen(r.status)) return false;
     if (statusFilter === "Closed" && statusIsOpen(r.status)) return false;
     if (coFilter !== "All" && r.co !== coFilter) return false;
@@ -1535,7 +1560,7 @@ function ThreeBasicsKpiPage({
     if (q && ![r.sid,r.grid,r.subRegion,r.revenue,r.kpi,r.co,r.gtl,r.cmpak,r.category,r.rca,r.action]
       .some(v => String(v ?? "").toLowerCase().includes(q))) return false;
     return true;
-  }), [rows, expandedGrid, kpiFilter, statusFilter, coFilter, gtlFilter, search]);
+  }), [rows, expandedGrid, kpiFilter, revenueFilter, statusFilter, coFilter, gtlFilter, search]);
 
   const exportRows = visibleRows.map(r => {
     const out: Record<string, any> = {
@@ -1566,6 +1591,27 @@ function ThreeBasicsKpiPage({
         gradient="from-blue-500/10 to-cyan-500/10"
       />
 
+      {/* Revenue Category — top-level 3 Basics filter */}
+      <div className="rounded-xl border border-emerald-200 bg-white p-4 shadow-sm">
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <div className="text-[11px] font-black uppercase tracking-wide text-slate-500">Revenue Category</div>
+            <div className="text-xs font-semibold text-slate-600">Filter all 3 Basics KPI cards, sub-region, grid and site detail.</div>
+          </div>
+          <div className="rounded-lg bg-emerald-50 px-3 py-1.5 text-xs font-black text-emerald-800">
+            {revenueFilter === "All" ? "All Revenue Categories" : revenueLabel(revenueFilter)}
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {["All", ...revenueOptions].map(category => (
+            <button key={category} type="button" onClick={() => { setRevenueFilter(category); setExpandedGrid(null); }}
+              className={`rounded-lg border px-4 py-2 text-sm font-black transition ${revenueFilter === category ? "border-emerald-600 bg-[#006B3C] text-white shadow-sm" : "border-slate-300 bg-white text-slate-800 hover:bg-emerald-50"}`}>
+              {category === "All" ? "All Categories" : revenueLabel(category)}
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* CO / GTL ownership filters — selection updates KPI cards + grid view */}
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="flex flex-wrap items-end gap-3">
@@ -1585,12 +1631,12 @@ function ThreeBasicsKpiPage({
               {gtlOptions.map(v => <option key={v} value={v}>{v}</option>)}
             </select>
           </div>
-          <button onClick={() => { setCoFilter("All"); setGtlFilter("All"); setKpiFilter("All"); setStatusFilter("All"); setSearch(""); setExpandedGrid(null); }}
+          <button onClick={() => { setCoFilter("All"); setGtlFilter("All"); setKpiFilter("All"); setRevenueFilter("All"); setStatusFilter("All"); setSearch(""); setExpandedGrid(null); }}
             className="rounded-lg border border-slate-300 bg-slate-50 px-4 py-2 text-sm font-black text-slate-700 hover:bg-slate-100">
             Clear Filters
           </button>
           <div className="ml-auto rounded-lg bg-blue-50 px-4 py-2 text-xs font-bold text-blue-900">
-            Showing KPIs for: {coFilter === "All" ? "All COs" : coFilter} · {gtlFilter === "All" ? "All GTLs" : gtlFilter}
+            Showing KPIs for: {revenueFilter === "All" ? "All Revenue" : revenueLabel(revenueFilter)} · {coFilter === "All" ? "All COs" : coFilter} · {gtlFilter === "All" ? "All GTLs" : gtlFilter}
           </div>
         </div>
       </div>
