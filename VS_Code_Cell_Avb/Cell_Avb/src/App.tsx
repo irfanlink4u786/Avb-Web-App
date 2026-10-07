@@ -1987,6 +1987,9 @@ function CategoryPage({
 }) {
   const [expandedGrid, setExpandedGrid] = useState<string | null>(null);
   const [selectedEmployee, setSelectedEmployee] = useState<string>("all");
+
+  // Detail-table headers must stay readable on the light drill-down background.
+  // The global light theme intentionally uses white text for the main blue table headers.
   const [selectedLevel, setSelectedLevel] = useState<"zongLead" | "msGtl" | "clusterOwner">("zongLead");
 
   const filteredSites = useMemo(() => sites.filter(filterFn), [sites, filterFn]);
@@ -3517,7 +3520,7 @@ function SiteQuery({ sites, historyData = null, rawData = null }: { sites: SiteD
 
 
   // October technology-wise Cell AVB from Sheet1.
-  // TCH = 2G, Cell_U = 3G, Cell_EU = 4G.
+  // TCH = 2G, Cell_U / U Cell = 3G, Cell_EU / EU Cell / LTE = 4G.
   const technologyWiseAvb = useMemo(() => {
     if (!selectedSite) return null;
 
@@ -3530,40 +3533,195 @@ function SiteQuery({ sites, historyData = null, rawData = null }: { sites: SiteD
 
     const parseTechValue = (value: any) => {
       if (value === null || value === undefined || value === "") return 0;
-      const n = Number.parseFloat(String(value).replace(/%/g, "").replace(/,/g, "").trim());
-      return Number.isFinite(n) && n > 0 ? n : 0;
+
+      const raw = String(value)
+        .replace(/%/g, "")
+        .replace(/,/g, "")
+        .trim();
+
+      const n = Number.parseFloat(raw);
+      if (!Number.isFinite(n) || n <= 0) return 0;
+
+      // Google Sheets can return percentages either as 92.68 or 0.9268.
+      return n > 0 && n <= 1 ? n * 100 : n;
     };
 
-    const selectedId = String(selectedSite.siteName ?? "").trim().toLowerCase();
+    const normalizeSiteId = (value: any) =>
+      String(value ?? "")
+        .trim()
+        .toLowerCase()
+        .replace(/\.0+$/, "");
+
+    const selectedId = normalizeSiteId(selectedSite.siteName);
     const rows = (rawData?.rows || []) as Record<string, any>[];
 
-    const row = rows.find((r) => {
-      for (const [key, value] of Object.entries(r)) {
-        const nk = normalizeHeader(key);
-        if (["siteid", "site", "sitecode", "sitename"].includes(nk)) {
-          if (String(value ?? "").trim().toLowerCase() === selectedId) return true;
-        }
-      }
-      return false;
-    });
+    // Find the selected site's original Sheet1 row.
+    const row =
+      rows.find((r) => {
+        for (const [key, value] of Object.entries(r)) {
+          const nk = normalizeHeader(key);
 
-    const findByHeader = (patterns: RegExp[]) => {
-      if (!row) return 0;
-      for (const [key, value] of Object.entries(row)) {
+          if (
+            [
+              "siteid",
+              "site",
+              "sitecode",
+              "sitename",
+              "siteidname",
+              "btsid",
+            ].includes(nk) &&
+            normalizeSiteId(value) === selectedId
+          ) {
+            return true;
+          }
+        }
+        return false;
+      }) ||
+      rows.find((r) =>
+        Object.values(r).some((value) => normalizeSiteId(value) === selectedId)
+      );
+
+    const entries = row ? Object.entries(row) : [];
+
+    const monthTokens = [
+      "oct26",
+      "october26",
+      "oct2026",
+      "october2026",
+      "2026oct",
+      "2026october",
+    ];
+
+    const isOctoberHeader = (header: string) =>
+      monthTokens.some((token) => header.includes(token));
+
+    const is2GHeader = (header: string) =>
+      header === "tch" ||
+      header.includes("tch") ||
+      header.includes("2g") ||
+      header.includes("gsm");
+
+    const is3GHeader = (header: string) =>
+      (
+        header.includes("cellu") ||
+        header.includes("ucell") ||
+        header.includes("3g") ||
+        header.includes("umts") ||
+        header.includes("wcdma")
+      ) &&
+      !header.includes("celleu") &&
+      !header.includes("eucell");
+
+    const is4GHeader = (header: string) =>
+      header.includes("celleu") ||
+      header.includes("eucell") ||
+      header.includes("4g") ||
+      header.includes("lte");
+
+    const findValue = (
+      matcher: (header: string) => boolean,
+      octoberOnly: boolean
+    ) => {
+      for (const [key, value] of entries) {
         const nk = normalizeHeader(key);
-        if (patterns.some((p) => p.test(nk))) return parseTechValue(value);
+        if (octoberOnly && !isOctoberHeader(nk)) continue;
+        if (!matcher(nk)) continue;
+
+        const parsed = parseTechValue(value);
+        if (parsed > 0) return parsed;
       }
       return 0;
     };
 
-    // Prefer October-2026 technology-wise Cell AVB headers from active Sheet1.
-    // Fall back to normalized SiteData fields only when the raw Sheet1 value is unavailable.
-    const g2 = findByHeader([/^oct26tch$/, /^october26tch$/, /oct26.*tch/, /october26.*tch/]) || Number(selectedSite.ca2G || 0);
-    const g3 = findByHeader([/^oct26cellu$/, /^october26cellu$/, /oct26.*cellu/, /october26.*cellu/]) || Number(selectedSite.ca3G || 0);
-    const g4 = findByHeader([/^oct26celleu$/, /^october26celleu$/, /oct26.*celleu/, /october26.*celleu/]) || Number(selectedSite.ca4G || 0);
+    // 1) Prefer explicitly month-labelled October columns.
+    // 2) Then use generic technology columns in October Sheet1.
+    let g2 =
+      findValue(is2GHeader, true) ||
+      findValue(is2GHeader, false) ||
+      Number(selectedSite.ca2G || 0);
 
-    const makeGap = (aLabel: string, a: number, bLabel: string, b: number) => {
-      if (!(a > 0) || !(b > 0)) return { pair: `${aLabel}–${bLabel}`, gap: 0, lower: "—", available: false };
+    let g3 =
+      findValue(is3GHeader, true) ||
+      findValue(is3GHeader, false) ||
+      Number(selectedSite.ca3G || 0);
+
+    let g4 =
+      findValue(is4GHeader, true) ||
+      findValue(is4GHeader, false) ||
+      Number(selectedSite.ca4G || 0);
+
+    /*
+     * Final fallback for Sheet1 layouts where technology headers are altered
+     * by the Google Sheets parser. TCH, Cell_U and Cell_EU are expected as
+     * neighbouring technology fields. Starting from the detected TCH column,
+     * collect the next two valid percentage-like values (0 < value <= 100).
+     */
+    if (row && g2 > 0 && (g3 <= 0 || g4 <= 0)) {
+      const tchIndex = entries.findIndex(([key]) =>
+        is2GHeader(normalizeHeader(key))
+      );
+
+      if (tchIndex >= 0) {
+        const followingValues: number[] = [];
+
+        for (
+          let i = tchIndex + 1;
+          i < entries.length && i <= tchIndex + 8;
+          i++
+        ) {
+          const [key, rawValue] = entries[i];
+          const nk = normalizeHeader(key);
+
+          // Do not use obvious metadata/date/load-shedding fields.
+          if (
+            nk.includes("site") ||
+            nk.includes("grid") ||
+            nk.includes("region") ||
+            nk.includes("category") ||
+            nk.includes("revenue") ||
+            nk.includes("owner") ||
+            nk.includes("gtl") ||
+            nk.includes("cluster") ||
+            nk.includes("date") ||
+            nk.includes("ls") ||
+            nk.includes("loadshedding")
+          ) {
+            continue;
+          }
+
+          const value = parseTechValue(rawValue);
+          if (value > 0 && value <= 100) {
+            followingValues.push(value);
+          }
+
+          if (followingValues.length >= 2) break;
+        }
+
+        if (g3 <= 0 && followingValues.length >= 1) {
+          g3 = followingValues[0];
+        }
+
+        if (g4 <= 0 && followingValues.length >= 2) {
+          g4 = followingValues[1];
+        }
+      }
+    }
+
+    const makeGap = (
+      aLabel: string,
+      a: number,
+      bLabel: string,
+      b: number
+    ) => {
+      if (!(a > 0) || !(b > 0)) {
+        return {
+          pair: `${aLabel}–${bLabel}`,
+          gap: 0,
+          lower: "—",
+          available: false,
+        };
+      }
+
       return {
         pair: `${aLabel}–${bLabel}`,
         gap: Math.abs(a - b),
@@ -5157,6 +5315,22 @@ const LightAppTheme = () => (
       -webkit-text-fill-color: #ffffff !important;
     }
 
+    /* Drill-down / View tables use a light header, therefore black text is required. */
+    .light-app .grid-performance-detail-table thead,
+    .light-app .grid-performance-detail-table thead tr,
+    .light-app .grid-performance-detail-table thead th {
+      background: #f8fafc !important;
+      background-color: #f8fafc !important;
+      color: #111827 !important;
+      -webkit-text-fill-color: #111827 !important;
+    }
+    .light-app .grid-performance-detail-table thead th *,
+    .light-app .grid-performance-detail-table thead th span,
+    .light-app .grid-performance-detail-table thead th div {
+      color: #111827 !important;
+      -webkit-text-fill-color: #111827 !important;
+    }
+
     .light-app table tbody tr {
       background: #ffffff !important;
     }
@@ -5966,12 +6140,12 @@ function GridPerformanceScorecard({
                 </div>
               </div>
               <div className="overflow-auto p-5">
-                <table className="w-full min-w-[1200px] text-sm">
-                  <thead>
+                <table className="grid-performance-detail-table w-full min-w-[1450px] text-sm">
+                  <thead className="bg-slate-50">
                     <tr className="border-b border-slate-300 text-left">
                       <th className="px-3 py-2 text-xs text-slate-500">Site ID</th>
-                      <th className="px-3 py-2 text-xs text-slate-500">Current Month</th>
-                      {latestDateHeaders.map((header) => <th key={header} className="px-3 py-2 text-center text-xs text-slate-500">{header}</th>)}
+                      <th className="px-3 py-2 text-xs text-slate-500">CA%</th>
+                      {latestDateHeaders.map((header) => <th key={header} className="px-3 py-2 text-center text-xs font-extrabold !text-black">{empFormatDailyDateHeader(empNormalizeDailyDateKey(header) || header)} AVB</th>)}
                       <th className="px-3 py-2 text-xs text-slate-500">Gap to Stretch</th>
                       <th className="px-3 py-2 text-xs text-slate-500">Status</th>
                       <th className="px-3 py-2 text-xs text-slate-500">Group</th>
@@ -6019,11 +6193,288 @@ function GridPerformanceScorecard({
   );
 }
 
+
+// ============================================================
+//  OVERALL SUMMARY — EXPANDED VIEW FIX
+//  1) Expanded detail table headers are forced to black.
+//  2) Latest 3 populated daily Cell AVB columns are appended.
+// ============================================================
+
+function EnhancedOverallSummary({
+  sites,
+  lastUpdatedDate,
+}: {
+  sites: SiteData[];
+  lastUpdatedDate?: string;
+}) {
+  const hostRef = useRef<HTMLDivElement>(null);
+
+  const latest3Dates = useMemo(() => {
+    const available = new Set<string>();
+    const cutoff = empNormalizeDailyDateKey(lastUpdatedDate || "");
+    const cutoffTime = cutoff ? empDateKeyToTime(cutoff) : Number.POSITIVE_INFINITY;
+    const cutoffParts = cutoff?.split("-") ?? [];
+
+    sites.forEach((site) => {
+      Object.entries(site.dailyData ?? {}).forEach(([rawKey, rawValue]) => {
+        const normalized = empNormalizeDailyDateKey(rawKey);
+        const value = Number(rawValue);
+
+        if (!normalized || !Number.isFinite(value) || value <= 0) return;
+
+        const time = empDateKeyToTime(normalized);
+        if (!Number.isFinite(time) || time > cutoffTime) return;
+
+        if (cutoff) {
+          const [, month, year] = normalized.split("-");
+          if (month !== cutoffParts[1] || year !== cutoffParts[2]) return;
+        }
+
+        available.add(normalized);
+      });
+    });
+
+    return Array.from(available)
+      .sort((a, b) => empDateKeyToTime(a) - empDateKeyToTime(b))
+      .slice(-3);
+  }, [sites, lastUpdatedDate]);
+
+  const siteMap = useMemo(() => {
+    const map = new Map<string, SiteData>();
+    sites.forEach((site) => {
+      const id = String(site.siteName ?? "").trim();
+      if (id) map.set(id, site);
+    });
+    return map;
+  }, [sites]);
+
+  useEffect(() => {
+    const root = hostRef.current;
+    if (!root) return;
+
+    const cleanInjected = (table: HTMLTableElement) => {
+      table
+        .querySelectorAll("[data-latest-avb-injected='1']")
+        .forEach((node) => node.remove());
+      table.removeAttribute("data-latest-avb-ready");
+    };
+
+    const enhance = () => {
+      const tables = Array.from(root.querySelectorAll("table")) as HTMLTableElement[];
+
+      tables.forEach((table) => {
+        const bodyRows = Array.from(
+          table.querySelectorAll("tbody tr")
+        ) as HTMLTableRowElement[];
+
+        if (!bodyRows.length) return;
+
+        // Remove "Monthly CA" from Overall Summary tables (including Worst 10).
+        // Current CA + latest 3 daily AVB are sufficient for this view.
+        const allHeaderRows = Array.from(
+          table.querySelectorAll("thead tr")
+        ) as HTMLTableRowElement[];
+
+        allHeaderRows.forEach((headerRow) => {
+          const headerCells = Array.from(
+            headerRow.querySelectorAll("th")
+          ) as HTMLTableCellElement[];
+
+          const monthlyCaIndex = headerCells.findIndex((th) => {
+            const label = (th.textContent || "")
+              .replace(/\s+/g, " ")
+              .trim()
+              .toLowerCase();
+
+            return label === "monthly ca" || label === "monthly ca%";
+          });
+
+          if (monthlyCaIndex >= 0) {
+            headerCells[monthlyCaIndex]?.remove();
+
+            bodyRows.forEach((row) => {
+              const cells = Array.from(row.querySelectorAll("td"));
+              cells[monthlyCaIndex]?.remove();
+            });
+          }
+        });
+
+        // IMPORTANT:
+        // Only enhance an expanded/detail site table. The main summary rows do not
+        // contain a Site ID, so daily AVB columns will never be added there.
+        const matchedRows = bodyRows
+          .map((row) => {
+            const cells = Array.from(row.querySelectorAll("td")) as HTMLTableCellElement[];
+            const siteCellIndex = cells.findIndex((cell) =>
+              siteMap.has(cell.textContent?.trim() || "")
+            );
+
+            if (siteCellIndex < 0) return null;
+
+            const siteId = cells[siteCellIndex].textContent?.trim() || "";
+            return { row, cells, siteCellIndex, siteId };
+          })
+          .filter(Boolean) as Array<{
+            row: HTMLTableRowElement;
+            cells: HTMLTableCellElement[];
+            siteCellIndex: number;
+            siteId: string;
+          }>;
+
+        if (!matchedRows.length) return;
+
+        const headerRow = table.querySelector("thead tr") as HTMLTableRowElement | null;
+        if (!headerRow) return;
+
+        table.classList.add("overall-expanded-detail-table");
+
+        const signature = latest3Dates.join("|");
+        if (table.dataset.latestAvbReady === signature) return;
+
+        cleanInjected(table);
+
+        const headers = Array.from(headerRow.querySelectorAll("th")) as HTMLTableCellElement[];
+
+        // Find CA / CA% / Current CA / Current Month column.
+        let caHeaderIndex = headers.findIndex((th) => {
+          const label = (th.textContent || "")
+            .replace(/\s+/g, " ")
+            .trim()
+            .toLowerCase();
+
+          return (
+            label === "ca" ||
+            label === "ca%" ||
+            label === "current ca" ||
+            label === "current month" ||
+            label === "current month ca" ||
+            label.includes("ca%")
+          );
+        });
+
+        // Current OverallSummary detail layout is normally:
+        // # | Site ID | CA% | Category ...
+        // Keep this safe fallback ONLY for detail tables.
+        if (caHeaderIndex < 0) {
+          const siteHeaderIndex = headers.findIndex((th) =>
+            /site\s*id/i.test((th.textContent || "").trim())
+          );
+          caHeaderIndex = siteHeaderIndex >= 0 ? siteHeaderIndex + 1 : 2;
+        }
+
+        const headerAnchor = headerRow.children[caHeaderIndex + 1] || null;
+
+        latest3Dates.forEach((date) => {
+          const th = document.createElement("th");
+          th.dataset.latestAvbInjected = "1";
+          th.className =
+            "min-w-[92px] px-3 py-2 text-center text-xs font-extrabold whitespace-nowrap overall-latest-avb-header";
+          th.textContent = `${empFormatDailyDateHeader(date)} AVB`;
+          headerRow.insertBefore(th, headerAnchor);
+        });
+
+        matchedRows.forEach(({ row, cells, siteId }) => {
+          const site = siteMap.get(siteId);
+
+          // CA column index in body follows the same column order as the header.
+          // Insert the 3 daily AVB cells immediately AFTER CA%.
+          const rowAnchor = row.children[caHeaderIndex + 1] || null;
+
+          latest3Dates.forEach((date) => {
+            const td = document.createElement("td");
+            td.dataset.latestAvbInjected = "1";
+            td.className =
+              "min-w-[92px] px-3 py-2 text-center text-xs font-extrabold whitespace-nowrap overall-latest-avb-cell";
+
+            const value = site ? empGetDailyAvb(site, date) : 0;
+            td.textContent = value > 0 ? `${value.toFixed(2)}%` : "—";
+
+            if (value > 0 && value < 98) td.classList.add("is-critical");
+            else if (value >= 99) td.classList.add("is-good");
+            else if (value > 0) td.classList.add("is-warning");
+
+            row.insertBefore(td, rowAnchor);
+          });
+        });
+
+        table.dataset.latestAvbReady = signature;
+      });
+    };
+
+    enhance();
+
+    const observer = new MutationObserver(() => {
+      window.requestAnimationFrame(enhance);
+    });
+
+    observer.observe(root, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, [siteMap, latest3Dates]);
+
+  return (
+    <div ref={hostRef} className="overall-summary-enhanced">
+      <style>{`
+        /* Keep the main blue summary headers white. */
+        .overall-summary-enhanced > div > table > thead th {
+          color: #ffffff !important;
+          -webkit-text-fill-color: #ffffff !important;
+        }
+
+        /* Expanded View / drill-down tables are light, so their headers must be black. */
+        .overall-summary-enhanced .overall-expanded-detail-table thead,
+        .overall-summary-enhanced .overall-expanded-detail-table thead tr,
+        .overall-summary-enhanced .overall-expanded-detail-table thead th {
+          background: #f8fafc !important;
+          background-color: #f8fafc !important;
+          color: #111827 !important;
+          -webkit-text-fill-color: #111827 !important;
+        }
+
+        .overall-summary-enhanced .overall-expanded-detail-table thead th *,
+        .overall-summary-enhanced .overall-expanded-detail-table thead th span,
+        .overall-summary-enhanced .overall-expanded-detail-table thead th div,
+        .overall-summary-enhanced .overall-expanded-detail-table thead th p {
+          color: #111827 !important;
+          -webkit-text-fill-color: #111827 !important;
+        }
+
+        .overall-summary-enhanced .overall-expanded-detail-table {
+          min-width: 1450px !important;
+        }
+
+        .overall-summary-enhanced .overall-latest-avb-header {
+          min-width: 92px;
+          border-left: 1px solid #d7e2ed !important;
+        }
+
+        .overall-summary-enhanced .overall-latest-avb-cell {
+          border-left: 1px solid #e2e8f0 !important;
+          color: #0b2559 !important;
+        }
+
+        .overall-summary-enhanced .overall-latest-avb-cell.is-critical {
+          color: #d90000 !important;
+        }
+
+        .overall-summary-enhanced .overall-latest-avb-cell.is-warning {
+          color: #92400e !important;
+        }
+
+        .overall-summary-enhanced .overall-latest-avb-cell.is-good {
+          color: #00875a !important;
+        }
+      `}</style>
+
+      <OverallSummaryComponent sites={sites} />
+    </div>
+  );
+}
+
 // ============================================================
 //  OVERALL SUMMARY WITH EXPORT (unchanged)
 // ============================================================
 
-function OverallSummaryWithExport({ sites, rawData }: { sites: SiteData[]; rawData?: SheetPayload | null }) {
+function OverallSummaryWithExport({ sites, rawData, lastUpdatedDate }: { sites: SiteData[]; rawData?: SheetPayload | null; lastUpdatedDate?: string }) {
   const [targetRegion, setTargetRegion] = useState<"C-1" | "C-6" | null>(null);
   const TARGET_CA = 99;
 
@@ -6174,7 +6625,7 @@ function OverallSummaryWithExport({ sites, rawData }: { sites: SiteData[]; rawDa
       </div>
 
       <div className="overall-summary-light">
-        <OverallSummaryComponent sites={sites} />
+        <EnhancedOverallSummary sites={sites} lastUpdatedDate={lastUpdatedDate} />
       </div>
 
       {/* September regional 99% target achievement plan */}
@@ -6183,7 +6634,7 @@ function OverallSummaryWithExport({ sites, rawData }: { sites: SiteData[]; rawDa
           <div>
             <div className="flex items-center gap-2">
               <TrendingUp className="h-5 w-5 text-cyan-400" />
-              <h3 className="text-lg font-bold text-white">September · Sites Required to Achieve 99% Cell AVB</h3>
+              <h3 className="text-lg font-bold text-white">October · Sites Required to Achieve 99% Cell AVB</h3>
             </div>
             <p className="mt-1 text-xs text-slate-400">
               Lowest monthly Cell AVB sites are prioritized first. Count assumes each selected site is restored to 100% Cell AVB.
@@ -6203,7 +6654,7 @@ function OverallSummaryWithExport({ sites, rawData }: { sites: SiteData[]; rawDa
                     <div className={`mt-1 text-3xl font-extrabold ${achieved ? "text-emerald-400" : "text-white"}`}>
                       {plan.totalSites > 0 ? `${plan.currentAvg.toFixed(2)}%` : "—"}
                     </div>
-                    <div className="mt-1 text-xs text-slate-400">Current September average · {plan.totalSites} valid sites</div>
+                    <div className="mt-1 text-xs text-slate-400">Current October average · {plan.totalSites} valid sites</div>
                   </div>
 
                   <div className={`rounded-lg border px-4 py-3 text-center ${achieved ? "border-emerald-500/30 bg-emerald-500/10" : "border-red-500/30 bg-red-500/10"}`}>
@@ -7849,7 +8300,7 @@ export default function App() {
           <ErrorBoundary key={activeTab + selectedMonth}>
             <AnimatePresence mode="wait">
               <motion.div key={activeTab + selectedMonth} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.2 }} className="space-y-6">
-                {activeTab === "overall" && <OverallSummaryWithExport sites={sites} rawData={monthData} />}
+                {activeTab === "overall" && <OverallSummaryWithExport sites={sites} rawData={monthData} lastUpdatedDate={monthLastUpdated} />}
                 {activeTab === "grid-performance" && <GridPerformanceScorecard rawData={monthData} lastUpdatedDate={monthLastUpdated} />}
                 {activeTab === "recurring" && <RecurringSitesPage sites={sites} historyData={monthCellAvbHistory} />}
                 {activeTab === "s2s-bb" && <S2SBBPerformancePage sites={sites} s2sData={monthS2SBB} historyData={monthCellAvbHistory} rawData={monthData} lastUpdatedDate={monthLastUpdated} />}
