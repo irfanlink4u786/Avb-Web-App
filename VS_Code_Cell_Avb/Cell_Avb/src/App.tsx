@@ -1404,6 +1404,7 @@ function ThreeBasicsKpiPage({
   const [statusFilter, setStatusFilter] = useState<string>("All");
   const [coFilter, setCoFilter] = useState<string>("All");
   const [gtlFilter, setGtlFilter] = useState<string>("All");
+  const [zoneLeadFilter, setZoneLeadFilter] = useState<string>("All");
   const [search, setSearch] = useState("");
 
   const norm = (v: any) => String(v ?? "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -1462,7 +1463,7 @@ function ThreeBasicsKpiPage({
       kpi: canonicalKpi,
       co: String(get(raw, ["CO","Cluster Owner"]) || site?.clusterOwner || "").trim(),
       gtl: String(get(raw, ["GTL","MS GTL","MPL GTL"]) || site?.msGtl || "").trim(),
-      cmpak: String(get(raw, ["CMPAK","CMPAK GTL","Zone Lead"]) || site?.zongLead || "").trim(),
+      cmpak: String(get(raw, ["CMPAK","CMPAK GTL","Zone Lead","Zong Lead"]) || site?.zongLead || "").trim(),
       status: String(get(raw, ["Open/Close","Open Close","Status"]) || "Open").trim(),
       category: String(get(raw, ["Category","Issue Category"]) || "").trim(),
       rca: String(get(raw, ["RCA","Root Cause"]) || "").trim(),
@@ -1506,8 +1507,9 @@ function ThreeBasicsKpiPage({
   const ownerFilteredRows = useMemo(() => rows.filter(r =>
     (revenueFilter === "All" || norm(r.revenue) === norm(revenueFilter)) &&
     (coFilter === "All" || r.co === coFilter) &&
-    (gtlFilter === "All" || r.gtl === gtlFilter)
-  ), [rows, revenueFilter, coFilter, gtlFilter]);
+    (gtlFilter === "All" || r.gtl === gtlFilter) &&
+    (zoneLeadFilter === "All" || r.cmpak === zoneLeadFilter)
+  ), [rows, revenueFilter, coFilter, gtlFilter, zoneLeadFilter]);
 
   const regionSummary = useMemo(() => ["C-1","C-6"].map(region => {
     const rr = ownerFilteredRows.filter(r => regionKey(r) === region);
@@ -1539,14 +1541,38 @@ function ThreeBasicsKpiPage({
     return Array.from(map.values()).sort((a,b) => b.open - a.open || b.total - a.total || a.grid.localeCompare(b.grid));
   }, [ownerFilteredRows]);
 
-  const coOptions = useMemo(() => Array.from(new Set(rows.map(r => r.co).filter(Boolean))).sort(), [rows]);
+  // Ownership dropdowns cascade from Revenue Category -> CO -> GTL -> Zone Lead.
+  const coOptions = useMemo(() => Array.from(new Set(
+    rows.filter(r => revenueFilter === "All" || norm(r.revenue) === norm(revenueFilter))
+      .map(r => r.co).filter(Boolean)
+  )).sort(), [rows, revenueFilter]);
+
   const gtlOptions = useMemo(() => Array.from(new Set(
-    rows.filter(r => coFilter === "All" || r.co === coFilter).map(r => r.gtl).filter(Boolean)
-  )).sort(), [rows, coFilter]);
+    rows.filter(r =>
+      (revenueFilter === "All" || norm(r.revenue) === norm(revenueFilter)) &&
+      (coFilter === "All" || r.co === coFilter)
+    ).map(r => r.gtl).filter(Boolean)
+  )).sort(), [rows, revenueFilter, coFilter]);
+
+  const zoneLeadOptions = useMemo(() => Array.from(new Set(
+    rows.filter(r =>
+      (revenueFilter === "All" || norm(r.revenue) === norm(revenueFilter)) &&
+      (coFilter === "All" || r.co === coFilter) &&
+      (gtlFilter === "All" || r.gtl === gtlFilter)
+    ).map(r => r.cmpak).filter(Boolean)
+  )).sort(), [rows, revenueFilter, coFilter, gtlFilter]);
+
+  useEffect(() => {
+    if (coFilter !== "All" && !coOptions.includes(coFilter)) setCoFilter("All");
+  }, [revenueFilter, coOptions, coFilter]);
 
   useEffect(() => {
     if (gtlFilter !== "All" && !gtlOptions.includes(gtlFilter)) setGtlFilter("All");
-  }, [coFilter, gtlOptions, gtlFilter]);
+  }, [revenueFilter, coFilter, gtlOptions, gtlFilter]);
+
+  useEffect(() => {
+    if (zoneLeadFilter !== "All" && !zoneLeadOptions.includes(zoneLeadFilter)) setZoneLeadFilter("All");
+  }, [revenueFilter, coFilter, gtlFilter, zoneLeadOptions, zoneLeadFilter]);
 
   const visibleRows = useMemo(() => rows.filter(r => {
     if (expandedGrid && r.grid !== expandedGrid) return false;
@@ -1556,11 +1582,12 @@ function ThreeBasicsKpiPage({
     if (statusFilter === "Closed" && statusIsOpen(r.status)) return false;
     if (coFilter !== "All" && r.co !== coFilter) return false;
     if (gtlFilter !== "All" && r.gtl !== gtlFilter) return false;
+    if (zoneLeadFilter !== "All" && r.cmpak !== zoneLeadFilter) return false;
     const q = search.trim().toLowerCase();
     if (q && ![r.sid,r.grid,r.subRegion,r.revenue,r.kpi,r.co,r.gtl,r.cmpak,r.category,r.rca,r.action]
       .some(v => String(v ?? "").toLowerCase().includes(q))) return false;
     return true;
-  }), [rows, expandedGrid, kpiFilter, revenueFilter, statusFilter, coFilter, gtlFilter, search]);
+  }), [rows, expandedGrid, kpiFilter, revenueFilter, statusFilter, coFilter, gtlFilter, zoneLeadFilter, search]);
 
   const exportRows = visibleRows.map(r => {
     const out: Record<string, any> = {
@@ -1612,7 +1639,7 @@ function ThreeBasicsKpiPage({
         </div>
       </div>
 
-      {/* CO / GTL ownership filters — selection updates KPI cards + grid view */}
+      {/* CO / GTL / Zone Lead ownership filters — selection updates KPI cards + grid view */}
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="flex flex-wrap items-end gap-3">
           <div>
@@ -1631,12 +1658,20 @@ function ThreeBasicsKpiPage({
               {gtlOptions.map(v => <option key={v} value={v}>{v}</option>)}
             </select>
           </div>
-          <button onClick={() => { setCoFilter("All"); setGtlFilter("All"); setKpiFilter("All"); setRevenueFilter("All"); setStatusFilter("All"); setSearch(""); setExpandedGrid(null); }}
+          <div>
+            <label className="mb-1 block text-[11px] font-black uppercase tracking-wide text-slate-500">Zone Lead</label>
+            <select value={zoneLeadFilter} onChange={e => { setZoneLeadFilter(e.target.value); setExpandedGrid(null); }}
+              className="min-w-[220px] rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-bold text-slate-900">
+              <option value="All">All Zone Leads</option>
+              {zoneLeadOptions.map(v => <option key={v} value={v}>{v}</option>)}
+            </select>
+          </div>
+          <button onClick={() => { setCoFilter("All"); setGtlFilter("All"); setZoneLeadFilter("All"); setKpiFilter("All"); setRevenueFilter("All"); setStatusFilter("All"); setSearch(""); setExpandedGrid(null); }}
             className="rounded-lg border border-slate-300 bg-slate-50 px-4 py-2 text-sm font-black text-slate-700 hover:bg-slate-100">
             Clear Filters
           </button>
           <div className="ml-auto rounded-lg bg-blue-50 px-4 py-2 text-xs font-bold text-blue-900">
-            Showing KPIs for: {revenueFilter === "All" ? "All Revenue" : revenueLabel(revenueFilter)} · {coFilter === "All" ? "All COs" : coFilter} · {gtlFilter === "All" ? "All GTLs" : gtlFilter}
+            Showing KPIs for: {revenueFilter === "All" ? "All Revenue" : revenueLabel(revenueFilter)} · {coFilter === "All" ? "All COs" : coFilter} · {gtlFilter === "All" ? "All GTLs" : gtlFilter} · {zoneLeadFilter === "All" ? "All Zone Leads" : zoneLeadFilter}
           </div>
         </div>
       </div>
