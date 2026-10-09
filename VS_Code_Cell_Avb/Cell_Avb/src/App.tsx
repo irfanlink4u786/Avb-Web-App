@@ -1383,9 +1383,9 @@ const THREE_BASIC_KPIS = [
   "Below Base",
   "Down Cells",
   "Zero Traffic",
-  "Fluctuated Sites",
+  "High Fluctuation Sites",
   "VSWR",
-  "High TempAlm",
+  "High Temp",
   "Phase Missing Cases",
 ] as const;
 
@@ -1450,7 +1450,11 @@ function ThreeBasicsKpiPage({
     const sid = String(get(raw, ["SID","Site ID","SiteID","Site"]) ?? "").trim();
     const site = siteMap.get(sid);
     const rawKpi = String(get(raw, ["KPI","3 Basic KPI","3 Basics KPI"]) ?? "").trim();
-    const canonicalKpi = THREE_BASIC_KPIS.find(k => norm(k) === norm(rawKpi)) || rawKpi || "Unspecified";
+    const kpiAliases: Record<string, string> = {
+      [norm("Fluctuated Sites")]: "High Fluctuation Sites",
+      [norm("High TempAlm")]: "High Temp",
+    };
+    const canonicalKpi = kpiAliases[norm(rawKpi)] || THREE_BASIC_KPIS.find(k => norm(k) === norm(rawKpi)) || rawKpi || "Unspecified";
     const subRegion = String(get(raw, ["SubRegion","Sub-Region","Sub Region"]) || site?.subRegion || "").trim();
     const grid = String(get(raw, ["Grid"]) || site?.grid || "").trim();
     return {
