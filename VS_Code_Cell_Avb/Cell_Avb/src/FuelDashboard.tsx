@@ -360,8 +360,10 @@ function FuelDeviationPage({ payload, region, onRegionChange }: { payload: Sheet
   const [owner, setOwner] = useState("__all");
   const [query, setQuery] = useState("");
   const [siteQuery, setSiteQuery] = useState("");
+  const [deviationMode, setDeviationMode] = useState<"positive" | "negative">("positive");
   const [worstLimit, setWorstLimit] = useState(20);
   const [expandedGrid, setExpandedGrid] = useState<string | null>(null);
+  const [expandedOwner, setExpandedOwner] = useState<string | null>(null);
   const [ticketView, setTicketView] = useState<"all" | "latest">("all");
   const fmt = (n: number) => n.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
   const scoped = useMemo(() => sites.filter(s => region === "overall" || fuelRegion(s.grid) === region),[sites,region]);
@@ -471,7 +473,112 @@ function FuelDeviationPage({ payload, region, onRegionChange }: { payload: Sheet
   </tr>)}</tbody></table>{!rows.length&&<div className="p-4 text-sm text-slate-500">No sites match the selected filters.</div>}</div>;
   if (!payload) return <div className="rounded-lg border border-amber-200 bg-amber-50 p-5 text-amber-900">Deviation Fuel tab could not be loaded. Confirm the tab is named <b>Deviation Fuel</b> in the October Google Sheet.</div>;
   if (!sites.length) return <div className="rounded-lg border border-amber-200 bg-amber-50 p-5 text-amber-900">No valid site records found in Deviation Fuel. Verify SITE ID, Grid and ticket columns.</div>;
+  // Negative deviation is presented as a positive magnitude for ranking, while
+  // individual ticket values retain their original negative sign.
+  const negativeMagnitude = (s: FuelDeviationSite) => Math.abs(s.negativeLitres);
+  const latestNegative = (s: FuelDeviationSite) => s.tickets[0]?.status === "Negative" ? Math.abs(s.tickets[0].deviation ?? 0) : 0;
+  const negativeCount = (s: FuelDeviationSite) => s.tickets.filter(t => t.status === "Negative").length;
+  const negativeGross = base.reduce((n,s) => n + negativeMagnitude(s), 0);
+  const negativeLatestGross = base.reduce((n,s) => n + latestNegative(s), 0);
+  const negativeAffected = base.filter(s => negativeCount(s)>0).length;
+  const negativeRecurring = base.filter(s => negativeCount(s)>=2).length;
+  const negativeGrids = gridList.map(g => {
+    const group = base.filter(s=>s.grid===g);
+    return {grid:g,sites:group.length,affected:group.filter(s=>negativeCount(s)>0).length,
+      latestSites:group.filter(s=>s.latestStatus==="Negative").length,
+      gross:group.reduce((n,s)=>n+negativeMagnitude(s),0),
+      latest:group.reduce((n,s)=>n+latestNegative(s),0),
+      chartLitres:group.reduce((n,s)=>n+(ticketView==="latest"?latestNegative(s):negativeMagnitude(s)),0)};
+  }).filter(g=>g.sites).sort((a,b)=>b.gross-a.gross);
+  const negativeWorst = [...base].filter(s=>negativeMagnitude(s)>0).sort((a,b)=>negativeMagnitude(b)-negativeMagnitude(a)).slice(0,worstLimit);
+  const negativeExport = base.map(s=>({"Site ID":s.siteId,Grid:s.grid,"Revenue Category":s.revenue,"Cluster Owner":s.owner,"MS GTL":s.gtl,"Zone Lead":s.lead,
+    "Latest Ticket Deviation L":s.tickets[0]?.deviation ?? "", "Latest Ticket Status":s.latestStatus,
+    "Negative Tickets":negativeCount(s),"Gross Negative L (signed)":s.negativeLitres,"Gross Negative Magnitude L":negativeMagnitude(s),
+    ...Object.fromEntries(s.tickets.flatMap((t,i)=>[[`Ticket ${i+1} Date`,t.reconDate],[`Ticket ${i+1} Deviation L`,t.deviation ?? ""],[`Ticket ${i+1} Status`,t.status]]))}));
+  const modeSwitcher = <div className="flex flex-wrap gap-2 rounded-xl border border-blue-200 bg-blue-50 p-2">
+    <button type="button" onClick={()=>{setDeviationMode("positive");setExpandedGrid(null);}} className={`rounded-lg px-5 py-2.5 text-sm font-extrabold ${deviationMode==="positive"?"bg-blue-800 text-white shadow":"bg-white text-blue-900"}`}>Positive Variance</button>
+    <button type="button" onClick={()=>{setDeviationMode("negative");setExpandedGrid(null);}} className={`rounded-lg px-5 py-2.5 text-sm font-extrabold ${deviationMode==="negative"?"bg-blue-800 text-white shadow":"bg-white text-blue-900"}`}>Negative Variance</button>
+  </div>;
+  const negativeTable = (list: FuelDeviationSite[], showGrid=true) => <div className="max-w-full overflow-x-auto rounded-lg border border-slate-300"><table className="w-full min-w-[1150px] border-collapse text-sm"><thead><tr>
+    {(["Site ID",...(showGrid?["Grid"]:[]),"Revenue","CO","Latest Date","Latest (L)","2nd (L)","3rd (L)","4th (L)","Gross Negative (L)","Negative Tickets","Latest Status"] as string[]).map(h=><th key={h} className="border border-blue-700 bg-blue-900 px-3 py-3 text-center align-middle font-bold text-white">{h}</th>)}
+    </tr></thead><tbody>{list.map(s=><tr key={`${s.grid}-${s.siteId}`} className="border-b border-slate-100 even:bg-blue-50/40">
+      <td className="border border-slate-300 px-3 py-3 text-center align-middle font-bold text-blue-900">{s.siteId}</td>{showGrid&&<td className="border border-slate-300 px-3 py-3 text-center align-middle">{s.grid}</td>}<td className="border border-slate-300 px-3 py-3 text-center align-middle">{s.revenue||"—"}</td><td className="border border-slate-300 px-3 py-3 text-center align-middle">{s.owner||"—"}</td>
+      <td className="border border-slate-300 px-3 py-3 text-center align-middle">{s.tickets[0]?.reconDate||"—"}</td>{s.tickets.map((t,i)=><td key={i} className={`border border-slate-300 px-3 py-3 text-center align-middle font-semibold tabular-nums ${t.status==="Negative"?"text-amber-800":"text-slate-700"}`}>{t.deviation===null?"—":fmt(t.deviation)}</td>)}
+      <td className="border border-slate-300 px-3 py-3 text-center align-middle text-center font-extrabold text-amber-800">{fmt(negativeMagnitude(s))}</td><td className="border border-slate-300 px-3 py-3 text-center align-middle text-center font-bold">{negativeCount(s)}</td><td className="border border-slate-300 px-3 py-3 text-center align-middle">{statusBadge(s.latestStatus)}</td>
+    </tr>)}</tbody></table>{!list.length&&<p className="p-4 text-sm text-slate-500">No negative-deviation sites found.</p>}</div>;
+  // CO accountability: calculate exceptions from all four tickets without netting opposite signs.
+  // The table is shared by Positive and Negative Variance views.
+  const coGroups = [...new Set(base.map(s => s.owner.trim() || "Unassigned"))].map(name => {
+    const group = base.filter(s => (s.owner.trim() || "Unassigned") === name);
+    const negative = deviationMode === "negative";
+    const amount = (s: FuelDeviationSite) => negative ? negativeMagnitude(s) : s.positiveLitres;
+    const latest = (s: FuelDeviationSite) => negative ? latestNegative(s) : (s.latestStatus === "Positive" ? (s.tickets[0]?.deviation ?? 0) : 0);
+    const count = (s: FuelDeviationSite) => negative ? negativeCount(s) : s.positiveCount;
+    return {name, group, sites:group.length, affected:group.filter(s=>count(s)>0).length,
+      latestSites:group.filter(s=>latest(s)>0).length, recurring:group.filter(s=>count(s)>=2).length,
+      gross:group.reduce((n,s)=>n+amount(s),0), latest:group.reduce((n,s)=>n+latest(s),0)};
+  }).filter(c=>c.affected>0).sort((a,b)=>b.gross-a.gross);
+  const coExport = coGroups.map(c=>({"Cluster Owner":c.name,"Total Sites":c.sites,"Affected Sites":c.affected,
+    "Gross Deviation (L)":c.gross,"Latest Deviation (L)":c.latest,"Latest Affected Sites":c.latestSites,"Recurring Sites":c.recurring}));
+  const coSummaryView = <section className="min-w-0 overflow-hidden rounded-xl border border-blue-200 bg-white shadow-sm">
+    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-blue-100 px-5 py-4">
+      <div><h3 className="text-base font-extrabold text-blue-950">Cluster Owner Performance · Worst First</h3>
+      <p className="mt-1 text-xs text-slate-600">{deviationMode === "negative" ? "Negative below −20 L · absolute litres" : "Positive above +10 L"} · Click View Sites for CO-wise investigation</p></div>
+      <ExportButtonComponent data={coExport} filename={`Fuel_${deviationMode}_CO_Performance`} label="Export CO Summary" format="excel" variant="success"/>
+    </div>
+    <div className="overflow-x-auto"><table className="w-full min-w-[930px] border-collapse text-sm">
+      <thead><tr>{["Rank","Cluster Owner","Sites","Affected Sites","Gross Deviation (L)","Latest Deviation (L)","Latest Sites","Recurring Sites","Action"].map(h=><th key={h} className="border border-blue-700 bg-blue-900 px-3 py-3 text-center align-middle font-bold text-white">{h}</th>)}</tr></thead>
+      <tbody>{coGroups.map((c,i)=><React.Fragment key={c.name}>
+        <tr className="even:bg-blue-50/40 hover:bg-blue-50">
+          <td className="border border-slate-300 px-3 py-3 text-center font-bold">{i+1}</td>
+          <td className="border border-slate-300 px-3 py-3 text-center font-bold text-blue-900">{c.name}</td>
+          <td className="border border-slate-300 px-3 py-3 text-center">{c.sites}</td>
+          <td className="border border-slate-300 px-3 py-3 text-center">{c.affected}</td>
+          <td className={`border border-slate-300 px-3 py-3 text-center font-extrabold ${deviationMode === "negative" ? "text-amber-800" : "text-red-700"}`}>{fmt(c.gross)}</td>
+          <td className="border border-slate-300 px-3 py-3 text-center font-bold">{fmt(c.latest)}</td>
+          <td className="border border-slate-300 px-3 py-3 text-center">{c.latestSites}</td>
+          <td className="border border-slate-300 px-3 py-3 text-center">{c.recurring}</td>
+          <td className="border border-slate-300 px-3 py-3 text-center"><button type="button" onClick={()=>setExpandedOwner(expandedOwner===c.name?null:c.name)} className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-bold text-blue-900 hover:bg-blue-100">{expandedOwner===c.name?"Hide Sites ↑":"View Sites ↓"}</button></td>
+        </tr>
+        {expandedOwner===c.name&&<tr><td colSpan={9} className="border border-slate-300 bg-blue-50 p-3">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2"><strong className="text-sm text-blue-950">{c.name} · {c.affected} affected sites · Worst first</strong>
+            <ExportButtonComponent data={c.group.map(s=>({"Site ID":s.siteId,"Grid":s.grid,"CO":s.owner,"Latest Deviation (L)":s.tickets[0]?.deviation??"","Gross Positive (L)":s.positiveLitres,"Gross Negative Magnitude (L)":negativeMagnitude(s),"Positive Tickets":s.positiveCount,"Negative Tickets":negativeCount(s)}))} filename={`Fuel_${deviationMode}_CO_${c.name.replace(/[^a-z0-9]/gi,"_")}`} label="Export Sites" format="excel" variant="success"/></div>
+          {deviationMode==="negative" ? negativeTable(c.group.filter(s=>negativeMagnitude(s)>0).sort((a,b)=>negativeMagnitude(b)-negativeMagnitude(a)),true)
+            : renderSiteTable(c.group.filter(s=>s.positiveLitres>0).sort((a,b)=>b.positiveLitres-a.positiveLitres),true)}
+        </td></tr>}
+      </React.Fragment>)}</tbody>
+    </table>{!coGroups.length&&<p className="p-4 text-sm text-slate-500">No cluster owners with deviations under the selected filters.</p>}</div>
+  </section>;
+  if (deviationMode === "negative") return <div className="fuel-deviation-premium min-w-0 space-y-4 p-2 text-slate-900 sm:p-4">
+    {modeSwitcher}
+    <section className="rounded-xl border border-blue-200 bg-white p-5 shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-2xl font-extrabold text-blue-950">Negative Fuel Variance <span className="text-sm font-medium text-slate-500">· Fueler vs EASS</span></h2><p className="mt-1 text-xs text-slate-600">Negative exception: deviation below −20 L · Worst ranked by absolute negative litres, without offsetting positives</p></div>
+        <div className="flex gap-1 rounded-lg border border-blue-200 bg-blue-50 p-1">{(["overall","C-1","C-6"] as FuelView[]).map(v=><button key={v} onClick={()=>{onRegionChange(v);setGrid("__all");setExpandedGrid(null);}} className={`rounded-md px-3 py-2 text-sm font-bold ${region===v?"bg-blue-800 text-white":"text-blue-900"}`}>{v==="overall"?"Overall":v}</button>)}</div></div>
+      <div className="mt-4 grid grid-cols-2 gap-2 border-t border-slate-100 pt-4 lg:grid-cols-5">
+        <select aria-label="Ticket period" value={ticketView} onChange={e=>setTicketView(e.target.value as "all"|"latest")} className={selectClass}><option value="all">Last 4 Tickets</option><option value="latest">Latest Ticket</option></select>
+        <select aria-label="Grid" value={gridList.includes(grid)?grid:"__all"} onChange={e=>{setGrid(e.target.value);setExpandedGrid(null);}} className={selectClass}><option value="__all">All Grids</option>{gridList.map(g=><option key={g}>{g}</option>)}</select>
+        <select aria-label="Revenue" value={category} onChange={e=>setCategory(e.target.value)} className={selectClass}><option value="__all">All Revenue Categories</option>{categories.map(c=><option key={c}>{c}</option>)}</select>
+        <select aria-label="Cluster Owner" value={owner} onChange={e=>setOwner(e.target.value)} className={selectClass}><option value="__all">All Cluster Owners</option>{owners.map(o=><option key={o}>{o}</option>)}</select>
+        <input aria-label="Search sites" value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search site / CO" className={selectClass}/>
+      </div>
+    </section>
+    <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">{[
+      ["Gross Negative Deviation",`${fmt(negativeGross)} L`,"Absolute magnitude · 4 tickets"],
+      ["Latest Ticket Negative",`${fmt(negativeLatestGross)} L`,"Latest negative exceptions"],
+      ["Affected Sites",String(negativeAffected),`Of ${base.length} selected sites`],
+      ["Recurring Sites",String(negativeRecurring),"Negative in 2+ tickets"]
+    ].map(([label,value,sub])=><div key={label} className="rounded-xl border border-blue-200 border-l-4 border-l-amber-500 bg-white p-4 shadow-sm"><p className="text-xs font-semibold text-slate-600">{label}</p><p className="mt-2 text-2xl font-black tabular-nums text-amber-800">{value}</p><p className="mt-1 text-xs text-slate-500">{sub}</p></div>)}</section>
+    {region==="overall"&&<section className="grid grid-cols-1 gap-3 md:grid-cols-2">{(["C-1","C-6"] as const).map(r=>{const x=negativeGrids.filter(g=>fuelRegion(g.grid)===r);return <div key={r} className="rounded-xl border border-blue-200 bg-white p-4"><div className="flex items-center justify-between"><h3 className="font-extrabold text-blue-900">Central-{r.slice(-1)}</h3><button className="text-sm font-bold text-blue-800 underline" onClick={()=>onRegionChange(r)}>View {r}</button></div><p className="mt-2 text-xl font-extrabold text-amber-800">{fmt(x.reduce((n,g)=>n+g.gross,0))} L</p><p className="text-sm text-slate-600">Worst grid: {x[0]?.grid??"—"} · {x.reduce((n,g)=>n+g.affected,0)} affected sites</p></div>})}</section>}
+    {coSummaryView}
+    <section className="rounded-xl border border-blue-200 bg-white shadow-sm"><div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 p-4"><h3 className="font-extrabold text-blue-950">Grid Summary · Worst Negative First</h3><ExportButtonComponent data={negativeGrids} filename="Fuel_Negative_Grid_Summary" label="Export Grids" format="excel" variant="success"/></div><div className="overflow-x-auto"><table className="w-full min-w-[780px] border-collapse text-sm"><thead><tr>{["Grid","Sites","Negative Sites","Gross Negative (L)","Latest Negative (L)","Latest Sites","Action"].map(h=><th key={h} className="border border-blue-700 bg-blue-900 px-3 py-3 text-center align-middle font-bold text-white">{h}</th>)}</tr></thead><tbody>{negativeGrids.map(g=><React.Fragment key={g.grid}><tr className="border-b border-slate-100 even:bg-blue-50/40"><td className="border border-slate-300 px-3 py-3 text-center align-middle font-bold">{g.grid}</td><td className="border border-slate-300 px-3 py-3 text-center align-middle">{g.sites}</td><td className="border border-slate-300 px-3 py-3 text-center align-middle">{g.affected}</td><td className="border border-slate-300 px-3 py-3 text-center align-middle font-extrabold text-amber-800">{fmt(g.gross)}</td><td className="border border-slate-300 px-3 py-3 text-center align-middle">{fmt(g.latest)}</td><td className="border border-slate-300 px-3 py-3 text-center align-middle">{g.latestSites}</td><td className="border border-slate-300 px-3 py-3 text-center align-middle"><button onClick={()=>setExpandedGrid(expandedGrid===g.grid?null:g.grid)} className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 font-bold text-blue-900">{expandedGrid===g.grid?"Hide Sites ↑":"View Sites ↓"}</button></td></tr>{expandedGrid===g.grid&&<tr><td colSpan={7} className="bg-blue-50 p-3"><div className="mb-2 flex justify-end"><ExportButtonComponent data={negativeExport.filter(x=>x.Grid===g.grid)} filename={`Fuel_Negative_${g.grid}`} label="Export Sites" format="excel" variant="success"/></div>{negativeTable([...base].filter(s=>s.grid===g.grid).sort((a,b)=>negativeMagnitude(b)-negativeMagnitude(a)),false)}</td></tr>}</React.Fragment>)}</tbody></table></div></section>
+    <section className="rounded-xl border border-blue-200 bg-white p-4 shadow-sm"><h3 className="mb-2 font-extrabold text-blue-950">Grid-wise Negative Fuel Deviation</h3><div className="h-[220px]"><ResponsiveContainer width="100%" height="100%"><BarChart data={[...negativeGrids].sort((a,b)=>b.chartLitres-a.chartLitres)} margin={{top:22,right:8,left:0,bottom:4}}><CartesianGrid stroke="#e5e7eb" strokeDasharray="3 3" vertical={false}/><XAxis dataKey="grid" tick={{fontSize:12}}/><YAxis tick={{fontSize:11}}/><Tooltip formatter={(v:any)=>`${fmt(Number(v))} L`}/><Bar dataKey="chartLitres" name="Negative Magnitude (L)" fill="#d97706" maxBarSize={56} radius={[4,4,0,0]}><LabelList dataKey="chartLitres" position="top" formatter={(v:any)=>Number(v)>0?Math.round(Number(v)).toLocaleString():""}/></Bar></BarChart></ResponsiveContainer></div></section>
+    <section className="rounded-xl border border-blue-200 bg-white p-4 shadow-sm"><div className="mb-3 flex flex-wrap items-center justify-between gap-3"><h3 className="font-extrabold text-blue-950">Worst Sites · Negative Fuel Deviation</h3><div className="flex gap-2"><select aria-label="Worst sites count" value={worstLimit} onChange={e=>setWorstLimit(Number(e.target.value))} className={selectClass}>{[10,20,50,100].map(n=><option key={n} value={n}>Top {n}</option>)}</select><ExportButtonComponent data={negativeExport} filename="Fuel_Negative_Worst_Sites" label="Export" format="excel" variant="success"/></div></div>{negativeTable(negativeWorst)}</section>
+    <section className="rounded-xl border border-blue-200 bg-white p-4 shadow-sm"><h3 className="font-extrabold text-blue-950">Site Query · Four-Ticket Reconciliation</h3><p className="mb-3 text-xs text-slate-500">Exact Site ID · Searches all Deviation Fuel records independently of region and grid filters</p><div className="flex flex-wrap gap-2"><input aria-label="Site ID query" type="search" value={siteQuery} onChange={e=>setSiteQuery(e.target.value)} placeholder="Enter Site ID" className="rounded-lg border border-blue-200 px-4 py-3 font-semibold text-slate-900"/><ExportButtonComponent data={siteQueryExport} filename={`Fuel_Deviation_Site_${siteQuery.trim()||"Query"}`} label="Export 4 Tickets" format="csv" variant="secondary"/></div>{siteQuery.trim()&&(!siteQueryMatches.length?<p className="mt-3 text-sm text-amber-800">No site found in Deviation Fuel sheet.</p>:siteQueryMatches.map(s=><div key={`${s.grid}-${s.siteId}`} className="mt-4"><p className="mb-2 font-bold text-blue-950">Site {s.siteId} · {s.grid} · {s.owner} · {s.gtl} · {s.rating}</p><div className="overflow-x-auto"><table className="w-full min-w-[1050px] text-sm"><thead><tr>{["Ticket","Recon Date","LFD","Fuel to Recon","Before Fuel","Fueler (L)","DG Hours","EASS (L)","Deviation (L)","Status"].map(h=><th key={h} className="bg-blue-900 px-3 py-3 text-left text-white">{h}</th>)}</tr></thead><tbody>{s.tickets.map((t,i)=><tr key={i} className="border-b"><td className="px-3 py-2">{i===0?"Latest":`Ticket ${i+1}`}</td><td className="px-3 py-2">{t.reconDate}</td><td className="px-3 py-2">{t.lfd}</td>{[t.fuelToRecon,t.beforeFuel,t.fueler,t.hours,t.eass,t.deviation].map((v,j)=><td key={j} className="px-3 py-2 tabular-nums">{v===null?"—":fmt(v)}</td>)}<td className="px-3 py-2">{statusBadge(t.status)}</td></tr>)}</tbody></table></div></div>))}</section>
+    <p className="text-xs text-slate-500">Negative threshold &lt; −20 L. Totals and rankings show absolute negative litres; ticket details preserve signed values. Positive tickets are not offset against negative exceptions.</p>
+  </div>;
+
   return <div className="fuel-deviation-premium min-w-0 space-y-4 bg-transparent p-2 text-slate-900 sm:p-4">
+    {modeSwitcher}
     <section className="rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0"><h2 className="text-[25px] font-black tracking-tight text-emerald-900">Fuel Deviation <span className="font-medium text-slate-400">|</span> <span className="text-slate-900">Fueler vs EASS</span></h2><p className="text-[13px] font-medium text-slate-600">Ticket-to-ticket fuel reconciliation · Positive threshold &gt;10 L</p></div>
@@ -506,6 +613,7 @@ function FuelDeviationPage({ payload, region, onRegionChange }: { payload: Sheet
       </div>)}
     </section>}
     <section className="flex min-w-0 flex-col gap-4">
+      {coSummaryView}
       <div className="min-w-0 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_1px_3px_rgba(15,23,42,0.05)]"><div className="flex items-center justify-between border-b border-slate-100 px-5 py-4"><h3 className="text-base font-bold text-slate-900">Grid Summary <span className="font-normal text-slate-500">· Worst first</span></h3><div className="flex flex-wrap items-center gap-2"><span className="text-[11px] text-slate-500">Select View Sites to investigate</span><ExportButtonComponent data={grids.map(g=>({Grid:g.grid,Sites:g.sites,"Positive Sites":g.positiveSites,"Gross Positive L":g.positiveLitres,"Latest Positive L":g.latestLitres,"Latest Positive Sites":g.latestSites}))} filename={`Fuel_Deviation_Grid_Summary_${region}`} label="Export Grids" format="excel" variant="success"/></div></div>
         <div className="max-w-full overflow-x-auto"><table className="w-full min-w-[750px] border-separate border-spacing-0"><thead><tr><th className={headClass}>Grid</th><th className={numberHead}>Sites</th><th className={numberHead}>+ive Sites</th><th className={numberHead}>Gross +ive (L)</th><th className={numberHead}>Latest +ive (L)</th><th className={numberHead}>Latest +ive Sites</th><th className={headClass}>Action</th></tr></thead><tbody>{grids.map(g=><React.Fragment key={g.grid}><tr className="border-b border-slate-100 even:bg-[#f8faf9] hover:bg-emerald-50/80 transition-colors"><td className={cellClass+" font-bold text-[#075B39]"}>{g.grid}</td><td className={numClass}>{g.sites}</td><td className={numClass}>{g.positiveSites}</td><td className={numClass+" font-bold text-red-700"}>{fmt(g.positiveLitres)}</td><td className={numClass+" font-semibold text-red-700"}>{fmt(g.latestLitres)}</td><td className={numClass}>{g.latestSites}</td><td className={cellClass}><button aria-expanded={expandedGrid===g.grid} onClick={()=>setExpandedGrid(expandedGrid===g.grid?null:g.grid)} className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-bold text-[#075B39] transition hover:bg-emerald-100">{expandedGrid===g.grid?"Hide Sites ↑":"View Sites ↓"}</button></td></tr>
           {expandedGrid===g.grid&&<tr><td colSpan={7} className="bg-slate-50 p-3"><div className="mb-2 flex items-center justify-between gap-2"><div className="text-sm font-bold text-slate-800">{g.grid} · All Sites ({g.sites})</div><div className="flex items-center gap-2"><ExportButtonComponent data={exportRows.filter(row=>row.Grid===g.grid)} filename={`Fuel_Deviation_${g.grid}_Sites`} label="Export Sites" format="excel" variant="success"/><button onClick={()=>setExpandedGrid(null)} className="text-xs font-semibold text-[#075B39]">Close ×</button></div></div><div className="max-h-[430px] overflow-auto rounded-lg bg-white">{renderSiteTable([...base].filter(s=>s.grid===g.grid).sort((a,b)=>b.positiveLitres-a.positiveLitres),false)}</div></td></tr>}
