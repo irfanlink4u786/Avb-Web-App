@@ -174,7 +174,7 @@ function ExportButtonComponent({
 //  FUEL HISTORY — YEAR-ON-YEAR / WORST SITES / DAILY MONITORING
 // ============================================================
 
-type FuelSubTab = "summary" | "yoy" | "currentMonth" | "deviation";
+type FuelSubTab = "summary" | "yoy" | "currentMonth" | "deviation" | "tprime";
 type FuelView = "overall" | "C-1" | "C-6";
 
 type FuelRow = {
@@ -223,12 +223,28 @@ function fuelDate(value: any): Date | null {
     return Number.isFinite(d.getTime()) ? new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), d.getUTCHours(), d.getUTCMinutes(), d.getUTCSeconds()) : null;
   }
   const cleaned = raw.replace(/,\s*(?=\d{1,2}:\d{2})/, " ").replace(/\s+/g, " ").trim();
-  const dayFirst = cleaned.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})(?:\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?\s*(AM|PM)?)?$/i);
+  // Accept Google Sheets text dates such as 04-Oct-2026, 4 Oct 2026,
+  // and DD/MM/YYYY with a comma or 12-hour timestamp.
+  const named = cleaned.match(/^(\d{1,2})[- /]([A-Za-z]{3,9})[- /](\d{2,4})(?:[ T]+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)?)?$/i);
+  if (named) {
+    const monthIndex = FUEL_MONTH_ORDER.findIndex(m => named[2].toLowerCase().startsWith(m.toLowerCase()));
+    if (monthIndex >= 0) {
+      const year = Number(named[3].length === 2 ? `20${named[3]}` : named[3]);
+      let hour = Number(named[4] || 0);
+      const ampm = (named[7] || "").toUpperCase();
+      if (ampm) hour = hour % 12 + (ampm === "PM" ? 12 : 0);
+      const d = new Date(year, monthIndex, Number(named[1]), hour, Number(named[5] || 0), Number(named[6] || 0));
+      return d.getFullYear() === year && d.getMonth() === monthIndex && d.getDate() === Number(named[1]) ? d : null;
+    }
+  }
+  const dayFirst = cleaned.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})(?:\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?\s*(AM|PM)?)?$/i);
   const isoLocal = cleaned.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[T ](\d{1,2}):(\d{1,2})(?::(\d{1,2})(?:\.\d+)?)?\s*(AM|PM)?)?$/i);
   const m = dayFirst || isoLocal;
   if (m) {
-    const year = Number(dayFirst ? m[3] : m[1]);
-    const month = Number(dayFirst ? m[2] : m[2]) - 1;
+    const year = Number(dayFirst ? (m[3].length === 2 ? `20${m[3]}` : m[3]) : m[1]);
+    // DD/MM is default; when the first component exceeds 12 it is unambiguous.
+    // Explicit MM/DD values must be normalized in the source to avoid ambiguity.
+    const month = Number(m[2]) - 1;
     const day = Number(dayFirst ? m[1] : m[3]);
     let hour = Number(m[4] ?? 0);
     const minute = Number(m[5] ?? 0);
@@ -260,16 +276,17 @@ function parseFuelRows(data: SheetPayload | null): FuelRow[] {
     const refuelingTime = String(row["Refueling Time"] ?? row["Refilling Time"] ?? "").trim();
     const yearFromCol = fuelNumber(row["Year"]);
     const yearFromMonth = rawMonth.match(/-(\d{2,4})$/);
-    const year = yearFromCol || (yearFromMonth ? Number(yearFromMonth[1].length === 2 ? `20${yearFromMonth[1]}` : yearFromMonth[1]) : 0);
+    const parsedDate = fuelDate(refuelingTime);
+    const year = yearFromCol || (yearFromMonth ? Number(yearFromMonth[1].length === 2 ? `20${yearFromMonth[1]}` : yearFromMonth[1]) : 0) || parsedDate?.getFullYear() || 0;
     return {
       siteId,
       grid,
-      month,
+      month: month || (parsedDate ? FUEL_MONTH_ORDER[parsedDate.getMonth()] : ""),
       refuelingTime,
       beforeQty: fuelNumber(row["Before Filling Fuel Quantity"]),
       filledQty: fuelNumber(row["Fuel Quantity Filled"]),
       year,
-      date: fuelDate(refuelingTime),
+      date: parsedDate,
     };
   }).filter(r => r.filledQty >= 0 && r.year > 0);
 }
@@ -689,7 +706,217 @@ function FuelDeviationPage({ payload, region, onRegionChange }: { payload: Sheet
   </div>;
 }
 
-export default function FuelDashboard({ data, deviationData, onBack }: { data: SheetPayload | null; deviationData: SheetPayload | null; onBack: () => void }) {
+
+// T-Prime penalty policy: first qualifying fueling date starts four calendar days
+// (start date + 3 following dates). Later fills are vendor penalty candidates.
+// Validate worksheet identity: some Google Sheets endpoints silently return Sheet-1
+// even when a different tab was requested. Never treat AVB rows as T-Prime.
+// T_prime uses positional fields: A = Site ID, E = Fuel Date, K = Fuel Filled.
+// Do not depend on worksheet header names, which vary between exports.
+function tpCells(row: Record<string, any>): any[] {
+  if (Array.isArray(row)) return row;
+  const keys = Object.keys(row ?? {});
+  const indexed = keys.every(k => /^\d+$/.test(k));
+  return indexed ? keys.sort((a,b)=>Number(a)-Number(b)).map(k=>row[k]) : Object.values(row ?? {});
+}
+function tpGet(row: Record<string, any>, index: number, aliases: string[]): any {
+  const normal = (x:string) => x.toLowerCase().replace(/[^a-z0-9]/g, "");
+  for (const alias of aliases) {
+    const key = Object.keys(row ?? {}).find(k=>normal(k)===normal(alias));
+    if (key !== undefined) return row[key];
+  }
+  return tpCells(row)[index];
+}
+function isTPrimeWorksheet(payload: SheetPayload | null): boolean {
+  if (!payload?.rows?.length) return false;
+  const rows = payload.rows.slice(0, Math.min(30, payload.rows.length));
+  return rows.some(r => {
+    const id = String(tpGet(r, 0, ["Site ID", "SITE ID"]) ?? "").trim();
+    const date = String(tpGet(r, 4, ["Fuel Date", "T-Prime Date"]) ?? "").trim();
+    const fuel = tpGet(r, 10, ["Fuel Filled", "Fuel Quantity Filled"]);
+    return /^\d{3,7}$/.test(id) && /\d/.test(date) && fuel !== undefined && fuel !== null && String(fuel).trim() !== "";
+  });
+}
+
+// Parse the Google Visualization CSV response without assuming its header labels.
+function tpParseCsv(csv:string):string[][] {
+  const result:string[][]=[];let row:string[]=[],cell="",quoted=false;
+  for(let i=0;i<csv.length;i++){
+    const c=csv[i];
+    if(c==='"') {if(quoted&&csv[i+1]==='"'){cell+='"';i++;}else quoted=!quoted;}
+    else if(c===','&&!quoted){row.push(cell);cell="";}
+    else if((c==='\n'||c==='\r')&&!quoted){if(c==='\r'&&csv[i+1]==='\n')i++;row.push(cell);if(row.some(v=>v.trim()))result.push(row);row=[];cell="";}
+    else cell+=c;
+  }
+  row.push(cell);if(row.some(v=>v.trim()))result.push(row);
+  return result;
+}
+async function tpFetchWorksheetCsv(workbook:string,tab:string):Promise<SheetPayload|null>{
+  const url=`https://docs.google.com/spreadsheets/d/${encodeURIComponent(workbook)}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(tab)}`;
+  const response=await fetch(url,{credentials:"omit"});
+  if(!response.ok)throw new Error(`HTTP ${response.status}`);
+  const raw=await response.text();
+  if(/^\s*</.test(raw))throw new Error("Google returned HTML instead of CSV (permissions or incorrect tab)");
+  const matrix=tpParseCsv(raw);
+  if(matrix.length<2)return null;
+  // Keep all columns, including blank header cells, so A/E/K remain stable.
+  const rows=matrix.slice(1).map(cells=>Object.fromEntries(cells.map((v,i)=>[String(i),v])));
+  return {rows} as SheetPayload;
+}
+
+const TPRIME_WORKBOOKS = [
+  "1po40LvnGZL8Nnd4BBk-P6uC_tL4Fi9Q8PuMQZ7aQSdc", // October
+  "1vyHPFzh28wf0a4b__Cv65bcuFh-pylnkGRcUuX1XpEA", // September
+  "1ds17me8tjnsV-JoQnx6SThCSGM3AkULPsnqP3H0M30w", // August
+  "1aLTAisv5jjRuIkTVa6MjWZ-QFOSYn8FvMlJ09GWUpX0", // July
+];
+
+type TPrimeEvent = { siteId:string; date:Date; rawDate:string; grid:string; row:Record<string,any>; filledQty:number; beforeQty:number; team:string };
+const tpDateLabel = (d:Date) => `${String(d.getDate()).padStart(2,"0")}-${FUEL_MONTH_ORDER[d.getMonth()]}-${String(d.getFullYear()).slice(-2)}`;
+const tpDay = (d:Date) => Date.UTC(d.getFullYear(),d.getMonth(),d.getDate()) / 86400000;
+function parseTPrimeEvents(payload:SheetPayload|null):TPrimeEvent[] {
+  if (!payload?.rows?.length) return [];
+  const norm = (s:string) => s.toLowerCase().replace(/[^a-z0-9]/g,"");
+  const find = (r:Record<string,any>, candidates:string[]) => {
+    const entries = Object.entries(r);
+    for (const name of candidates) { const entry=entries.find(([k])=>norm(k)===norm(name)); if(entry && String(entry[1]??"").trim()) return entry[1]; }
+    return undefined;
+  };
+  const monthNumber = (name:string) => {
+    const token=name.toLowerCase().slice(0,3);
+    return FUEL_MONTH_ORDER.findIndex(m=>m.toLowerCase()===token);
+  };
+  return payload.rows.map((row:Record<string,any>)=>{
+    const siteId=String(tpGet(row,0,["Site ID","SITE ID"])??"").trim();
+    // Operational T_prime sheet labels the incident date as "Fuel Date".
+    // "Last Fuelling Date" is historical reference, NOT the incident date.
+    const rawDate=String(tpGet(row,4,["Fuel Date","T-Prime Date"])??"").trim();
+    const lastFuelRaw=String(find(row,["Last Fuelling Date","Last Fueling Date","LFD"])??"").trim();
+    let date=fuelDate(rawDate);
+    // Fuel Date may be "14-Sept" / "04-Oct" without a year.
+    const shortDate=rawDate.match(/^(\d{1,2})[- /]([A-Za-z]{3,9})(?:[- /](\d{2,4}))?$/i);
+    if (!date && shortDate) {
+      const month=monthNumber(shortDate[2]);
+      const fromLfd=lastFuelRaw.match(/(?:^|[/-])((?:19|20)\d{2})(?:$|\s)/);
+      const year=shortDate[3] ? Number(shortDate[3].length===2?`20${shortDate[3]}`:shortDate[3]) : (fromLfd?Number(fromLfd[1]):new Date().getFullYear());
+      if (month>=0) {
+        const candidate=new Date(year,month,Number(shortDate[1]));
+        if(candidate.getFullYear()===year && candidate.getMonth()===month && candidate.getDate()===Number(shortDate[1])) date=candidate;
+      }
+    }
+    return {siteId,rawDate,date,grid:String(find(row,["Grid"])??"").trim(),row,filledQty:fuelNumber(tpGet(row,10,["Fuel Filled","Fuel Quantity Filled"])),beforeQty:fuelNumber(find(row,["Previous Fuel","Before Filling Fuel Quantity"])),team:String(find(row,["Fuelling Team","Fueling Team"])??"").trim()};
+  }).filter((e):e is TPrimeEvent=>!!e.siteId && !!e.date && Number.isFinite(e.date.getTime()))
+    .sort((x,y)=>x.date.getTime()-y.date.getTime());
+}
+type TPrimeResult = {siteId:string;grid:string;owner:string;gtl:string;event:TPrimeEvent;firstFuel:FuelRow|null;graceEnd:Date|null;allowed:number;penalty:number;history:{fuel:FuelRow;classification:"Allowed"|"Penalty"}[]};
+function TPrimePenaltyPage({fuelRows,primeData,deviationData}:{fuelRows:FuelRow[];primeData:SheetPayload|null;deviationData:SheetPayload|null}) {
+  const [gridFilter,setGridFilter]=useState("__all");
+  const [ownerFilter,setOwnerFilter]=useState("__all");
+  const [siteQuery,setSiteQuery]=useState("");
+  const [expanded,setExpanded]=useState<string|null>(null);
+  const [expandedHistory,setExpandedHistory]=useState<string|null>(null);
+  const [verifiedPrimeData, setVerifiedPrimeData] = useState<SheetPayload | null>(null);
+  const [primeLoading, setPrimeLoading] = useState(false);
+  const [primeLoadError, setPrimeLoadError] = useState("");
+  const sourceData = isTPrimeWorksheet(primeData) ? primeData : verifiedPrimeData;
+  useEffect(() => {
+    if (isTPrimeWorksheet(primeData)) {
+      setVerifiedPrimeData(null);
+      setPrimeLoadError("");
+      return;
+    }
+    let cancelled = false;
+    setPrimeLoading(true);
+    setPrimeLoadError("");
+    (async () => {
+      const failures: string[] = [];
+      for (const workbook of TPRIME_WORKBOOKS) {
+        for (const tab of ["T_prime", "T-Prime", "T Prime", "T_Prime"]) {
+          try {
+            const result = await tpFetchWorksheetCsv(workbook, tab);
+            if (cancelled) return;
+            if (isTPrimeWorksheet(result)) {
+              setVerifiedPrimeData(result);
+              setPrimeLoading(false);
+              return;
+            }
+            failures.push(`${workbook.slice(0, 8)} / ${tab}: not A/E/K T-Prime data`);
+          } catch (error) {
+            failures.push(`${workbook.slice(0, 8)} / ${tab}: ${String(error)}`);
+          }
+        }
+      }
+      if (!cancelled) {
+        setVerifiedPrimeData(null);
+        setPrimeLoadError(`T_prime could not be retrieved. ${failures.slice(0, 3).join("; ")}`);
+        setPrimeLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [primeData]);
+  const events=useMemo(()=>parseTPrimeEvents(sourceData),[sourceData]);
+  const results=useMemo(()=>{
+    const ownerMap=new Map(parseDeviationSites(deviationData).map(s=>[s.siteId.trim().toUpperCase(),s]));
+    const bySite=new Map<string,TPrimeEvent[]>();
+    events.forEach(e=>{const id=e.siteId.toUpperCase();bySite.set(id,[...(bySite.get(id)||[]),e]);});
+    return [...bySite.entries()].map(([id,evs])=>{
+      // Use actual Fuel Filled from the T_prime operational sheet, not a separate
+      // Fuel History workbook (which may be unavailable or use different dates).
+      // Preserve multiple genuine entries on the same day.
+      const fuels=evs.filter(e=>e.filledQty>0).map(e=>({
+        siteId:e.siteId,grid:e.grid,month:FUEL_MONTH_ORDER[e.date.getMonth()],
+        refuelingTime:e.rawDate,beforeQty:e.beforeQty,filledQty:e.filledQty,
+        year:e.date.getFullYear(),date:e.date
+      } as FuelRow));
+      // Consecutive T-Prime sheet entries are observations of ONE incident,
+      // not fresh SLA starts. A gap >1 calendar day starts a new incident.
+      const incidents:TPrimeEvent[][]=[];
+      for(const e of evs){
+        const last=incidents[incidents.length-1];
+        if(last && tpDay(e.date)-tpDay(last[last.length-1].date)<=1) last.push(e);
+        else incidents.push([e]);
+      }
+      const perEvent=incidents.map((incident,i)=>{
+        const event=incident[0];
+        const lastObserved=incident[incident.length-1].date;
+        const next=incidents[i+1]?.[0].date;
+        // Only count refills within the evidenced incident window. The sheet's
+        // last T-Prime observation is not proof of a later unresolved outage.
+        const eligible=fuels.filter(f=>tpDay(f.date!)>=tpDay(event.date) &&
+          tpDay(f.date!)<=tpDay(lastObserved) && (!next||tpDay(f.date!)<tpDay(next)));
+        const firstFuel=eligible[0]||null;
+        const graceEnd=new Date(event.date.getFullYear(),event.date.getMonth(),event.date.getDate()+3);
+        const history=eligible.map(f=>({fuel:f,classification:(tpDay(f.date!)-tpDay(event.date)<4?"Allowed":"Penalty") as "Allowed"|"Penalty"}));
+        return {siteId:evs[0].siteId,grid:event.grid||ownerMap.get(id)?.grid||fuels[0]?.grid||"Unmapped",owner:ownerMap.get(id)?.owner||"Unassigned",gtl:ownerMap.get(id)?.gtl||"—",event,firstFuel,graceEnd,allowed:history.filter(h=>h.classification==="Allowed").reduce((s,h)=>s+h.fuel.filledQty,0),penalty:history.filter(h=>h.classification==="Penalty").reduce((s,h)=>s+h.fuel.filledQty,0),history};
+      });
+      return perEvent;
+    }).flat().sort((x,y)=>y.penalty-x.penalty);
+  },[events,fuelRows,deviationData]);
+  const grids=[...new Set(results.map(r=>r.grid))].sort();
+  const owners=[...new Set(results.map(r=>r.owner))].sort();
+  const filtered=results.filter(r=>(gridFilter==="__all"||r.grid===gridFilter)&&(ownerFilter==="__all"||r.owner===ownerFilter));
+  const summary=(key:"grid"|"owner")=>[...new Set(filtered.map(r=>r[key]))].map(name=>{const rows=filtered.filter(r=>r[key]===name);return {name,sites:new Set(rows.map(r=>r.siteId)).size,events:rows.length,affected:new Set(rows.filter(r=>r.penalty>0).map(r=>r.siteId)).size,allowed:rows.reduce((s,r)=>s+r.allowed,0),penalty:rows.reduce((s,r)=>s+r.penalty,0),rows};}).sort((x,y)=>y.penalty-x.penalty);
+  const gridSummary=summary("grid"),ownerSummary=summary("owner");
+  const [worstLimit,setWorstLimit]=useState(20);
+  const worstSites=useMemo(()=>[...new Set(filtered.filter(r=>r.penalty>0).map(r=>r.siteId))].map(siteId=>{
+    const incidents=filtered.filter(r=>r.siteId===siteId);
+    return {siteId,grid:incidents[0]?.grid||"Unmapped",owner:incidents[0]?.owner||"Unassigned",events:incidents.length,
+      penaltyEvents:incidents.filter(r=>r.penalty>0).length,
+      allowed:incidents.reduce((s,r)=>s+r.allowed,0),penalty:incidents.reduce((s,r)=>s+r.penalty,0),incidents};
+  }).sort((a,b)=>b.penalty-a.penalty||a.siteId.localeCompare(b.siteId)),[filtered]);
+  const queried=siteQuery.trim()?results.filter(r=>r.siteId.toLowerCase()===siteQuery.trim().toLowerCase()):[];
+  const fmt=(n:number)=>n.toLocaleString(undefined,{maximumFractionDigits:2,minimumFractionDigits:2});
+  const header="border border-slate-300 bg-[#203b86] px-3 py-2 text-center text-xs font-bold text-white";
+  const cell="border border-slate-200 px-3 py-2 text-center text-xs text-slate-800";
+  const exportData=(rows:TPrimeResult[])=>rows.flatMap(r=>r.history.map(h=>({Site:r.siteId,Grid:r.grid,CO:r.owner,GTL:r.gtl,"T-Prime Date":tpDateLabel(r.event.date),"First Fuel Date":r.firstFuel?.date?tpDateLabel(r.firstFuel.date):"","Grace End":r.graceEnd?tpDateLabel(r.graceEnd):"","Fuel Date":h.fuel.date?tpDateLabel(h.fuel.date):"","Fuel Filled L":h.fuel.filledQty,"Before Fuel L":h.fuel.beforeQty,Classification:h.classification})));
+  const renderHistory=(rows:TPrimeResult[])=> <div className="overflow-x-auto"><table className="w-full min-w-[900px] border-collapse"><thead><tr>{["Site","Grid","CO","T-Prime Date","First Fuel","Grace End","Allowed (L)","Penalty (L)","Action"].map(h=><th key={h} className={header}>{h}</th>)}</tr></thead><tbody>{rows.map((r,i)=><Fragment key={`${r.siteId}-${r.event.date.getTime()}-${i}`}><tr className="even:bg-slate-50"><td className={cell}>{r.siteId}</td><td className={cell}>{r.grid}</td><td className={cell}>{r.owner}</td><td className={cell}>{tpDateLabel(r.event.date)}</td><td className={cell}>{r.firstFuel?.date?tpDateLabel(r.firstFuel.date):"No refill"}</td><td className={cell}>{r.graceEnd?tpDateLabel(r.graceEnd):"—"}</td><td className={cell}>{fmt(r.allowed)}</td><td className={cell+" font-bold text-red-700"}>{fmt(r.penalty)}</td><td className={cell}><button className="rounded border border-blue-300 px-2 py-1 font-bold text-blue-800" onClick={()=>setExpandedHistory(expandedHistory===`${r.siteId}-${r.event.date.getTime()}-${i}`?null:`${r.siteId}-${r.event.date.getTime()}-${i}`)}>{expandedHistory===`${r.siteId}-${r.event.date.getTime()}-${i}`?"Hide":"Fuel History"}</button></td></tr>{expandedHistory===`${r.siteId}-${r.event.date.getTime()}-${i}`&&<tr><td colSpan={9} className="bg-blue-50 p-3"><div className="mb-2 flex justify-end"><ExportButtonComponent data={exportData([r])} filename={`TPrime_${r.siteId}`} label="Export Fuel History" format="csv"/></div><table className="w-full border-collapse"><thead><tr>{["Refueling Date","Before Fuel (L)","Fuel Filled (L)","Day from First Fill","Classification"].map(h=><th key={h} className={header}>{h}</th>)}</tr></thead><tbody>{r.history.map((h,j)=><tr key={j}><td className={cell}>{h.fuel.date?tpDateLabel(h.fuel.date):"—"}</td><td className={cell}>{fmt(h.fuel.beforeQty)}</td><td className={cell}>{fmt(h.fuel.filledQty)}</td><td className={cell}>{r.firstFuel?.date&&h.fuel.date?tpDay(h.fuel.date)-tpDay(r.firstFuel.date)+1:"—"}</td><td className={cell+(h.classification==="Penalty"?" font-bold text-red-700":" font-semibold text-green-700")}>{h.classification}</td></tr>)}</tbody></table>{!r.history.length&&<p className="p-3 text-sm">No refueling after this T-Prime event.</p>}</td></tr>}</Fragment>)}</tbody></table></div>;
+  if(primeLoading && !sourceData)return <div className="rounded-xl border border-blue-200 bg-white p-5 text-blue-900">Loading verified T_prime worksheet…</div>;
+  if(!sourceData)return <div className="rounded-xl border border-amber-300 bg-amber-50 p-5 text-amber-900">T-Prime sheet not loaded or the requested tab returned Sheet-1. {primeLoadError && <p className="mt-2 text-xs">{primeLoadError}</p>} Verify that <b>T_prime</b> exists in a configured workbook and its A/E/K columns contain Site ID, Fuel Date and Fuel Filled. Direct CSV access may require Google Sheet sharing permissions. The app rejects incorrect worksheet data.</div>;
+  if(!events.length)return <div className="rounded-xl border border-amber-300 bg-amber-50 p-5 text-amber-900"><p className="font-bold">No valid T-Prime events found.</p><p className="mt-1 text-sm">T-Prime reads column A (Site ID), E (Fuel Date) and K (Fuel Filled). The retrieved worksheet did not contain valid records. Invalid dates are never treated as penalties.</p><p className="mt-2 text-xs">Rows received: {sourceData.rows?.length??0}</p><p className="mt-1 break-all text-xs">Detected columns: {Object.keys(sourceData.rows?.[0]??{}).join(" | ")||"None"}</p><p className="mt-1 break-all text-xs">First row: {JSON.stringify(sourceData.rows?.[0]??{}).slice(0,500)}</p></div>;
+  return <div className="space-y-5"><div className="rounded-xl border border-blue-200 bg-white p-5"><h2 className="text-xl font-black text-blue-950">T-Prime Fuel Penalty · Vendor Control · Sep–Oct 2026</h2><p className="mt-1 text-xs text-slate-600">Policy: four calendar days from incident start. Consecutive daily T-Prime records are grouped into one incident; a gap starts a new incident. Fuel Filled is read directly from the T_prime sheet. Only entries within the documented incident period are assessed. Confirm closure dates before imposing deductions.</p><div className="mt-3 grid gap-3 sm:grid-cols-2"><select className="rounded-lg border border-blue-200 p-2 text-sm" value={gridFilter} onChange={e=>setGridFilter(e.target.value)}><option value="__all">All Grids</option>{grids.map(g=><option key={g}>{g}</option>)}</select><select className="rounded-lg border border-blue-200 p-2 text-sm" value={ownerFilter} onChange={e=>setOwnerFilter(e.target.value)}><option value="__all">All Cluster Owners</option>{owners.map(o=><option key={o}>{o}</option>)}</select></div></div><div className="grid gap-3 sm:grid-cols-4">{[{label:"T-Prime Sites",value:String(new Set(filtered.map(r=>r.siteId)).size)},{label:"T-Prime Events",value:String(filtered.length)},{label:"Justified Fuel",value:`${fmt(filtered.reduce((s,r)=>s+r.allowed,0))} L`},{label:"Penalty Fuel",value:`${fmt(filtered.reduce((s,r)=>s+r.penalty,0))} L`}].map(c=><div key={c.label} className="rounded-xl border border-blue-200 bg-white p-4"><div className="text-xs font-semibold text-slate-600">{c.label}</div><div className="mt-2 text-2xl font-black text-blue-950">{c.value}</div></div>)}</div><section className="rounded-xl border border-blue-200 bg-white p-4"><div className="mb-3 flex flex-wrap items-center justify-between gap-3"><div><h3 className="text-lg font-black text-blue-950">Worst Sites · T-Prime Fuel Penalty · Sep–Oct 2026</h3><p className="text-xs text-slate-600">Sites with penalty litres only, ranked highest first. Select View to inspect each incident and fueling history.</p></div><div className="flex flex-wrap items-center gap-2"><select aria-label="Worst T-Prime sites count" value={worstLimit} onChange={e=>setWorstLimit(Number(e.target.value))} className="rounded-lg border border-blue-200 bg-white px-3 py-2 text-sm">{[10,20,50,100].map(n=><option key={n} value={n}>Top {n}</option>)}</select><ExportButtonComponent data={worstSites.map((r,i)=>({Rank:i+1,"Site ID":r.siteId,Grid:r.grid,"Cluster Owner":r.owner,Incidents:r.events,"Penalty Incidents":r.penaltyEvents,"Justified Fuel (L)":r.allowed,"Penalty Fuel (L)":r.penalty}))} filename="TPrime_Worst_Penalty_Sites_Sep_Oct_2026" label="Export Worst Sites" format="csv"/></div></div><div className="overflow-x-auto"><table className="w-full min-w-[800px] border-collapse"><thead><tr>{["Rank","Site ID","Grid","Cluster Owner","Incidents","Penalty Incidents","Justified (L)","Penalty (L)","Action"].map(h=><th key={h} className={header}>{h}</th>)}</tr></thead><tbody>{worstSites.slice(0,worstLimit).map((r,i)=><Fragment key={r.siteId}><tr className="even:bg-slate-50"><td className={cell}>{i+1}</td><td className={cell+" font-bold"}>{r.siteId}</td><td className={cell}>{r.grid}</td><td className={cell}>{r.owner}</td><td className={cell}>{r.events}</td><td className={cell}>{r.penaltyEvents}</td><td className={cell}>{fmt(r.allowed)}</td><td className={cell+" font-bold text-red-700"}>{fmt(r.penalty)}</td><td className={cell}><button className="rounded border border-blue-300 px-2 py-1 font-bold text-blue-800" onClick={()=>setExpanded(expanded===`worst-${r.siteId}`?null:`worst-${r.siteId}`)}>{expanded===`worst-${r.siteId}`?"Hide":"View"}</button></td></tr>{expanded===`worst-${r.siteId}`&&<tr><td colSpan={9} className="bg-blue-50 p-3">{renderHistory(r.incidents)}</td></tr>}</Fragment>)}{worstSites.length===0&&<tr><td colSpan={9} className="p-6 text-center text-sm font-semibold text-emerald-800">No penalty sites found for the selected filters.</td></tr>}</tbody></table></div></section>{([ ["Grid-wise Penalty · Worst First",gridSummary],["Cluster Owner-wise Penalty · Worst First",ownerSummary] ] as const).map(([title,items])=><section key={title} className="rounded-xl border border-blue-200 bg-white p-4"><div className="mb-3 flex flex-wrap items-center justify-between gap-2"><h3 className="font-black text-blue-950">{title}</h3><ExportButtonComponent data={items.map(x=>({Name:x.name,Sites:x.sites,Events:x.events,"Penalty Sites":x.affected,"Justified L":x.allowed,"Penalty L":x.penalty}))} filename={title.startsWith("Grid")?"TPrime_Grid":"TPrime_CO"} label="Export Summary" format="csv"/></div><div className="overflow-x-auto"><table className="w-full border-collapse"><thead><tr>{[title.startsWith("Grid")?"Grid":"Cluster Owner","Sites","Events","Penalty Sites","Justified (L)","Penalty (L)","Action"].map(h=><th key={h} className={header}>{h}</th>)}</tr></thead><tbody>{items.map(x=><Fragment key={x.name}><tr><td className={cell+" font-bold"}>{x.name}</td><td className={cell}>{x.sites}</td><td className={cell}>{x.events}</td><td className={cell}>{x.affected}</td><td className={cell}>{fmt(x.allowed)}</td><td className={cell+" font-bold text-red-700"}>{fmt(x.penalty)}</td><td className={cell}><button className="rounded border border-blue-300 px-2 py-1 font-bold text-blue-800" onClick={()=>setExpanded(expanded===`${title}-${x.name}`?null:`${title}-${x.name}`)}>View Sites</button></td></tr>{expanded===`${title}-${x.name}`&&<tr><td colSpan={7} className="bg-blue-50 p-3"><div className="mb-2 flex justify-end"><ExportButtonComponent data={exportData(x.rows)} filename={`TPrime_${x.name}`} label="Export Sites" format="csv"/></div>{renderHistory(x.rows)}</td></tr>}</Fragment>)}</tbody></table></div></section>)}<section className="rounded-xl border border-blue-200 bg-white p-4"><h3 className="text-lg font-black text-blue-950">Site Query · T-Prime Fuel History</h3><p className="mb-3 text-xs text-slate-600">Search all T-Prime sites regardless of grid and CO filters.</p><div className="flex flex-wrap gap-2"><input aria-label="T-Prime site ID" className="min-w-[230px] flex-1 rounded-lg border border-blue-300 px-3 py-2" value={siteQuery} onChange={e=>setSiteQuery(e.target.value)} placeholder="Enter exact Site ID (e.g. 4130)"/><button className="rounded-lg border border-blue-300 px-3 py-2 text-sm font-bold text-blue-800" onClick={()=>setSiteQuery("")}>Clear</button>{queried.length>0&&<ExportButtonComponent data={exportData(queried)} filename={`TPrime_Site_${siteQuery.trim()}`} label="Export Fuel History" format="csv"/>}</div>{siteQuery.trim()&&<div className="mt-4">{queried.length?renderHistory(queried):<p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-800">No T-Prime event found for this Site ID.</p>}</div>}</section></div>;
+}
+
+export default function FuelDashboard({ data, deviationData, tPrimeData, onBack }: { data: SheetPayload | null; deviationData: SheetPayload | null; tPrimeData: SheetPayload | null; onBack: () => void }) {
   const [tab, setTab] = useState<FuelSubTab>("summary");
   const [view, setView] = useState<FuelView>("overall");
   const [gridFilter, setGridFilter] = useState("__all");
@@ -1152,6 +1379,7 @@ export default function FuelDashboard({ data, deviationData, onBack }: { data: S
             ["yoy","YoY & Worst Sites",TrendingDown],
             ["currentMonth",`Current Month · ${currentMonthLabel}`,CalendarDays],
             ["deviation","Fuel Deviation",AlertTriangle],
+            ["tprime","T-Prime Penalty",AlertTriangle],
           ] as const).map(([id,label,Icon]) => <button key={id} onClick={()=>setTab(id as FuelSubTab)} className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-bold transition ${tab===id?"bg-white text-[#075E36] shadow-lg shadow-black/10":"text-emerald-50/75 hover:bg-white/10 hover:text-white"}`}><Icon className="h-4 w-4"/><span>{label}</span></button>)}
         </nav>
         <div className="border-t border-slate-800 p-4 text-[11px] text-emerald-100/60">Fuel History · Live Google Sheet</div>
@@ -1162,22 +1390,23 @@ export default function FuelDashboard({ data, deviationData, onBack }: { data: S
           <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-4 sm:px-6">
             <div>
               <div className="flex items-center gap-2 lg:hidden"><button onClick={onBack} className="rounded-lg bg-slate-800 px-3 py-2 text-xs font-bold text-white">← Home</button><Fuel className="h-5 w-5 text-emerald-600"/></div>
-              <h2 className="mt-1 text-xl font-black text-slate-950">{tab==="summary"?"Overall Fuel Summary":tab==="yoy"?"YoY & Worst Sites":tab==="deviation"?"Fuel Deviation":`${currentMonthLabel} Fuel Summary`}</h2>
+              <h2 className="mt-1 text-xl font-black text-slate-950">{tab==="summary"?"Overall Fuel Summary":tab==="yoy"?"YoY & Worst Sites":tab==="deviation"?"Fuel Deviation":tab==="tprime"?"T-Prime Fuel Penalty":`${currentMonthLabel} Fuel Summary`}</h2>
               <p className="text-xs text-slate-500">Fuel History · {previousYear} vs {currentYear} · comparable through {comparableMonths[comparableMonths.length-1]}</p>
             </div>
-            {tab!=="deviation" && <div className="flex flex-wrap gap-2">
+            {tab!=="deviation" && tab!=="tprime" && <div className="flex flex-wrap gap-2">
               {(["overall","C-1","C-6"] as FuelView[]).map(v => <button key={v} onClick={()=>setView(v)} className={`rounded-lg px-4 py-2 text-sm font-black ${view===v?"bg-[#006B3C] text-white":"bg-slate-200 text-slate-700"}`}>{v==="overall"?"Overall":v}</button>)}
               <select aria-label="Fuel month" value={fuelMonthFilter} onChange={e=>setFuelMonthFilter(e.target.value)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-bold"><option value="__all">YTD (Jan–{FUEL_MONTH_ORDER[latestMonthIndex]})</option>{FUEL_MONTH_ORDER.slice(0,latestMonthIndex+1).map(m=><option key={m} value={m}>{m} · YoY</option>)}</select>
               <select value={gridFilter} onChange={e=>setGridFilter(e.target.value)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-bold"><option value="__all">All Grids</option>{grids.map(g=><option key={g}>{g}</option>)}</select>
             </div>}
           </div>
           <div className="flex gap-2 overflow-x-auto border-t border-slate-100 px-4 py-2 lg:hidden sm:px-6">
-            {[["summary","Summary"],["yoy","YoY / Worst Sites"],["currentMonth",currentMonthLabel],["deviation","Deviation"]].map(([id,label])=><button key={id} onClick={()=>setTab(id as FuelSubTab)} className={`whitespace-nowrap rounded-lg px-3 py-2 text-xs font-black ${tab===id?"bg-emerald-600 text-white":"bg-slate-100 text-slate-700"}`}>{label}</button>)}
+            {[["summary","Summary"],["yoy","YoY / Worst Sites"],["currentMonth",currentMonthLabel],["deviation","Deviation"],["tprime","T-Prime Penalty"]].map(([id,label])=><button key={id} onClick={()=>setTab(id as FuelSubTab)} className={`whitespace-nowrap rounded-lg px-3 py-2 text-xs font-black ${tab===id?"bg-emerald-600 text-white":"bg-slate-100 text-slate-700"}`}>{label}</button>)}
           </div>
         </header>
 
         <main className="space-y-5 p-4 sm:p-6 fuel-dashboard-main">
         {tab==="deviation" && <FuelDeviationPage payload={deviationData} region={view} onRegionChange={setView} />}
+        {tab==="tprime" && <TPrimePenaltyPage fuelRows={rows} primeData={tPrimeData} deviationData={deviationData} />}
         {tab==="summary" && <>
           <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
             <b>Calculation basis:</b> {fuelMonthFilter === "__all" ? `Jan–${currentMonthKey}` : fuelMonthFilter} Y25 vs Y26. Current month is incomplete; full-period difference is provisional. Same-date YoY below compares both years through day {sameDay} of {currentMonthKey}. Sep/Sept are normalized. Unmapped records remain visible for reconciliation.
@@ -1331,7 +1560,7 @@ export default function FuelDashboard({ data, deviationData, onBack }: { data: S
               <div className="border-b border-blue-100 bg-gradient-to-r from-blue-50 to-white p-5"><h3 className="text-base font-black text-slate-950">{currentMonthLabel} · Day-wise Summary</h3><p className="text-xs text-slate-500">Daily fuel, fill events and unique sites</p></div>
               <div className="max-h-[390px] overflow-auto">
                 <table className={tableClass}><thead className="sticky top-0 bg-[#006B3C]"><tr>{["Date","Fuel L","Fill Events","Sites"].map(h=><th key={h} className={th}>{h}</th>)}</tr></thead>
-                  <tbody>{currentMonthDaySummary.map(x=><tr key={x.day} className="border-b border-slate-200 even:bg-slate-50"><td className={td+" font-black"}>{x.date}</td><td className={td+" font-black"}>{Math.round(x.fuel).toLocaleString()}</td><td className={td}>{x.fills}</td><td className={td}>{x.sites}</td></tr>)}</tbody>
+                  <tbody>{currentMonthDaySummary.length === 0 && <tr><td colSpan={4} className="border border-amber-200 bg-amber-50 px-4 py-8 text-center font-semibold text-amber-900">No valid dated fuel entries for {currentMonthLabel}. {currentMonthUnknownDateRows.length} records have unrecognized timestamps. Please verify the Refueling Time format in Fuel History.</td></tr>}{currentMonthDaySummary.map(x=><tr key={x.day} className="border-b border-slate-200 even:bg-slate-50"><td className={td+" font-black"}>{x.date}</td><td className={td+" font-black"}>{Math.round(x.fuel).toLocaleString()}</td><td className={td}>{x.fills}</td><td className={td}>{x.sites}</td></tr>)}</tbody>
                 </table>
               </div>
             </div>
@@ -1437,3 +1666,6 @@ export default function FuelDashboard({ data, deviationData, onBack }: { data: S
     </div>
   );
 }
+
+
+

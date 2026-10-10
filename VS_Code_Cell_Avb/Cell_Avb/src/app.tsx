@@ -7283,6 +7283,7 @@ export default function App() {
   const [month3Basics, setMonth3Basics] = useState<SheetPayload | null>(null);
   const [fuelHistory, setFuelHistory] = useState<SheetPayload | null>(null);
   const [fuelDeviation, setFuelDeviation] = useState<SheetPayload | null>(null);
+  const [fuelTPrime, setFuelTPrime] = useState<SheetPayload | null>(null);
   const [preVsPostData, setPreVsPostData] = useState<SheetPayload | null>(null);
   const [prePostSites, setPrePostSites] = useState<SiteData[]>([]);
   const [prePostLastUpdated, setPrePostLastUpdated] = useState("");
@@ -7504,6 +7505,7 @@ export default function App() {
       console.error("Fuel History lookup failed:", attempts);
       setFuelHistory(null);
       setFuelDeviation(null);
+      setFuelTPrime(null);
       setViewMode("fuel");
       setErrorMsg("Fuel History could not be retrieved from the configured workbooks. Check Google Sheet access, the 'Fuel History' tab name and the browser console for the actual request errors. " + attempts[0]);
       setAppState("error");
@@ -7523,6 +7525,23 @@ export default function App() {
         console.warn("Deviation Fuel not available in workbook", workbook, error);
       }
     }
+    // T-Prime worksheet may be in a different configured workbook.
+    let tPrime: SheetPayload | null = null;
+    for (const workbook of deviationWorkbooks) {
+      for (const sheetName of ["T_prime", "T-Prime", "T Prime", "T_Prime"]) {
+        try {
+          const candidate = await fetchGoogleSheet(workbook, sheetName);
+          if (candidate && Array.isArray(candidate.rows) && candidate.rows.length > 0) {
+            tPrime = candidate;
+            break;
+          }
+        } catch (error) {
+          // Continue checking other supported worksheet names.
+        }
+      }
+      if (tPrime) break;
+    }
+    setFuelTPrime(tPrime);
     setFuelHistory(history);
     setFuelDeviation(deviation);
     setViewMode("fuel");
@@ -7726,7 +7745,7 @@ export default function App() {
 
   // ----- FUEL MANAGEMENT FULL PAGE -----
   if (viewMode === "fuel") {
-    return <FuelDashboard data={fuelHistory} deviationData={fuelDeviation} onBack={goHome} />;
+    return <FuelDashboard data={fuelHistory} deviationData={fuelDeviation} tPrimeData={fuelTPrime} onBack={goHome} />;
   }
 
   // ----- PRE‑VS‑POST FULL PAGE WITH SIDEBAR -----
