@@ -1,5 +1,6 @@
 import "./dashboard-theme.css";
 import FuelDashboard from "./FuelDashboard";
+import ElectricityDashboard from "./ElectricityDashboard";
 import React, { useState, useEffect, useMemo, Fragment, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -1210,7 +1211,7 @@ const NAV_ITEMS = [
 
 type Month = "july" | "august" | "september" | "october";
 type AppState = "loading" | "dashboard" | "error";
-type ViewMode = "home" | "month" | "prepost" | "fuel";
+type ViewMode = "home" | "month" | "prepost" | "fuel" | "electricity";
 type PrePostSubView = "analysis" | "query";
 
 // ============================================================
@@ -7716,6 +7717,20 @@ export default function App() {
             </motion.button>
             <motion.button
               variants={{ hidden: { opacity: 0, y: 30 }, show: { opacity: 1, y: 0 } }}
+              whileHover={{ scale: 1.03, boxShadow: "0 0 40px rgba(250, 204, 21, 0.30)" }}
+              whileTap={{ scale: 0.98 }}
+              onClick={() => { setAppState("dashboard"); setViewMode("electricity"); }}
+              className="group relative w-full min-h-[142px] px-6 py-7 rounded-2xl bg-gradient-to-br from-amber-500/25 to-orange-700/25 border border-amber-400/40 hover:border-amber-300 transition-all duration-300 shadow-xl hover:shadow-amber-500/30 backdrop-blur-sm overflow-hidden"
+            >
+              <span className="absolute inset-0 bg-gradient-to-r from-yellow-400/20 to-orange-400/20 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+              <div className="relative text-center">
+                <Zap className="mx-auto mb-2 h-7 w-7 text-amber-300" />
+                <span className="block text-xl sm:text-2xl font-extrabold tracking-tight text-white">Electricity Units</span>
+                <span className="text-slate-200 text-sm">ABS Month · Target 3,420 units/site</span>
+              </div>
+            </motion.button>
+            <motion.button
+              variants={{ hidden: { opacity: 0, y: 30 }, show: { opacity: 1, y: 0 } }}
               whileHover={{ scale: 1.03, boxShadow: "0 0 40px rgba(14, 165, 233, 0.35)" }}
               whileTap={{ scale: 0.98 }}
               onClick={load5GPage}
@@ -7741,6 +7756,11 @@ export default function App() {
         </motion.div>
       </div>
     );
+  }
+
+  // ----- ELECTRICITY UNIT CONSUMPTION (ABS MONTH REFERENCE) -----
+  if (viewMode === "electricity") {
+    return <ElectricityDashboard sheetId={SHEET_IDS.october} sheetName="ABS" onBack={goHome} />;
   }
 
   // ----- FUEL MANAGEMENT FULL PAGE -----
