@@ -491,6 +491,28 @@ function FuelDeviationPage({ payload, region, onRegionChange }: { payload: Sheet
       chartLitres:group.reduce((n,s)=>n+(ticketView==="latest"?latestNegative(s):negativeMagnitude(s)),0)};
   }).filter(g=>g.sites).sort((a,b)=>b.gross-a.gross);
   const negativeWorst = [...base].filter(s=>negativeMagnitude(s)>0).sort((a,b)=>negativeMagnitude(b)-negativeMagnitude(a)).slice(0,worstLimit);
+  // Recurring-site exports use the same >+10 L / <-20 L exception rules as the KPI cards.
+  // Include only sites with at least two qualifying tickets, independent of latest status.
+  const recurringSiteExport = (mode: "positive" | "negative") => {
+    const isNegative = mode === "negative";
+    return base.filter(s => isNegative ? negativeCount(s) >= 2 : s.positiveCount >= 2)
+      .sort((a,b) => isNegative ? negativeMagnitude(b)-negativeMagnitude(a) : b.positiveLitres-a.positiveLitres)
+      .map(s => ({
+        "Site ID":s.siteId,"Grid":s.grid,"Sub-Region":s.region,"Revenue Category":s.revenue,
+        "Cluster Owner":s.owner,"MS GTL":s.gtl,"Zone Lead":s.lead,
+        "DG Rating":s.rating,"Hub Category":s.hubType,"BM":s.benchmark,
+        "Recurring Tickets":isNegative ? negativeCount(s) : s.positiveCount,
+        "Gross Positive (L)":s.positiveLitres,
+        "Gross Negative Magnitude (L)":negativeMagnitude(s),
+        "Net Deviation (L)":s.netDeviation,"Latest Ticket Status":s.latestStatus,
+        ...Object.fromEntries(s.tickets.flatMap((t,i) => [
+          [`Ticket ${i+1} Recon Date`,t.reconDate],[`Ticket ${i+1} LFD`,t.lfd],
+          [`Ticket ${i+1} Fueler (L)`,t.fueler],[`Ticket ${i+1} DG Hours`,t.hours],
+          [`Ticket ${i+1} EASS (L)`,t.eass],[`Ticket ${i+1} Deviation (L)`,t.deviation],
+          [`Ticket ${i+1} Status`,t.status]
+        ]))
+      }));
+  };
   const negativeExport = base.map(s=>({"Site ID":s.siteId,Grid:s.grid,"Revenue Category":s.revenue,"Cluster Owner":s.owner,"MS GTL":s.gtl,"Zone Lead":s.lead,
     "Latest Ticket Deviation L":s.tickets[0]?.deviation ?? "", "Latest Ticket Status":s.latestStatus,
     "Negative Tickets":negativeCount(s),"Gross Negative L (signed)":s.negativeLitres,"Gross Negative Magnitude L":negativeMagnitude(s),
@@ -567,7 +589,7 @@ function FuelDeviationPage({ payload, region, onRegionChange }: { payload: Sheet
       ["Latest Ticket Negative",`${fmt(negativeLatestGross)} L`,"Latest negative exceptions"],
       ["Affected Sites",String(negativeAffected),`Of ${base.length} selected sites`],
       ["Recurring Sites",String(negativeRecurring),"Negative in 2+ tickets"]
-    ].map(([label,value,sub])=><div key={label} className="rounded-xl border border-blue-200 border-l-4 border-l-amber-500 bg-white p-4 shadow-sm"><p className="text-xs font-semibold text-slate-600">{label}</p><p className="mt-2 text-2xl font-black tabular-nums text-amber-800">{value}</p><p className="mt-1 text-xs text-slate-500">{sub}</p></div>)}</section>
+    ].map(([label,value,sub])=><div key={label} className="rounded-xl border border-blue-200 border-l-4 border-l-amber-500 bg-white p-4 shadow-sm"><p className="text-xs font-semibold text-slate-600">{label}</p><p className="mt-2 text-2xl font-black tabular-nums text-amber-800">{value}</p><p className="mt-1 text-xs text-slate-500">{sub}</p>{label==="Recurring Sites"&&<div className="mt-3"><ExportButtonComponent data={recurringSiteExport("negative")} filename="Fuel_Negative_Recurring_Sites" label="Export Recurring Sites" format="excel" variant="success"/></div>}</div>)}</section>
     {region==="overall"&&<section className="grid grid-cols-1 gap-3 md:grid-cols-2">{(["C-1","C-6"] as const).map(r=>{const x=negativeGrids.filter(g=>fuelRegion(g.grid)===r);return <div key={r} className="rounded-xl border border-blue-200 bg-white p-4"><div className="flex items-center justify-between"><h3 className="font-extrabold text-blue-900">Central-{r.slice(-1)}</h3><button className="text-sm font-bold text-blue-800 underline" onClick={()=>onRegionChange(r)}>View {r}</button></div><p className="mt-2 text-xl font-extrabold text-amber-800">{fmt(x.reduce((n,g)=>n+g.gross,0))} L</p><p className="text-sm text-slate-600">Worst grid: {x[0]?.grid??"—"} · {x.reduce((n,g)=>n+g.affected,0)} affected sites</p></div>})}</section>}
     {coSummaryView}
     <section className="rounded-xl border border-blue-200 bg-white shadow-sm"><div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 p-4"><h3 className="font-extrabold text-blue-950">Grid Summary · Worst Negative First</h3><ExportButtonComponent data={negativeGrids} filename="Fuel_Negative_Grid_Summary" label="Export Grids" format="excel" variant="success"/></div><div className="overflow-x-auto"><table className="w-full min-w-[780px] border-collapse text-sm"><thead><tr>{["Grid","Sites","Negative Sites","Gross Negative (L)","Latest Negative (L)","Latest Sites","Action"].map(h=><th key={h} className="border border-blue-700 bg-blue-900 px-3 py-3 text-center align-middle font-bold text-white">{h}</th>)}</tr></thead><tbody>{negativeGrids.map(g=><React.Fragment key={g.grid}><tr className="border-b border-slate-100 even:bg-blue-50/40"><td className="border border-slate-300 px-3 py-3 text-center align-middle font-bold">{g.grid}</td><td className="border border-slate-300 px-3 py-3 text-center align-middle">{g.sites}</td><td className="border border-slate-300 px-3 py-3 text-center align-middle">{g.affected}</td><td className="border border-slate-300 px-3 py-3 text-center align-middle font-extrabold text-amber-800">{fmt(g.gross)}</td><td className="border border-slate-300 px-3 py-3 text-center align-middle">{fmt(g.latest)}</td><td className="border border-slate-300 px-3 py-3 text-center align-middle">{g.latestSites}</td><td className="border border-slate-300 px-3 py-3 text-center align-middle"><button onClick={()=>setExpandedGrid(expandedGrid===g.grid?null:g.grid)} className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 font-bold text-blue-900">{expandedGrid===g.grid?"Hide Sites ↑":"View Sites ↓"}</button></td></tr>{expandedGrid===g.grid&&<tr><td colSpan={7} className="bg-blue-50 p-3"><div className="mb-2 flex justify-end"><ExportButtonComponent data={negativeExport.filter(x=>x.Grid===g.grid)} filename={`Fuel_Negative_${g.grid}`} label="Export Sites" format="excel" variant="success"/></div>{negativeTable([...base].filter(s=>s.grid===g.grid).sort((a,b)=>negativeMagnitude(b)-negativeMagnitude(a)),false)}</td></tr>}</React.Fragment>)}</tbody></table></div></section>
@@ -599,7 +621,7 @@ function FuelDeviationPage({ payload, region, onRegionChange }: { payload: Sheet
         {label:"Latest Ticket Positive",value:`${fmt(latestPositive)} L`,sub:`${latestPositiveSites} sites on latest ticket`,risk:true},
         {label:"Affected Sites",value:String(historicalPositiveSites),sub:`Of ${base.length} selected sites`,risk:false},
         {label:"Recurring Sites",value:String(recurring),sub:"Positive in 2+ tickets",risk:false},
-      ].map(k=><div key={k.label} className={`flex min-h-[114px] flex-col justify-between rounded-xl border border-slate-200 border-l-4 bg-white px-4 py-3 shadow-[0_1px_2px_rgba(15,23,42,0.04)] ${k.risk?"border-l-red-500":"border-l-[#07804d]"}`}><div className="text-[13px] font-semibold text-slate-600">{k.label}</div><div className={`mt-1 text-[clamp(23px,2.3vw,32px)] font-extrabold leading-tight tracking-tight tabular-nums ${k.risk?"text-red-700":"text-slate-900"}`}>{k.value}</div><div className="mt-1 text-[11px] text-slate-500">{k.sub}</div></div>)}
+      ].map(k=><div key={k.label} className={`flex min-h-[114px] flex-col justify-between rounded-xl border border-slate-200 border-l-4 bg-white px-4 py-3 shadow-[0_1px_2px_rgba(15,23,42,0.04)] ${k.risk?"border-l-red-500":"border-l-[#07804d]"}`}><div className="text-[13px] font-semibold text-slate-600">{k.label}</div><div className={`mt-1 text-[clamp(23px,2.3vw,32px)] font-extrabold leading-tight tracking-tight tabular-nums ${k.risk?"text-red-700":"text-slate-900"}`}>{k.value}</div><div className="mt-1 text-[11px] text-slate-500">{k.sub}</div>{k.label==="Recurring Sites"&&<div className="mt-3"><ExportButtonComponent data={recurringSiteExport("positive")} filename="Fuel_Positive_Recurring_Sites" label="Export Recurring Sites" format="excel" variant="success"/></div>}</div>)}
     </section>
     {region === "overall" && <section className="grid grid-cols-1 gap-3 lg:grid-cols-2" aria-label="C-1 and C-6 regional fuel deviation summary">
       {regionalOverview.map(r=><div key={r.region} className="min-w-0 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
@@ -1415,6 +1437,3 @@ export default function FuelDashboard({ data, deviationData, onBack }: { data: S
     </div>
   );
 }
-
-
-
