@@ -359,6 +359,7 @@ function FuelDeviationPage({ payload, region, onRegionChange }: { payload: Sheet
   const [category, setCategory] = useState("__all");
   const [owner, setOwner] = useState("__all");
   const [query, setQuery] = useState("");
+  const [siteQuery, setSiteQuery] = useState("");
   const [worstLimit, setWorstLimit] = useState(20);
   const [expandedGrid, setExpandedGrid] = useState<string | null>(null);
   const [ticketView, setTicketView] = useState<"all" | "latest">("all");
@@ -439,6 +440,20 @@ function FuelDeviationPage({ payload, region, onRegionChange }: { payload: Sheet
   const exportRows = base.map(s=>({"Site ID":s.siteId,Grid:s.grid,"Revenue Category":s.revenue,"Cluster Owner":s.owner,"MS GTL":s.gtl,"Zone Lead":s.lead,"DG Rating":s.rating,"HUB/Single":s.hubType,"BM":s.benchmark,
     ...Object.fromEntries(s.tickets.flatMap((t,i)=>[[`Ticket ${i+1} LFD`,t.lfd],[`Ticket ${i+1} Recon Date`,t.reconDate],[`Ticket ${i+1} Fueler L`,t.fueler],[`Ticket ${i+1} EASS L`,t.eass],[`Ticket ${i+1} Deviation L`,t.deviation],[`Ticket ${i+1} Status`,t.status]])),
     "Gross Positive L":s.positiveLitres,"Gross Negative L":s.negativeLitres,"Net Deviation L":s.netDeviation,"Positive Ticket Count":s.positiveCount,"Latest Status":s.latestStatus}));
+  // Site query always searches the full live Deviation Fuel payload, regardless of page filters.
+  const siteQueryMatches = useMemo(() => {
+    const id = siteQuery.trim().toLowerCase();
+    return id ? sites.filter(s => s.siteId.toLowerCase() === id) : [];
+  }, [sites, siteQuery]);
+  const siteQueryExport = useMemo(() => siteQueryMatches.flatMap(s => s.tickets.map((t,i) => ({
+    "Site ID":s.siteId, "Grid":s.grid, "Sub-Region":s.region, "Revenue Category":s.revenue,
+    "Cluster Owner":s.owner, "MS GTL":s.gtl, "Zone Lead":s.lead, "DG Rating":s.rating,
+    "Hub Category":s.hubType, "Benchmark":s.benchmark ?? "", "Ticket":i+1,
+    "Fuel Recon Date":t.reconDate, "Last Fueling Date":t.lfd,
+    "Fuel to Reconcile (L)":t.fuelToRecon ?? "", "Before Fuel (L)":t.beforeFuel ?? "",
+    "Fueler Consumption (L)":t.fueler ?? "", "EASS DG Running (Hrs)":t.hours ?? "",
+    "EASS Consumption (L)":t.eass ?? "", "Deviation (L)":t.deviation ?? "", "Status":t.status,
+  }))), [siteQueryMatches]);
   const selectClass = "h-11 w-full min-w-0 rounded-xl border border-emerald-200 bg-white/90 px-3 text-[14px] font-semibold text-slate-800 shadow-sm outline-none transition-all duration-200 focus:border-emerald-600 focus:bg-white focus:ring-2 focus:ring-emerald-200";
   const headClass = "sticky top-0 z-10 whitespace-nowrap bg-[#075B39] px-4 py-3 text-left text-[13px] font-bold tracking-[0.01em] text-white";
   const numberHead = headClass + " text-right";
@@ -515,6 +530,31 @@ function FuelDeviationPage({ payload, region, onRegionChange }: { payload: Sheet
       </div>
     </section>
     <section className="min-w-0 rounded-xl border border-slate-200 bg-white shadow-[0_1px_3px_rgba(15,23,42,0.05)]"><div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-5 py-4"><div><h3 className="text-base font-bold text-slate-900">Worst Sites · Positive Fuel Deviation</h3><p className="text-[11px] text-slate-500">Highest gross positive liters first · Latest ticket shown first</p></div><div className="flex items-center gap-2"><select aria-label="Worst sites count" value={worstLimit} onChange={e=>setWorstLimit(Number(e.target.value))} className={selectClass}>{[10,20,50,100].map(n=><option key={n} value={n}>Top {n}</option>)}</select><ExportButtonComponent data={exportRows} filename="Fuel_Deviation_Sites" label="Export" format="excel" variant="success"/></div></div><div className="p-3">{renderSiteTable(worst,true)}</div></section>
+    <section className="min-w-0 overflow-hidden rounded-xl border border-blue-200 bg-white shadow-sm" aria-label="Fuel deviation site query">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-blue-100 bg-blue-50 px-5 py-4">
+        <div><h3 className="text-lg font-extrabold text-blue-950">Site Query · Four-Ticket Fuel Reconciliation</h3><p className="mt-1 text-xs font-medium text-slate-600">Search by exact Site ID · Live Deviation Fuel sheet · Independent of all dashboard filters</p></div>
+        <ExportButtonComponent data={siteQueryExport} filename={`Fuel_Deviation_Site_${siteQuery.trim() || "Query"}`} label="Export 4 Tickets CSV" format="csv" variant="secondary"/>
+      </div>
+      <div className="p-5">
+        <div className="relative max-w-lg"><Search className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-blue-600"/><input type="search" aria-label="Site ID for four-ticket deviation query" value={siteQuery} onChange={e=>setSiteQuery(e.target.value)} placeholder="Enter Site ID (e.g. 4130)" className="w-full rounded-lg border border-blue-200 bg-white py-3 pl-11 pr-4 text-base font-semibold text-slate-900 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"/></div>
+        {!siteQuery.trim() && <p className="mt-4 text-sm text-slate-500">Enter a Site ID to view all four fuel reconciliation tickets and their deviation details.</p>}
+        {siteQuery.trim() && !siteQueryMatches.length && <p role="status" className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-900">No site found for ID “{siteQuery.trim()}” in the Deviation Fuel sheet. Check the Site ID.</p>}
+        {siteQueryMatches.map((s,matchIndex) => {
+          const negativeTickets = s.tickets.filter(t=>t.status==="Negative").length;
+          const validTickets = s.tickets.filter(t=>t.deviation!==null).length;
+          return <div key={`${s.grid}-${s.siteId}-${matchIndex}`} className="mt-5 space-y-4">
+            <div className="grid grid-cols-2 gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm sm:grid-cols-3 lg:grid-cols-5">
+              {[["Site ID",s.siteId],["Grid",s.grid],["Sub-Region",s.region],["Revenue Category",s.revenue],["Cluster Owner",s.owner],["GTL",s.gtl],["Zone Lead",s.lead],["DG Rating",s.rating],["Hub Category",s.hubType],["Benchmark",s.benchmark===null?"—":String(s.benchmark)]].map(([label,value])=><div key={label}><div className="text-xs font-semibold text-slate-500">{label}</div><div className="mt-1 break-words font-bold text-slate-900">{value||"—"}</div></div>)}
+            </div>
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+              {[["Gross Positive",`${fmt(s.positiveLitres)} L`,"text-red-700"],["Gross Negative",`${fmt(s.negativeLitres)} L`,"text-amber-700"],["Net Deviation",`${fmt(s.netDeviation)} L`,"text-slate-900"],["Positive / Negative",`${s.positiveCount} / ${negativeTickets}`,"text-slate-900"],["Latest Ticket",s.latestStatus,"text-blue-900"]].map(([label,value,color])=><div key={label} className="rounded-lg border border-slate-200 bg-white p-3"><div className="text-xs font-semibold text-slate-500">{label}</div><div className={`mt-1 text-xl font-extrabold tabular-nums ${color}`}>{value}</div></div>)}
+            </div>
+            <div className="overflow-x-auto rounded-lg border border-slate-200"><table className="w-full min-w-[1260px] border-collapse text-sm"><thead><tr>{["Ticket","Recon Date","Last Fueling Date","Fuel to Recon (L)","Before Fuel (L)","Fueler Consumption (L)","EASS DG Hours","EASS Consumption (L)","Deviation (L)","Status"].map(h=><th key={h} className={headClass}>{h}</th>)}</tr></thead><tbody>{s.tickets.map((t,i)=><tr key={i} className="border-t border-slate-100 even:bg-slate-50"><td className={cellClass+" font-bold"}>{i===0?"Latest":`Ticket ${i+1}`}</td><td className={cellClass}>{t.reconDate||"—"}</td><td className={cellClass}>{t.lfd||"—"}</td>{[t.fuelToRecon,t.beforeFuel,t.fueler,t.hours,t.eass].map((v,j)=><td key={j} className={numClass}>{v===null?"—":fmt(v)}</td>)}<td className={`${numClass} font-extrabold ${t.status==="Positive"?"text-red-700":t.status==="Negative"?"text-amber-700":t.status==="Normal"?"text-emerald-700":"text-slate-500"}`}>{t.deviation===null?"—":fmt(t.deviation)}</td><td className={cellClass}>{statusBadge(t.status)}</td></tr>)}</tbody></table></div>
+            <p className="text-xs text-slate-500">{validTickets} of 4 tickets contain deviation values. Positive &gt; +10 L · Negative &lt; −20 L · Normal otherwise. Missing data is shown as —.</p>
+          </div>;
+        })}
+      </div>
+    </section>
     <p className="px-1 text-[11px] text-slate-500">Positive &gt; +10 L · Negative &lt; −20 L · Missing tickets excluded. Gross positive deviation does not offset negative values; deviations are reconciliation exceptions, not confirmed fuel losses.</p>
   </div>;
 }
