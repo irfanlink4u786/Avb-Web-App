@@ -1,3 +1,5 @@
+import "./dashboard-theme.css";
+import FuelDashboard from "./FuelDashboard";
 import React, { useState, useEffect, useMemo, Fragment, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -39,6 +41,7 @@ import {
 } from "lucide-react";
 import {
   ComposedChart,
+  BarChart,
   Bar,
   Line,
   XAxis,
@@ -53,7 +56,6 @@ import {
 } from "recharts";
 import ErrorBoundary from "./components/ErrorBoundary";
 import OverallSummaryComponent from "./components/OverallSummary";
-import HardwareIssues from "./components/HardwareIssues";
 import ExportButton from "./components/ExportButton";
 import WeatherRadar from "./components/WeatherRadar";
 import RainAlertWidget from "./components/RainAlertWidget";
@@ -208,6 +210,19 @@ function empCaTextClass(value: number): string {
   return "text-emerald-700";
 }
 
+// Shared enterprise-style availability badge; visual-only, no KPI logic changes.
+function AvailabilityBadge({ value, digits = 2 }: { value: number; digits?: number }) {
+  const valid = Number.isFinite(value) && value > 0;
+  const tone = !valid
+    ? "bg-slate-100 text-slate-500 ring-slate-200"
+    : value < 98
+      ? "bg-rose-50 text-rose-700 ring-rose-200"
+      : value < 99
+        ? "bg-amber-50 text-amber-800 ring-amber-200"
+        : "bg-emerald-50 text-emerald-800 ring-emerald-200";
+  return <span className={`inline-flex min-w-[74px] justify-center rounded-full px-2.5 py-1 text-xs font-bold tabular-nums ring-1 ring-inset ${tone}`}>{valid ? `${value.toFixed(digits)}%` : "–"}</span>;
+}
+
 function EmployeePerformance({
   sites,
   lastUpdatedDate = "",
@@ -341,18 +356,18 @@ function EmployeePerformance({
       {/* Employee summary */}
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
-          <thead className="bg-sky-100">
+          <thead className="bg-slate-900 text-white">
             <tr>
-              <th className="px-4 py-3 text-left font-extrabold text-slate-950">
+              <th className="px-4 py-3 text-left font-extrabold uppercase tracking-wide text-white">
                 Employee
               </th>
-              <th className="px-4 py-3 text-center font-extrabold text-slate-950">
+              <th className="px-4 py-3 text-center font-extrabold uppercase tracking-wide text-white">
                 Sites
               </th>
-              <th className="px-4 py-3 text-center font-extrabold text-slate-950">
+              <th className="px-4 py-3 text-center font-extrabold uppercase tracking-wide text-white">
                 Current CA
               </th>
-              <th className="px-4 py-3 text-center font-extrabold text-slate-950">
+              <th className="px-4 py-3 text-center font-extrabold uppercase tracking-wide text-white">
                 View Sites
               </th>
             </tr>
@@ -364,7 +379,7 @@ function EmployeePerformance({
 
               return (
                 <React.Fragment key={row.name}>
-                  <tr className="border-t border-slate-200 hover:bg-slate-50">
+                  <tr className="border-t border-slate-100 even:bg-slate-50/60 transition-colors duration-200 hover:bg-emerald-50/50">
                     <td className="px-4 py-3 font-bold text-slate-950">
                       {row.name}
                     </td>
@@ -378,7 +393,7 @@ function EmployeePerformance({
                         row.avg
                       )}`}
                     >
-                      {row.avg.toFixed(2)}%
+                      <AvailabilityBadge value={row.avg} />
                     </td>
 
                     <td className="px-4 py-3 text-center">
@@ -387,7 +402,7 @@ function EmployeePerformance({
                         onClick={() =>
                           setExpanded(isExpanded ? null : row.name)
                         }
-                        className="inline-flex items-center gap-1.5 rounded-lg border border-blue-300 bg-blue-50 px-3 py-1.5 font-extrabold text-blue-700 transition-colors hover:bg-blue-100"
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 font-extrabold text-emerald-800 transition-all duration-200 hover:bg-emerald-100 focus:outline-none focus:ring-2 focus:ring-cyan-500"
                       >
                         View
                         {isExpanded ? (
@@ -428,8 +443,7 @@ function EmployeePerformance({
                           <div className="overflow-x-auto">
                             <table className="min-w-[1350px] w-full text-sm">
                               <thead
-                                className="employee-all-sites-header"
-                                style={{ background: "#006B3C", backgroundColor: "#006B3C" }}
+                                className="employee-all-sites-header bg-emerald-900 text-white"
                               >
                                 <tr className="border-b border-sky-200">
                                   <th className="px-3 py-3 text-left text-[12px] font-black !text-white whitespace-nowrap">
@@ -480,7 +494,7 @@ function EmployeePerformance({
                                   .map((site) => (
                                     <tr
                                       key={site.siteName}
-                                      className="border-t border-slate-200 even:bg-slate-50/80 hover:bg-blue-50/60"
+                                      className="border-t border-slate-100 even:bg-slate-50/60 transition-colors duration-200 hover:bg-emerald-50/60"
                                     >
                                       <td className="px-3 py-3 font-extrabold text-blue-700 whitespace-nowrap">
                                         {site.siteName}
@@ -495,11 +509,7 @@ function EmployeePerformance({
                                           Number(site.currentAvb || 0)
                                         )}`}
                                       >
-                                        {Number(site.currentAvb || 0) > 0
-                                          ? `${Number(
-                                              site.currentAvb
-                                            ).toFixed(2)}%`
-                                          : "-"}
+                                        <AvailabilityBadge value={Number(site.currentAvb || 0)} />
                                       </td>
 
                                       <td className="px-3 py-3 text-center font-bold text-slate-950 whitespace-nowrap">
@@ -530,9 +540,7 @@ function EmployeePerformance({
                                               value
                                             )}`}
                                           >
-                                            {value > 0
-                                              ? `${value.toFixed(2)}%`
-                                              : "-"}
+                                            <AvailabilityBadge value={value} />
                                           </td>
                                         );
                                       })}
@@ -712,38 +720,38 @@ function RevenueLostSitesPage({
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-bold text-slate-500 uppercase">Revenue Lost Sites</div><div className="mt-1 text-2xl font-black text-slate-950">{revenueSiteIds.length}</div></div>
-        <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-bold text-slate-500 uppercase">Latest Daily Avg</div><div className={`mt-1 text-2xl font-black ${empCaTextClass(avgLatest)}`}>{avgLatest > 0 ? `${avgLatest.toFixed(2)}%` : "-"}</div><div className="text-[11px] text-emerald-100/60">{latestDate ? empFormatDailyDateHeader(latestDate) : "No daily date"}</div></div>
+        <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-bold text-slate-500 uppercase">Latest Daily Avg</div><div className={`mt-1 text-2xl font-black ${empCaTextClass(avgLatest)}`}>{avgLatest > 0 ? `${avgLatest.toFixed(2)}%` : "-"}</div><div className="text-[11px] text-slate-500">{latestDate ? empFormatDailyDateHeader(latestDate) : "No daily date"}</div></div>
         <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-bold text-slate-500 uppercase">Below 98% Today</div><div className="mt-1 text-2xl font-black text-red-600">{below98}</div></div>
         <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-bold text-slate-500 uppercase">Not Matched in AVB</div><div className={`mt-1 text-2xl font-black ${missing ? "text-amber-700" : "text-emerald-700"}`}>{missing}</div></div>
       </div>
 
-      <div className="rounded-xl border border-slate-200 bg-white overflow-hidden shadow-sm">
+      <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden shadow-sm">
         <div className="p-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
           <div><h3 className="font-black text-slate-950">Daily Cell AVB Monitoring</h3><p className="text-xs text-slate-500 mt-1">Daily CA is matched from the active month Cell AVB sheet by Site ID.</p></div>
           <div className="flex flex-wrap gap-2">
-            <div className="relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" /><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search site / grid / owner" className="pl-9 pr-3 py-2 rounded-lg border border-slate-300 bg-white text-sm text-slate-900 outline-none focus:border-cyan-500" /></div>
+            <div className="relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" /><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search site / grid / owner" className="pl-9 pr-3 py-2 rounded-lg border border-slate-300 bg-white text-sm text-slate-900 outline-none transition-all duration-200 focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/30" /></div>
             <ExportButtonComponent data={exportData} filename="Revenue_Lost_Sites_Daily_Cell_AVB" label="Export" format="excel" variant="success" />
           </div>
         </div>
         <div className="overflow-x-auto">
           <table className="min-w-[1400px] w-full text-sm">
-            <thead className="bg-[#006B3C]">
+            <thead className="bg-emerald-900 text-white">
               <tr>
                 {["Site ID","Category","Sub-Region","Grid","Current Month","CMPAK GTL","MPL GTL","Cluster Owner"].map(h => <th key={h} className="px-3 py-3 text-left text-xs font-black text-white whitespace-nowrap">{h}</th>)}
                 {latestDates.map(date => <th key={date} className="px-3 py-3 text-center text-xs font-black text-white whitespace-nowrap">{empFormatDailyDateHeader(date)}<div className="text-[9px] uppercase">Cell AVB</div></th>)}
               </tr>
             </thead>
             <tbody>
-              {rows.map(({ id, site }) => <tr key={id} className="border-t border-slate-200 even:bg-slate-50 hover:bg-red-50/50">
+              {rows.map(({ id, site }) => <tr key={id} className="border-t border-slate-100 even:bg-slate-50/60 transition-colors duration-200 hover:bg-emerald-50/60">
                 <td className="px-3 py-3 font-black text-blue-700 whitespace-nowrap">{id}</td>
                 <td className="px-3 py-3 font-semibold text-slate-900 whitespace-nowrap">{site?.revenueCategory || "-"}</td>
                 <td className="px-3 py-3 font-semibold text-slate-900 whitespace-nowrap">{site?.subRegion || "-"}</td>
                 <td className="px-3 py-3 font-semibold text-slate-900 whitespace-nowrap">{site?.grid || "-"}</td>
-                <td className={`px-3 py-3 text-center font-black ${empCaTextClass(Number(site?.currentAvb || 0))}`}>{site?.currentAvb ? `${Number(site.currentAvb).toFixed(2)}%` : "-"}</td>
+                <td className={`px-3 py-3 text-center font-black ${empCaTextClass(Number(site?.currentAvb || 0))}`}><AvailabilityBadge value={Number(site?.currentAvb || 0)} /></td>
                 <td className="px-3 py-3 text-slate-900 whitespace-nowrap">{site?.zongLead || "-"}</td>
                 <td className="px-3 py-3 text-slate-900 whitespace-nowrap">{site?.msGtl || "-"}</td>
                 <td className="px-3 py-3 text-slate-900 whitespace-nowrap">{site?.clusterOwner || "-"}</td>
-                {latestDates.map(date => { const value = site ? empGetDailyAvb(site, date) : 0; return <td key={`${id}-${date}`} className={`px-3 py-3 text-center font-black whitespace-nowrap ${empCaTextClass(value)}`}>{value > 0 ? `${value.toFixed(2)}%` : "-"}</td>; })}
+                {latestDates.map(date => { const value = site ? empGetDailyAvb(site, date) : 0; return <td key={`${id}-${date}`} className={`px-3 py-3 text-center font-black whitespace-nowrap ${empCaTextClass(value)}`}><AvailabilityBadge value={value} /></td>; })}
               </tr>)}
               {rows.length === 0 && <tr><td colSpan={8 + latestDates.length} className="px-4 py-12 text-center text-slate-500">No Revenue Lost sites found. Google Sheet rows received: {revenueLostData?.rows?.length ?? 0}. Check the Site ID column if this remains zero.</td></tr>}
             </tbody>
@@ -753,626 +761,6 @@ function RevenueLostSitesPage({
     </div>
   );
 }
-
-
-// ============================================================
-//  FUEL HISTORY — YEAR-ON-YEAR / WORST SITES / DAILY MONITORING
-// ============================================================
-
-type FuelSubTab = "summary" | "yoy" | "monitoring" | "currentMonth";
-type FuelView = "overall" | "C-1" | "C-6";
-
-type FuelRow = {
-  siteId: string;
-  grid: string;
-  month: string;
-  refuelingTime: string;
-  beforeQty: number;
-  filledQty: number;
-  year: number;
-  date: Date | null;
-};
-
-const FUEL_MONTH_ORDER = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-
-// Google Fuel History uses both "Sep" and "Sept". Normalize before ALL calculations.
-function fuelMonthLabel(raw: any): string {
-  const token = String(raw ?? "").trim().split("-")[0];
-  if (/^sept$/i.test(token) || /^sep$/i.test(token)) return "Sep";
-  const found = FUEL_MONTH_ORDER.find(m => m.toLowerCase() === token.toLowerCase());
-  return found || token;
-}
-
-function fuelNumber(value: any): number {
-  const n = Number(String(value ?? "").replace(/,/g, "").trim());
-  return Number.isFinite(n) ? n : 0;
-}
-
-function fuelRegion(grid: string): "C-1" | "C-6" | "Other" {
-  const g = String(grid ?? "").trim().toUpperCase();
-  if (g.startsWith("C1")) return "C-1";
-  if (g.startsWith("C6")) return "C-6";
-  return "Other";
-}
-
-function fuelDate(value: any): Date | null {
-  if (value instanceof Date && Number.isFinite(value.getTime())) return value;
-  const raw = String(value ?? "").trim();
-  if (!raw) return null;
-  const normalized = raw.includes(" ") ? raw.replace(" ", "T") : raw;
-  const d = new Date(normalized);
-  return Number.isFinite(d.getTime()) ? d : null;
-}
-
-function parseFuelRows(data: SheetPayload | null): FuelRow[] {
-  if (!data?.rows?.length) return [];
-  return data.rows.map((row: Record<string, any>) => {
-    const siteId = String(row["Site ID Name"] ?? row["Site ID"] ?? row["Site"] ?? "").trim();
-    const grid = String(row["Grid"] ?? "").trim();
-    const month = String(row["Month"] ?? "").trim();
-    const refuelingTime = String(row["Refueling Time"] ?? row["Refilling Time"] ?? "").trim();
-    const yearFromCol = fuelNumber(row["Year"]);
-    const yearFromMonth = month.match(/-(\d{2,4})$/);
-    const year = yearFromCol || (yearFromMonth ? Number(yearFromMonth[1].length === 2 ? `20${yearFromMonth[1]}` : yearFromMonth[1]) : 0);
-    return {
-      siteId,
-      grid,
-      month,
-      refuelingTime,
-      beforeQty: fuelNumber(row["Before Filling Fuel Quantity"]),
-      filledQty: fuelNumber(row["Fuel Quantity Filled"]),
-      year,
-      date: fuelDate(refuelingTime),
-    };
-  }).filter(r => r.siteId && r.filledQty >= 0);
-}
-
-function FuelDashboard({ data, onBack }: { data: SheetPayload | null; onBack: () => void }) {
-  const [tab, setTab] = useState<FuelSubTab>("summary");
-  const [view, setView] = useState<FuelView>("overall");
-  const [gridFilter, setGridFilter] = useState("__all");
-  const [siteSearch, setSiteSearch] = useState("");
-  const [monitorGrid, setMonitorGrid] = useState("");
-  const [gridTableView, setGridTableView] = useState<"all" | "saving" | "increase">("all");
-  const [allSitesGrid, setAllSitesGrid] = useState("__all");
-  const [allSitesSearch, setAllSitesSearch] = useState("");
-  const [drillGrid, setDrillGrid] = useState<string | null>(null);
-  const [monthDrillGrid, setMonthDrillGrid] = useState<string | null>(null);
-
-  const rows = useMemo(() => parseFuelRows(data), [data]);
-  const siteRows = useMemo(() => rows.filter(r => !r.siteId.toLowerCase().startsWith("mobile dg")), [rows]);
-
-  const years = useMemo(() => Array.from(new Set(rows.map(r => r.year).filter(Boolean))).sort(), [rows]);
-  const currentYear = years.includes(2026) ? 2026 : (years[years.length - 1] || 2026);
-  const previousYear = years.includes(currentYear - 1) ? currentYear - 1 : (years[years.length - 2] || 2025);
-
-  const latestMonthIndex = useMemo(() => {
-    const indexes = rows.filter(r => r.year === currentYear).map(r => {
-      const label = fuelMonthLabel(r.month);
-      return FUEL_MONTH_ORDER.indexOf(label);
-    }).filter(i => i >= 0);
-    return indexes.length ? Math.max(...indexes) : 8;
-  }, [rows, currentYear]);
-
-  const comparableMonths = FUEL_MONTH_ORDER.slice(0, latestMonthIndex + 1);
-  const lastTwoMonths = comparableMonths.slice(-2);
-
-  const inView = (r: FuelRow) => view === "overall" || fuelRegion(r.grid) === view;
-  const inGrid = (r: FuelRow) => gridFilter === "__all" || r.grid === gridFilter;
-  const scoped = useMemo(() => rows.filter(r => inView(r) && inGrid(r)), [rows, view, gridFilter]);
-  const scopedSites = useMemo(() => siteRows.filter(r => inView(r) && inGrid(r)), [siteRows, view, gridFilter]);
-
-  const grids = useMemo(() => Array.from(new Set(rows.filter(inView).map(r => r.grid).filter(g => g && g !== "MDV"))).sort(), [rows, view]);
-
-  useEffect(() => {
-    if (gridFilter !== "__all" && !grids.includes(gridFilter)) setGridFilter("__all");
-  }, [view, grids, gridFilter]);
-  useEffect(() => {
-    if (allSitesGrid !== "__all" && !grids.includes(allSitesGrid)) setAllSitesGrid("__all");
-  }, [view, grids, allSitesGrid]);
-
-  const isComparable = (r: FuelRow) => comparableMonths.includes(fuelMonthLabel(r.month));
-  const totalFor = (source: FuelRow[], year: number) => source.filter(r => r.year === year && isComparable(r)).reduce((s, r) => s + r.filledQty, 0);
-
-  const prevTotal = totalFor(scoped, previousYear);
-  const currTotal = totalFor(scoped, currentYear);
-  const saving = prevTotal - currTotal;
-  const savingPct = prevTotal ? (saving / prevTotal) * 100 : 0;
-
-  const monthData = useMemo(() => comparableMonths.map(month => {
-    const p = scoped.filter(r => r.year === previousYear && fuelMonthLabel(r.month) === month).reduce((s,r) => s + r.filledQty,0);
-    const c = scoped.filter(r => r.year === currentYear && fuelMonthLabel(r.month) === month).reduce((s,r) => s + r.filledQty,0);
-    return { month, previous: p, current: c, saving: p - c };
-  }), [scoped, previousYear, currentYear, comparableMonths.join("|")]);
-
-  const groupSummary = (source: FuelRow[], keyFn: (r: FuelRow) => string) => {
-    const map = new Map<string, { key: string; previous: number; current: number }>();
-    source.filter(isComparable).forEach(r => {
-      const key = keyFn(r);
-      if (!key) return;
-      if (!map.has(key)) map.set(key, { key, previous: 0, current: 0 });
-      const x = map.get(key)!;
-      if (r.year === previousYear) x.previous += r.filledQty;
-      if (r.year === currentYear) x.current += r.filledQty;
-    });
-    return Array.from(map.values()).map(x => ({
-      ...x,
-      saving: x.previous - x.current,
-      savingPct: x.previous ? ((x.previous - x.current) / x.previous) * 100 : 0,
-    }));
-  };
-
-  const regionSummary = useMemo(() => groupSummary(rows.filter(r => ["C-1","C-6"].includes(fuelRegion(r.grid))), r => fuelRegion(r.grid)), [rows, previousYear, currentYear, comparableMonths.join("|")]);
-  const gridSummary = useMemo(() => groupSummary(rows.filter(r => r.grid !== "MDV"), r => r.grid).sort((a,b) => a.key.localeCompare(b.key)), [rows, previousYear, currentYear, comparableMonths.join("|")]);
-  const scopedGridSummary = useMemo(() => gridSummary.filter(x => view === "overall" || fuelRegion(x.key) === view), [gridSummary, view]);
-  const visibleGridSummary = useMemo(() => scopedGridSummary.filter(x => {
-    if (gridTableView === "saving") return x.saving > 0;
-    if (gridTableView === "increase") return x.saving < 0;
-    return true;
-  }), [scopedGridSummary, gridTableView]);
-
-  const siteSummary = useMemo(() => {
-    const map = new Map<string, { siteId:string; grid:string; previous:number; current:number; lastTwo:number }>();
-    scopedSites.forEach(r => {
-      const key = `${r.siteId}|${r.grid}`;
-      if (!map.has(key)) map.set(key,{siteId:r.siteId,grid:r.grid,previous:0,current:0,lastTwo:0});
-      const x=map.get(key)!;
-      if (r.year === previousYear && isComparable(r)) x.previous += r.filledQty;
-      if (r.year === currentYear && isComparable(r)) x.current += r.filledQty;
-      if (r.year === currentYear && lastTwoMonths.includes(fuelMonthLabel(r.month))) x.lastTwo += r.filledQty;
-    });
-    return Array.from(map.values()).map(x => ({
-      ...x,
-      variance: x.current - x.previous,
-      saving: x.previous - x.current,
-      yoyPct: x.previous ? ((x.current - x.previous) / x.previous) * 100 : 0,
-    }));
-  }, [scopedSites, previousYear, currentYear, comparableMonths.join("|"), lastTwoMonths.join("|")]);
-
-  const allGridSites = useMemo(() => {
-    const base = siteSummary.filter(x => allSitesGrid === "__all" || x.grid === allSitesGrid);
-    return base
-      .filter(x => !allSitesSearch.trim() || `${x.siteId} ${x.grid}`.toLowerCase().includes(allSitesSearch.trim().toLowerCase()))
-      .sort((a,b) => b.current - a.current);
-  }, [siteSummary, allSitesGrid, allSitesSearch]);
-
-  const allGridSitesExport = useMemo(() => allGridSites.map((x,i) => ({
-    Rank: i + 1,
-    "Site ID": x.siteId,
-    Grid: x.grid,
-    [`${previousYear} Fuel (L)`]: Math.round(x.previous),
-    [`${currentYear} Fuel (L)`]: Math.round(x.current),
-    "Saving / (Increase) L": Math.round(x.saving),
-    "Saving %": x.previous ? `${((x.saving/x.previous)*100).toFixed(2)}%` : "0.00%",
-    "Last 2 Months (L)": Math.round(x.lastTwo),
-    Status: x.saving > 0 ? "Saving" : x.saving < 0 ? "Increase" : "Flat",
-  })), [allGridSites, previousYear, currentYear]);
-
-  const gridDrillSummary = useMemo(() => {
-    return scopedGridSummary.map(g => {
-      const sites = siteSummary.filter(x => x.grid === g.key);
-      return {
-        ...g,
-        siteCount: sites.length,
-        lastTwo: sites.reduce((a,x)=>a+x.lastTwo,0),
-      };
-    }).sort((a,b) => a.key.localeCompare(b.key));
-  }, [scopedGridSummary, siteSummary]);
-
-  const drilledSites = useMemo(() => {
-    if (!drillGrid) return [];
-    return siteSummary
-      .filter(x => x.grid === drillGrid)
-      .filter(x => !allSitesSearch.trim() || x.siteId.toLowerCase().includes(allSitesSearch.trim().toLowerCase()))
-      .sort((a,b) => b.current - a.current);
-  }, [siteSummary, drillGrid, allSitesSearch]);
-
-
-  const worstYtd = useMemo(() => [...siteSummary].sort((a,b) => b.current - a.current).slice(0,20), [siteSummary]);
-  const worstLastTwo = useMemo(() => [...siteSummary].sort((a,b) => b.lastTwo - a.lastTwo).slice(0,20), [siteSummary]);
-  const persistent = useMemo(() => {
-    const prevTop = new Set([...siteSummary].sort((a,b) => b.previous - a.previous).slice(0,20).map(x => x.siteId));
-    return [...siteSummary].filter(x => prevTop.has(x.siteId)).sort((a,b) => b.current - a.current).slice(0,20);
-  }, [siteSummary]);
-
-  const worstGrid = useMemo(() => {
-    const candidates = scopedGridSummary.filter(x => x.current > x.previous).sort((a,b) => (b.current-b.previous) - (a.current-a.previous));
-    return candidates[0]?.key || [...scopedGridSummary].sort((a,b) => b.current-a.current)[0]?.key || "";
-  }, [scopedGridSummary]);
-
-  useEffect(() => {
-    if (!monitorGrid || !scopedGridSummary.some(x => x.key === monitorGrid)) setMonitorGrid(worstGrid);
-  }, [worstGrid, view, scopedGridSummary]);
-
-  const dailyMonitoring = useMemo(() => {
-    const filtered = siteRows.filter(r => r.year === currentYear && r.grid === monitorGrid && r.date);
-    const bySite = new Map<string, {siteId:string; grid:string; total:number; fills:number; lastFill:string; lastQty:number; before:number}>();
-    filtered.forEach(r => {
-      const x=bySite.get(r.siteId) || {siteId:r.siteId,grid:r.grid,total:0,fills:0,lastFill:"",lastQty:0,before:0};
-      x.total += r.filledQty; x.fills += r.filledQty > 0 ? 1 : 0;
-      const stamp=r.date?.getTime() || 0;
-      const old=x.lastFill ? (fuelDate(x.lastFill)?.getTime() || 0) : 0;
-      if (stamp >= old) { x.lastFill=r.refuelingTime; x.lastQty=r.filledQty; x.before=r.beforeQty; }
-      bySite.set(r.siteId,x);
-    });
-    return Array.from(bySite.values()).sort((a,b) => b.total-a.total);
-  }, [siteRows,currentYear,monitorGrid]);
-
-  // Current month fuel summary — latest available month in current year
-  const currentMonthName = comparableMonths[comparableMonths.length - 1] || "Sep";
-  const currentMonthLabel = `${currentMonthName}-${String(currentYear).slice(-2)}`;
-
-  const currentMonthRows = useMemo(() => rows.filter(r =>
-    r.year === currentYear &&
-    fuelMonthLabel(r.month) === currentMonthName &&
-    (view === "overall" || fuelRegion(r.grid) === view) &&
-    (gridFilter === "__all" || r.grid === gridFilter)
-  ), [rows, currentYear, currentMonthName, view, gridFilter]);
-
-  const currentMonthSiteRows = useMemo(() =>
-    currentMonthRows.filter(r => !r.siteId.toLowerCase().startsWith("mobile dg")),
-    [currentMonthRows]
-  );
-
-  const currentMonthDates = useMemo(() => {
-    const days = new Set<number>();
-    currentMonthRows.forEach(r => { if (r.date) days.add(r.date.getDate()); });
-    return Array.from(days).sort((a,b) => a-b);
-  }, [currentMonthRows]);
-
-  const currentMonthGridMatrix = useMemo(() => {
-    const map = new Map<string, Record<string, number>>();
-    currentMonthRows.filter(r => r.grid && r.grid !== "MDV").forEach(r => {
-      if (!r.date) return;
-      if (!map.has(r.grid)) map.set(r.grid, {});
-      const obj = map.get(r.grid)!;
-      const key = String(r.date.getDate());
-      obj[key] = (obj[key] || 0) + r.filledQty;
-    });
-    return Array.from(map.entries()).map(([grid, days]) => ({
-      grid, days, total: Object.values(days).reduce((a,b) => a + Number(b), 0)
-    })).sort((a,b) => a.grid.localeCompare(b.grid));
-  }, [currentMonthRows]);
-
-  const currentMonthDaySummary = useMemo(() => currentMonthDates.map(day => {
-    const dayRows = currentMonthRows.filter(r => r.date?.getDate() === day);
-    return {
-      day,
-      date: `${String(day).padStart(2,"0")}-${currentMonthName}-${String(currentYear).slice(-2)}`,
-      fuel: dayRows.reduce((a,r) => a + r.filledQty, 0),
-      fills: dayRows.filter(r => r.filledQty > 0).length,
-      sites: new Set(dayRows.filter(r => !r.siteId.toLowerCase().startsWith("mobile dg")).map(r => r.siteId)).size,
-    };
-  }), [currentMonthRows, currentMonthDates, currentMonthName, currentYear]);
-
-  const currentMonthTotal = currentMonthRows.reduce((a,r) => a + r.filledQty, 0);
-  const currentMonthSites = new Set(currentMonthSiteRows.map(r => r.siteId)).size;
-  const currentMonthFills = currentMonthRows.filter(r => r.filledQty > 0).length;
-  const currentMonthAvgDay = currentMonthDates.length ? currentMonthTotal / currentMonthDates.length : 0;
-
-  const currentMonthMatrixExport = useMemo(() => currentMonthGridMatrix.map(row => {
-    const obj: Record<string, any> = { Grid: row.grid };
-    currentMonthDates.forEach(day => { obj[`${day}-${currentMonthName}`] = Math.round(row.days[String(day)] || 0); });
-    obj["Total L"] = Math.round(row.total);
-    return obj;
-  }), [currentMonthGridMatrix, currentMonthDates, currentMonthName]);
-
-  const currentMonthDrillSites = useMemo(() => {
-    if (!monthDrillGrid) return [];
-    const gridRows = currentMonthSiteRows.filter(r => r.grid === monthDrillGrid);
-    const map = new Map<string, {siteId:string; days:Record<string,number>; total:number; fills:number}>();
-    gridRows.forEach(r => {
-      if (!r.date) return;
-      const x = map.get(r.siteId) || {siteId:r.siteId,days:{},total:0,fills:0};
-      const day = String(r.date.getDate());
-      x.days[day] = (x.days[day] || 0) + r.filledQty;
-      x.total += r.filledQty;
-      if (r.filledQty > 0) x.fills += 1;
-      map.set(r.siteId,x);
-    });
-    return Array.from(map.values()).sort((a,b)=>b.total-a.total);
-  }, [currentMonthSiteRows, monthDrillGrid]);
-
-  const currentMonthDrillTotal = currentMonthDrillSites.reduce((a,x)=>a+x.total,0);
-
-  const currentMonthDrillExport = useMemo(() => currentMonthDrillSites.map((row,i) => {
-    const out:any = {
-      Rank:i+1,
-      "Site ID":row.siteId,
-      Grid:monthDrillGrid || "",
-    };
-    currentMonthDates.forEach(day => { out[`${day}-${currentMonthName}`] = Math.round(row.days[String(day)] || 0); });
-    out[`${currentMonthName} Total L`] = Math.round(row.total);
-    out["Fill Events"] = row.fills;
-    out["Avg / Fill L"] = row.fills ? Math.round(row.total/row.fills) : 0;
-    out["Grid Contribution %"] = currentMonthDrillTotal ? `${((row.total/currentMonthDrillTotal)*100).toFixed(1)}%` : "0.0%";
-    return out;
-  }), [currentMonthDrillSites,currentMonthDates,currentMonthName,monthDrillGrid,currentMonthDrillTotal]);
-
-  const exportSummary = visibleGridSummary.map(x => ({
-    Grid:x.key, [`${previousYear} Fuel (L)`]:Math.round(x.previous), [`${currentYear} Fuel (L)`]:Math.round(x.current),
-    "Saving / (Increase) L":Math.round(x.saving), "Saving %":`${x.savingPct.toFixed(2)}%`,
-  }));
-  const exportWorst = worstYtd.map((x,i) => ({
-    Rank:i+1,"Site ID":x.siteId,Grid:x.grid,[`${previousYear} Fuel (L)`]:Math.round(x.previous),
-    [`${currentYear} Fuel (L)`]:Math.round(x.current),"YoY Increase / (Reduction)":Math.round(x.variance),
-    "Last 2 Months (L)":Math.round(x.lastTwo)
-  }));
-
-  const tableClass = "w-full text-[15px]";
-  const th = "px-4 py-3.5 text-left text-[12px] font-black uppercase tracking-wide text-white whitespace-nowrap";
-  const td = "px-4 py-3 text-[14px] font-medium text-slate-800 whitespace-nowrap";
-
-  if (!data) return <div className="min-h-screen bg-slate-100 p-8"><button onClick={onBack} className="mb-5 rounded-lg bg-slate-800 px-4 py-2 text-white">← Home</button><div className="rounded-xl border border-amber-300 bg-amber-50 p-10 text-center font-bold text-amber-900">Fuel History tab is not available. Confirm the Google Sheet tab name is exactly <b>Fuel History</b>.</div></div>;
-
-  return (
-    <div className="min-h-screen bg-[#073B2A] text-slate-100 flex">
-      {/* Fuel left navigation — same interaction pattern as Sep AVB dashboard */}
-      <aside className="fixed inset-y-0 left-0 z-40 hidden w-64 flex-col border-r border-emerald-900/60 bg-gradient-to-b from-[#064E3B] via-[#075E36] to-[#043927] lg:flex">
-        <div className="border-b border-emerald-300/15 p-5">
-          <button onClick={onBack} className="mb-4 flex items-center gap-2 text-xs font-bold text-emerald-100/70 hover:text-white">← Home</button>
-          <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/10"><Fuel className="h-6 w-6 text-emerald-400" /></div>
-            <div><h1 className="font-black text-white">Fuel Management</h1><p className="text-[11px] text-emerald-100/60">{previousYear} vs {currentYear} · Jan–{comparableMonths[comparableMonths.length-1]}</p></div>
-          </div>
-        </div>
-        <nav className="flex-1 space-y-1 p-3">
-          {([
-            ["summary","Overall Summary",LayoutDashboard],
-            ["yoy","YoY & Worst Sites",TrendingDown],
-            ["monitoring","Worst Grid Monitoring",Activity],
-            ["currentMonth",`Current Month · ${currentMonthLabel}`,CalendarDays],
-          ] as const).map(([id,label,Icon]) => <button key={id} onClick={()=>setTab(id as FuelSubTab)} className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-bold transition ${tab===id?"bg-white text-[#075E36] shadow-lg shadow-black/10":"text-emerald-50/75 hover:bg-white/10 hover:text-white"}`}><Icon className="h-4 w-4"/><span>{label}</span></button>)}
-        </nav>
-        <div className="border-t border-slate-800 p-4 text-[11px] text-emerald-100/60">Fuel History · Live Google Sheet</div>
-      </aside>
-
-      <div className="min-w-0 flex-1 lg:ml-64 bg-gradient-to-br from-slate-50 via-[#f4f8f6] to-emerald-50/40 text-slate-900">
-        <header className="sticky top-0 z-30 border-b border-emerald-100 bg-white/95 shadow-sm backdrop-blur">
-          <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-4 sm:px-6">
-            <div>
-              <div className="flex items-center gap-2 lg:hidden"><button onClick={onBack} className="rounded-lg bg-slate-800 px-3 py-2 text-xs font-bold text-white">← Home</button><Fuel className="h-5 w-5 text-emerald-600"/></div>
-              <h2 className="mt-1 text-xl font-black text-slate-950">{tab==="summary"?"Overall Fuel Summary":tab==="yoy"?"YoY & Worst Sites":tab==="monitoring"?"Worst Grid Daily Monitoring":`${currentMonthLabel} Fuel Summary`}</h2>
-              <p className="text-xs text-slate-500">Fuel History · {previousYear} vs {currentYear} · comparable through {comparableMonths[comparableMonths.length-1]}</p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {(["overall","C-1","C-6"] as FuelView[]).map(v => <button key={v} onClick={()=>setView(v)} className={`rounded-lg px-4 py-2 text-sm font-black ${view===v?"bg-[#006B3C] text-white":"bg-slate-200 text-slate-700"}`}>{v==="overall"?"Overall":v}</button>)}
-              <select value={gridFilter} onChange={e=>setGridFilter(e.target.value)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-bold"><option value="__all">All Grids</option>{grids.map(g=><option key={g}>{g}</option>)}</select>
-            </div>
-          </div>
-          <div className="flex gap-2 overflow-x-auto border-t border-slate-100 px-4 py-2 lg:hidden sm:px-6">
-            {[["summary","Summary"],["yoy","YoY / Worst Sites"],["monitoring","Worst Grid"],["currentMonth",currentMonthLabel]].map(([id,label])=><button key={id} onClick={()=>setTab(id as FuelSubTab)} className={`whitespace-nowrap rounded-lg px-3 py-2 text-xs font-black ${tab===id?"bg-emerald-600 text-white":"bg-slate-100 text-slate-700"}`}>{label}</button>)}
-          </div>
-        </header>
-
-        <main className="space-y-5 p-4 sm:p-6">
-        {tab==="summary" && <>
-          <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
-            <b>Calculation basis:</b> Jan–Sep comparable period. The source uses both <b>Sep</b> and <b>Sept</b>; both are now normalized to September before YoY, grid and site calculations. This corrects the earlier Aug-only result.
-          </div>
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            {[["2025 Comparable",prevTotal,"text-slate-950"],["2026 Comparable",currTotal,"text-slate-950"],["Fuel Saving",saving,saving>=0?"text-emerald-700":"text-red-600"],["Saving %",savingPct,savingPct>=0?"text-emerald-700":"text-red-600"]].map(([label,value,color],i)=><div key={String(label)} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><div className="text-xs font-black uppercase text-slate-500">{label}</div><div className={`mt-1 text-2xl font-black ${color}`}>{i===3?`${Number(value).toFixed(2)}%`:`${Math.round(Number(value)).toLocaleString()} L`}</div></div>)}
-          </div>
-          <div className="grid gap-5 xl:grid-cols-2">
-            <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><div className="mb-4 flex items-center justify-between"><div><h3 className="font-black">Monthly YoY Fuel</h3><p className="text-xs text-slate-500">Comparable months only</p></div><ExportButtonComponent data={monthData} filename="Fuel_Monthly_YoY" label="Export" format="excel" variant="success"/></div><div className="h-[330px]"><ResponsiveContainer width="100%" height="100%"><ComposedChart data={monthData} margin={{top:20,right:20,left:10,bottom:5}}><CartesianGrid strokeDasharray="3 3"/><XAxis dataKey="month"/><YAxis/><Tooltip formatter={(v:any)=>`${Number(v).toLocaleString()} L`}/><Legend/><Bar dataKey="previous" name={`${previousYear}`} fill="#94a3b8"><LabelList dataKey="previous" position="top" formatter={(v:any)=>Math.round(Number(v)/1000)+"K"}/></Bar><Bar dataKey="current" name={`${currentYear}`} fill="#059669"><LabelList dataKey="current" position="top" formatter={(v:any)=>Math.round(Number(v)/1000)+"K"}/></Bar></ComposedChart></ResponsiveContainer></div></div>
-            <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><h3 className="font-black">Sub-Region Control</h3><div className="mt-4 overflow-x-auto"><table className={tableClass}><thead className="bg-[#006B3C]"><tr>{["Sub-Region",previousYear,currentYear,"Saving L","Saving %"].map(h=><th key={String(h)} className={th}>{h}</th>)}</tr></thead><tbody>{regionSummary.map(x=><tr key={x.key} className="border-b border-slate-200"><td className={td+" font-black"}>{x.key}</td><td className={td}>{Math.round(x.previous).toLocaleString()}</td><td className={td}>{Math.round(x.current).toLocaleString()}</td><td className={`${td} font-black ${x.saving>=0?"text-emerald-700":"text-red-600"}`}>{Math.round(x.saving).toLocaleString()}</td><td className={`${td} font-black ${x.savingPct>=0?"text-emerald-700":"text-red-600"}`}>{x.savingPct.toFixed(2)}%</td></tr>)}</tbody></table></div></div>
-          </div>
-          <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden"><div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 p-4"><div><h3 className="font-black">Grid-wise Fuel Control</h3><p className="text-xs text-slate-500">Positive saving = lower fuel than last year</p></div><div className="flex flex-wrap items-center gap-2"><div className="flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-100 p-1"><span className="px-2 text-[11px] font-black uppercase text-slate-500">View</span>{(["all","saving","increase"] as const).map(v => <button key={v} onClick={()=>setGridTableView(v)} className={`rounded-md px-3 py-1.5 text-xs font-black transition ${gridTableView===v ? (v==="increase"?"bg-red-600 text-white":v==="saving"?"bg-emerald-600 text-white":"bg-slate-800 text-white") : "bg-white text-slate-600 hover:bg-slate-200"}`}>{v==="all"?"All":v==="saving"?"Saving":"Increase"}</button>)}</div><ExportButtonComponent data={exportSummary} filename={`Fuel_Grid_Summary_${view}_${gridTableView}`} label="Export Grid View" format="excel" variant="success"/></div></div><div className="overflow-x-auto"><table className={tableClass}><thead className="bg-[#006B3C]"><tr>{["Grid",`${previousYear} L`,`${currentYear} L`,"Saving / (Increase)","Saving %","Status"].map(h=><th key={h} className={th}>{h}</th>)}</tr></thead><tbody>{visibleGridSummary.map(x=><tr key={x.key} className="border-b border-slate-200 even:bg-slate-50"><td className={td+" font-black"}>{x.key}</td><td className={td}>{Math.round(x.previous).toLocaleString()}</td><td className={td}>{Math.round(x.current).toLocaleString()}</td><td className={`${td} font-black ${x.saving>=0?"text-emerald-700":"text-red-600"}`}>{x.saving>=0?"+":""}{Math.round(x.saving).toLocaleString()}</td><td className={`${td} font-black ${x.savingPct>=0?"text-emerald-700":"text-red-600"}`}>{x.savingPct.toFixed(2)}%</td><td className={td}>{x.saving>0?"Saving":x.saving<0?"Increase":"Flat"}</td></tr>)}</tbody></table></div></div>
-
-          {/* GRID-FIRST ALL SITES DRILL-DOWN */}
-          <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 p-4">
-              <div>
-                <h3 className="font-black">Grid-wise All Sites View</h3>
-                <p className="text-xs text-slate-500">Grid ID first · use View in the last column to open all sites of that grid</p>
-              </div>
-              <ExportButtonComponent
-                data={drillGrid
-                  ? drilledSites.map((x,i)=>({Rank:i+1,"Site ID":x.siteId,Grid:x.grid,[`${previousYear} Fuel (L)`]:Math.round(x.previous),[`${currentYear} Fuel (L)`]:Math.round(x.current),"Saving / (Increase) L":Math.round(x.saving),"Saving %":x.previous?`${((x.saving/x.previous)*100).toFixed(2)}%`:"0.00%","Last 2M L":Math.round(x.lastTwo),Status:x.saving>0?"Saving":x.saving<0?"Increase":"Flat"}))
-                  : gridDrillSummary.map(x=>({Grid:x.key,Sites:x.siteCount,[`${previousYear} Fuel (L)`]:Math.round(x.previous),[`${currentYear} Fuel (L)`]:Math.round(x.current),"Saving / (Increase) L":Math.round(x.saving),"Saving %":`${x.savingPct.toFixed(2)}%`,"Last 2M L":Math.round(x.lastTwo)}))
-                }
-                filename={drillGrid?`Fuel_Sites_${drillGrid}`:`Fuel_All_Grid_Summary_${view}`}
-                label={drillGrid?`Export ${drillGrid} Sites`:"Export Grid Summary"}
-                format="excel"
-                variant="success"
-              />
-            </div>
-
-            {!drillGrid ? (
-              <div className="overflow-x-auto">
-                <table className={tableClass}>
-                  <thead className="bg-[#006B3C]">
-                    <tr>{["Grid ID","Sites",`${previousYear} L`,`${currentYear} L`,"Saving / (Increase)","Saving %","Last 2M L","Status","View"].map(h=><th key={h} className={th}>{h}</th>)}</tr>
-                  </thead>
-                  <tbody>
-                    {gridDrillSummary.map(x => <tr key={x.key} className="border-b border-slate-200 even:bg-slate-50">
-                      <td className={td+" text-base font-black text-[#006B3C]"}>{x.key}</td>
-                      <td className={td+" font-black"}>{x.siteCount}</td>
-                      <td className={td}>{Math.round(x.previous).toLocaleString()}</td>
-                      <td className={td+" font-black"}>{Math.round(x.current).toLocaleString()}</td>
-                      <td className={`${td} font-black ${x.saving>=0?"text-emerald-700":"text-red-600"}`}>{x.saving>=0?"+":""}{Math.round(x.saving).toLocaleString()}</td>
-                      <td className={`${td} font-black ${x.savingPct>=0?"text-emerald-700":"text-red-600"}`}>{x.savingPct.toFixed(2)}%</td>
-                      <td className={td+" font-black"}>{Math.round(x.lastTwo).toLocaleString()}</td>
-                      <td className={td}><span className={`rounded-full px-2 py-1 text-[11px] font-black ${x.saving>0?"bg-emerald-100 text-emerald-700":x.saving<0?"bg-red-100 text-red-700":"bg-slate-100 text-slate-600"}`}>{x.saving>0?"Saving":x.saving<0?"Increase":"Flat"}</span></td>
-                      <td className={td}>
-                        <button onClick={()=>{setDrillGrid(x.key);setAllSitesSearch("");}} className="rounded-lg bg-[#006B3C] px-4 py-2 text-xs font-black text-white shadow-sm hover:bg-emerald-800">View Sites →</button>
-                      </td>
-                    </tr>)}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <>
-                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-emerald-50 p-4">
-                  <div className="flex items-center gap-3">
-                    <button onClick={()=>{setDrillGrid(null);setAllSitesSearch("");}} className="rounded-lg border border-emerald-300 bg-white px-3 py-2 text-xs font-black text-emerald-800">← All Grids</button>
-                    <div><div className="text-[10px] font-black uppercase text-emerald-700">Selected Grid</div><div className="text-2xl font-black text-[#006B3C]">{drillGrid}</div></div>
-                    <div className="rounded-lg bg-white px-3 py-2"><div className="text-[10px] font-black uppercase text-slate-500">Sites</div><div className="font-black">{drilledSites.length}</div></div>
-                  </div>
-                  <input value={allSitesSearch} onChange={e=>setAllSitesSearch(e.target.value)} placeholder={`Search site in ${drillGrid}`} className="w-56 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"/>
-                </div>
-                <div className="max-h-[540px] overflow-auto">
-                  <table className={tableClass}>
-                    <thead className="sticky top-0 z-10 bg-[#006B3C]">
-                      <tr>{["#","Site ID","Grid",`${previousYear} L`,`${currentYear} L`,"Saving / (Increase)","Saving %","Last 2M L","Status"].map(h=><th key={h} className={th}>{h}</th>)}</tr>
-                    </thead>
-                    <tbody>
-                      {drilledSites.map((x,i)=>{
-                        const pct=x.previous?(x.saving/x.previous)*100:0;
-                        return <tr key={`${x.grid}-${x.siteId}`} className="border-b border-slate-200 even:bg-slate-50">
-                          <td className={td}>{i+1}</td>
-                          <td className={td+" font-black text-blue-700"}>{x.siteId}</td>
-                          <td className={td+" font-black"}>{x.grid}</td>
-                          <td className={td}>{Math.round(x.previous).toLocaleString()}</td>
-                          <td className={td+" font-black"}>{Math.round(x.current).toLocaleString()}</td>
-                          <td className={`${td} font-black ${x.saving>=0?"text-emerald-700":"text-red-600"}`}>{x.saving>=0?"+":""}{Math.round(x.saving).toLocaleString()}</td>
-                          <td className={`${td} font-black ${pct>=0?"text-emerald-700":"text-red-600"}`}>{pct.toFixed(2)}%</td>
-                          <td className={td+" font-black"}>{Math.round(x.lastTwo).toLocaleString()}</td>
-                          <td className={td}><span className={`rounded-full px-2 py-1 text-[11px] font-black ${x.saving>0?"bg-emerald-100 text-emerald-700":x.saving<0?"bg-red-100 text-red-700":"bg-slate-100 text-slate-600"}`}>{x.saving>0?"Saving":x.saving<0?"Increase":"Flat"}</span></td>
-                        </tr>
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </>
-            )}
-          </div>
-        </>}
-
-        {tab==="yoy" && <>
-          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="text-lg font-black">YoY & Worst Sites</h3><p className="text-xs text-slate-500">YTD high fuel, last two months ({lastTwoMonths.join(" + ")}), and persistent high consumers</p></div><ExportButtonComponent data={exportWorst} filename={`Fuel_Worst_Sites_${view}`} label="Export Worst Sites" format="excel" variant="danger"/></div><div className="mt-4"><input value={siteSearch} onChange={e=>setSiteSearch(e.target.value)} placeholder="Search Site ID / Grid" className="w-full max-w-md rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"/></div></div>
-          {[["2026 YTD Highest Fuel",worstYtd,"current"],[`Last Two Months · ${lastTwoMonths.join(" + ")}`,worstLastTwo,"lastTwo"],["Persistent High Fuel · Top-20 overlap",persistent,"current"]].map(([title,list,metric]:any)=><div key={title} className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden"><div className="border-b border-slate-200 p-4 font-black">{title}</div><div className="overflow-x-auto"><table className={tableClass}><thead className="bg-[#006B3C]"><tr>{["#","Site ID","Grid",`${previousYear} L`,`${currentYear} L`,"YoY Increase/(Reduction)",`Last 2M L`].map(h=><th key={h} className={th}>{h}</th>)}</tr></thead><tbody>{(list as any[]).filter(x=>!siteSearch.trim()||`${x.siteId} ${x.grid}`.toLowerCase().includes(siteSearch.toLowerCase())).map((x,i)=><tr key={`${title}-${x.siteId}`} className="border-b border-slate-200 even:bg-slate-50"><td className={td}>{i+1}</td><td className={td+" font-black text-blue-700"}>{x.siteId}</td><td className={td}>{x.grid}</td><td className={td}>{Math.round(x.previous).toLocaleString()}</td><td className={td+" font-black"}>{Math.round(x.current).toLocaleString()}</td><td className={`${td} font-black ${x.variance>0?"text-red-600":"text-emerald-700"}`}>{x.variance>0?"+":""}{Math.round(x.variance).toLocaleString()}</td><td className={td+" font-black"}>{Math.round(x.lastTwo).toLocaleString()}</td></tr>)}</tbody></table></div></div>)}
-        </>}
-
-        {tab==="monitoring" && <>
-          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="text-lg font-black">Worst Grid Daily Fuel Monitoring</h3><p className="text-xs text-slate-500">Default grid is the highest YoY fuel-increase grid in the selected view.</p></div><select value={monitorGrid} onChange={e=>setMonitorGrid(e.target.value)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 font-bold">{scopedGridSummary.map(x=><option key={x.key}>{x.key}</option>)}</select></div></div>
-          <div className="grid gap-4 lg:grid-cols-3"><div className="rounded-xl border border-red-200 bg-red-50 p-4"><div className="text-xs font-black uppercase text-red-600">Monitoring Grid</div><div className="mt-1 text-3xl font-black text-red-700">{monitorGrid||"-"}</div></div><div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-black uppercase text-slate-500">Sites Fueled YTD</div><div className="mt-1 text-3xl font-black">{dailyMonitoring.length}</div></div><div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-black uppercase text-slate-500">YTD Fuel</div><div className="mt-1 text-3xl font-black">{Math.round(dailyMonitoring.reduce((s,x)=>s+x.total,0)).toLocaleString()} L</div></div></div>
-          <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden"><div className="flex items-center justify-between border-b border-slate-200 p-4"><div><h3 className="font-black">Site Monitoring · {monitorGrid}</h3><p className="text-xs text-slate-500">Latest fill event and cumulative current-year fuel</p></div><ExportButtonComponent data={dailyMonitoring} filename={`Fuel_Daily_Monitoring_${monitorGrid}`} label="Export Monitoring" format="excel" variant="success"/></div><div className="overflow-x-auto"><table className={tableClass}><thead className="bg-[#006B3C]"><tr>{["Rank","Site ID","Grid","YTD Fuel L","Fill Events","Latest Refueling","Latest Filled L","Before Filling L"].map(h=><th key={h} className={th}>{h}</th>)}</tr></thead><tbody>{dailyMonitoring.map((x,i)=><tr key={x.siteId} className="border-b border-slate-200 even:bg-slate-50"><td className={td}>{i+1}</td><td className={td+" font-black text-blue-700"}>{x.siteId}</td><td className={td}>{x.grid}</td><td className={td+" font-black"}>{Math.round(x.total).toLocaleString()}</td><td className={td}>{x.fills}</td><td className={td}>{x.lastFill||"-"}</td><td className={td}>{Math.round(x.lastQty).toLocaleString()}</td><td className={td}>{Math.round(x.before).toLocaleString()}</td></tr>)}</tbody></table></div></div>
-        </>}
-
-        {tab==="currentMonth" && <>
-          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-            <div className="rounded-2xl border border-emerald-200 bg-gradient-to-br from-white to-emerald-50 p-5 shadow-md"><div className="text-[11px] font-black uppercase tracking-wider text-emerald-700">{currentMonthLabel} Fuel</div><div className="mt-2 text-3xl font-black tracking-tight text-[#006B3C]">{Math.round(currentMonthTotal).toLocaleString()} <span className="text-lg">L</span></div></div>
-            <div className="rounded-2xl border border-blue-100 bg-gradient-to-br from-white to-blue-50 p-5 shadow-md"><div className="text-[11px] font-black uppercase tracking-wider text-blue-700">Sites Fueled</div><div className="mt-2 text-3xl font-black tracking-tight text-slate-950">{currentMonthSites}</div></div>
-            <div className="rounded-2xl border border-amber-100 bg-gradient-to-br from-white to-amber-50 p-5 shadow-md"><div className="text-[11px] font-black uppercase tracking-wider text-amber-700">Fuel Fill Events</div><div className="mt-2 text-3xl font-black tracking-tight text-slate-950">{currentMonthFills}</div></div>
-            <div className="rounded-2xl border border-violet-100 bg-gradient-to-br from-white to-violet-50 p-5 shadow-md"><div className="text-[11px] font-black uppercase tracking-wider text-violet-700">Average / Active Day</div><div className="mt-2 text-3xl font-black tracking-tight text-slate-950">{Math.round(currentMonthAvgDay).toLocaleString()} <span className="text-lg">L</span></div></div>
-          </div>
-
-          <div className="grid gap-5 xl:grid-cols-2">
-            <div className="rounded-2xl border border-slate-200 bg-white shadow-md overflow-hidden">
-              <div className="border-b border-emerald-100 bg-gradient-to-r from-emerald-50 to-white p-5"><h3 className="text-base font-black text-slate-950">{currentMonthLabel} · Grid-wise Summary</h3><p className="text-xs text-slate-500">Total fuel filled by grid during current month</p></div>
-              <div className="max-h-[390px] overflow-auto">
-                <table className={tableClass}><thead className="sticky top-0 bg-[#006B3C]"><tr><th className={th}>Grid</th><th className={th}>Fuel (L)</th><th className={th}>Share</th></tr></thead>
-                  <tbody>{[...currentMonthGridMatrix].sort((a,b)=>b.total-a.total).map(x=><tr key={x.grid} className="border-b border-slate-200 even:bg-slate-50"><td className={td+" font-black text-[#006B3C]"}>{x.grid}</td><td className={td+" font-black"}>{Math.round(x.total).toLocaleString()}</td><td className={td}>{currentMonthTotal?((x.total/currentMonthTotal)*100).toFixed(1):"0.0"}%</td></tr>)}</tbody>
-                </table>
-              </div>
-            </div>
-            <div className="rounded-2xl border border-slate-200 bg-white shadow-md overflow-hidden">
-              <div className="border-b border-blue-100 bg-gradient-to-r from-blue-50 to-white p-5"><h3 className="text-base font-black text-slate-950">{currentMonthLabel} · Day-wise Summary</h3><p className="text-xs text-slate-500">Daily fuel, fill events and unique sites</p></div>
-              <div className="max-h-[390px] overflow-auto">
-                <table className={tableClass}><thead className="sticky top-0 bg-[#006B3C]"><tr>{["Date","Fuel L","Fill Events","Sites"].map(h=><th key={h} className={th}>{h}</th>)}</tr></thead>
-                  <tbody>{currentMonthDaySummary.map(x=><tr key={x.day} className="border-b border-slate-200 even:bg-slate-50"><td className={td+" font-black"}>{x.date}</td><td className={td+" font-black"}>{Math.round(x.fuel).toLocaleString()}</td><td className={td}>{x.fills}</td><td className={td}>{x.sites}</td></tr>)}</tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-
-          <div className="rounded-2xl border border-emerald-200 bg-white shadow-lg overflow-hidden">
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-emerald-100 bg-gradient-to-r from-[#ecfdf5] via-white to-[#f0fdfa] p-5">
-              <div><h3 className="text-lg font-black text-slate-950">{currentMonthLabel} · Grid × Date Fuel Matrix</h3><p className="text-xs text-slate-500">Grid IDs in rows · calendar dates in columns · values are Fuel Quantity Filled (L)</p></div>
-              <ExportButtonComponent data={currentMonthMatrixExport} filename={`Fuel_${currentMonthLabel}_Grid_Day_Matrix_${view}`} label="Export Matrix" format="excel" variant="success"/>
-            </div>
-            <div className="max-h-[570px] overflow-auto">
-              <table className="min-w-max w-full text-[13px]">
-                <thead className="sticky top-0 z-20 bg-[#006B3C] text-white">
-                  <tr>
-                    <th className="sticky left-0 z-30 bg-[#005c36] px-4 py-4 text-left text-[13px] font-black uppercase tracking-wide">Grid ID</th>
-                    {currentMonthDates.map(day=><th key={day} className="min-w-[72px] border-l border-white/10 px-2 py-4 text-center text-[13px] font-black">{day}</th>)}
-                    <th className="sticky right-0 z-30 bg-[#004f30] px-4 py-4 text-center text-[13px] font-black uppercase">Total</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {currentMonthGridMatrix.map(row=><tr key={row.grid} className="border-b border-slate-200 even:bg-slate-50">
-                    <td className="sticky left-0 z-10 bg-white px-3 py-2.5 font-black text-[#006B3C]"><button type="button" onClick={()=>setMonthDrillGrid(row.grid)} className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-[14px] font-black text-[#006B3C] hover:bg-emerald-100 hover:text-emerald-900" title={`View all fueled sites in ${row.grid}`}>{row.grid}<ChevronDown className="h-3.5 w-3.5"/></button></td>
-                    {currentMonthDates.map(day=>{const v=row.days[String(day)]||0;const heat=v>=500?"bg-rose-50 text-rose-800":v>=300?"bg-amber-50 text-amber-800":v>=150?"bg-emerald-50 text-emerald-800":v>0?"text-slate-900":"text-slate-300";return <td key={day} className={`border-l border-slate-100 px-2 py-3.5 text-center text-[13px] font-bold ${heat}`}>{v>0?Math.round(v).toLocaleString():"-"}</td>})}
-                    <td className="sticky right-0 z-10 bg-emerald-100 px-4 py-3.5 text-center text-[14px] font-black text-emerald-900">{Math.round(row.total).toLocaleString()}</td>
-                  </tr>)}
-                  <tr className="sticky bottom-0 z-20 bg-[#12372a] text-white">
-                    <td className="sticky left-0 bg-[#12372a] px-4 py-4 text-[13px] font-black uppercase">Daily Total</td>
-                    {currentMonthDates.map(day=>{const v=currentMonthGridMatrix.reduce((a,r)=>a+(r.days[String(day)]||0),0);return <td key={day} className="border-l border-white/10 px-2 py-4 text-center text-[13px] font-black">{Math.round(v).toLocaleString()}</td>})}
-                    <td className="sticky right-0 bg-emerald-700 px-3 py-3 text-center font-black">{Math.round(currentMonthTotal).toLocaleString()}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-          {monthDrillGrid && (
-            <div className="rounded-xl border-2 border-emerald-300 bg-white shadow-sm overflow-hidden">
-              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-emerald-200 bg-emerald-50 p-4">
-                <div className="flex items-center gap-3">
-                  <button type="button" onClick={()=>setMonthDrillGrid(null)} className="rounded-lg border border-emerald-300 bg-white px-3 py-2 text-xs font-black text-emerald-800">× Close</button>
-                  <div>
-                    <div className="text-[10px] font-black uppercase tracking-wide text-emerald-700">{currentMonthName}-{String(currentYear).slice(-2)} Site Drill-down</div>
-                    <h3 className="text-xl font-black text-slate-950">{monthDrillGrid} · Which Sites Consumed More Fuel?</h3>
-                    <p className="text-xs text-slate-600">{currentMonthDrillSites.length} fueled sites · ranked highest current-month consumption first · daily liters shown by date</p>
-                  </div>
-                </div>
-                <ExportButtonComponent data={currentMonthDrillExport} filename={`Fuel_${currentMonthLabel}_${monthDrillGrid}_Site_Daily`} label={`Export ${monthDrillGrid} Sites`} format="excel" variant="success"/>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3 border-b border-slate-200 p-4 sm:grid-cols-4">
-                <div><div className="text-[10px] font-black uppercase text-slate-500">Grid Fuel</div><div className="text-2xl font-black text-[#006B3C]">{Math.round(currentMonthDrillTotal).toLocaleString()} L</div></div>
-                <div><div className="text-[10px] font-black uppercase text-slate-500">Fueled Sites</div><div className="text-xl font-black">{currentMonthDrillSites.length}</div></div>
-                <div><div className="text-[10px] font-black uppercase text-slate-500">Highest Fuel Site</div><div className="text-2xl font-black text-red-600">{currentMonthDrillSites[0]?.siteId || "-"}</div></div>
-                <div><div className="text-[10px] font-black uppercase text-slate-500">Highest Site Fuel</div><div className="text-2xl font-black text-red-600">{Math.round(currentMonthDrillSites[0]?.total || 0).toLocaleString()} L</div></div>
-              </div>
-
-              <div className="max-h-[600px] overflow-auto">
-                <table className="min-w-max w-full text-[13px]">
-                  <thead className="sticky top-0 z-20 bg-[#006B3C] text-white">
-                    <tr>
-                      <th className="sticky left-0 z-30 bg-[#006B3C] px-3 py-3 text-left font-black">Site ID</th>
-                      {currentMonthDates.map(day=><th key={day} className="min-w-[60px] px-2 py-3 text-center font-black">{day}</th>)}
-                      <th className="bg-[#005A33] px-3 py-3 text-center font-black">{currentMonthName} Total</th>
-                      <th className="bg-[#005A33] px-3 py-3 text-center font-black">Fills</th>
-                      <th className="bg-[#005A33] px-3 py-3 text-center font-black">Avg/Fill</th>
-                      <th className="sticky right-0 z-30 bg-[#004C2B] px-3 py-3 text-center font-black">Grid %</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {currentMonthDrillSites.map((row,i)=>{
-                      const contribution=currentMonthDrillTotal?(row.total/currentMonthDrillTotal)*100:0;
-                      return <tr key={row.siteId} className={`border-b border-slate-200 ${i<3?"bg-red-50":"even:bg-slate-50"}`}>
-                        <td className="sticky left-0 z-10 bg-inherit px-3 py-2.5 font-black text-blue-700">{row.siteId}{i<3?<span className="ml-2 rounded bg-red-100 px-1.5 py-0.5 text-[9px] font-black text-red-700">TOP {i+1}</span>:null}</td>
-                        {currentMonthDates.map(day=>{const v=row.days[String(day)]||0;return <td key={day} className={`px-2 py-2.5 text-center font-bold ${v>0?"text-slate-950":"text-slate-300"}`}>{v>0?Math.round(v).toLocaleString():"-"}</td>})}
-                        <td className="bg-emerald-50 px-3 py-2.5 text-center font-black text-emerald-900">{Math.round(row.total).toLocaleString()}</td>
-                        <td className="px-3 py-2.5 text-center font-black">{row.fills}</td>
-                        <td className="px-3 py-2.5 text-center font-black">{row.fills?Math.round(row.total/row.fills).toLocaleString():"-"}</td>
-                        <td className="sticky right-0 z-10 bg-emerald-50 px-3 py-2.5 text-center font-black text-emerald-900">{contribution.toFixed(1)}%</td>
-                      </tr>
-                    })}
-                    <tr className="sticky bottom-0 z-20 bg-slate-900 text-white">
-                      <td className="sticky left-0 bg-slate-900 px-3 py-3 font-black">Grid Daily Total</td>
-                      {currentMonthDates.map(day=>{const v=currentMonthDrillSites.reduce((a,r)=>a+(r.days[String(day)]||0),0);return <td key={day} className="px-2 py-3 text-center font-black">{v?Math.round(v).toLocaleString():"-"}</td>})}
-                      <td className="bg-emerald-700 px-3 py-3 text-center font-black">{Math.round(currentMonthDrillTotal).toLocaleString()}</td>
-                      <td className="px-3 py-3 text-center font-black">{currentMonthDrillSites.reduce((a,r)=>a+r.fills,0)}</td>
-                      <td className="px-3 py-3 text-center font-black">-</td>
-                      <td className="sticky right-0 bg-emerald-700 px-3 py-3 text-center font-black">100%</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-
-        </>}
-
-        </main>
-      </div>
-    </div>
-  );
-}
-
 
 
 // ============================================================
@@ -1791,14 +1179,13 @@ function ThreeBasicsKpiPage({
 // ============================================================
 
 const SHEET_IDS = {
-  june: "1Bu4lneVsXvoHdiiJtJvzKSVq0MrTHQOqvH38w7MlNPk",
   july: "1aLTAisv5jjRuIkTVa6MjWZ-QFOSYn8FvMlJ09GWUpX0",
   august: "1ds17me8tjnsV-JoQnx6SThCSGM3AkULPsnqP3H0M30w",
   september: "1vyHPFzh28wf0a4b__Cv65bcuFh-pylnkGRcUuX1XpEA",
   october: "1po40LvnGZL8Nnd4BBk-P6uC_tL4Fi9Q8PuMQZ7aQSdc",
 } as const;
 
-// Month dashboard sidebar – Pre‑Vs‑Post and Hardware Issues are removed
+// Month dashboard navigation
 const NAV_ITEMS = [
   { id: "overall", label: "Overall Summary", icon: LayoutDashboard },
   { id: "grid-performance", label: "Grid Performance", icon: Award },
@@ -1821,9 +1208,9 @@ const NAV_ITEMS = [
   { id: "weather", label: "Weather Radar", icon: CloudRain },
 ] as const;
 
-type Month = "june" | "july" | "august" | "september" | "october";
+type Month = "july" | "august" | "september" | "october";
 type AppState = "loading" | "dashboard" | "error";
-type ViewMode = "home" | "month" | "prepost" | "hardware" | "fuel";
+type ViewMode = "home" | "month" | "prepost" | "fuel";
 type PrePostSubView = "analysis" | "query";
 
 // ============================================================
@@ -2292,7 +1679,7 @@ function SiteTable({ rows, onSelect }: { rows: SiteData[]; onSelect: (r: SiteDat
                 setFilters({});
                 setSearch("");
               }}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300 text-sm transition-colors"
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 text-sm transition-colors"
             >
               <X className="w-4 h-4" /> Clear
             </button>
@@ -2653,8 +2040,8 @@ function CategoryPage({
         style={{ background: `linear-gradient(to right, ${color}15, transparent)`, borderColor: `${color}40` }}
       >
         <div>
-          <h2 className="text-2xl font-bold text-white mb-1">{title}</h2>
-          <p className="text-slate-400 text-sm">{description}</p>
+          <h2 className="text-xl sm:text-2xl font-extrabold tracking-tight text-white mb-1">{title}</h2>
+          <p className="text-slate-300 text-sm">{description}</p>
           <p className="text-xs text-slate-500 mt-1">{filteredSites.length} sites in this category</p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -2696,7 +2083,7 @@ function CategoryPage({
             <div className="flex items-center gap-3 mb-2">
               <div className={`w-10 h-10 rounded-lg ${k.bg} flex items-center justify-center`}>{k.icon}</div>
               <div>
-                <div className="text-2xl font-bold text-white">{k.value}</div>
+                <div className="text-xl sm:text-2xl font-extrabold tracking-tight text-white">{k.value}</div>
                 <div className="text-xs text-slate-400">{k.label}</div>
               </div>
             </div>
@@ -3809,10 +3196,10 @@ function RecurringSitesPage({
       />
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="bg-slate-800 border border-slate-700 rounded-xl p-4"><p className="text-xs text-slate-500">Recurring Sites</p><p className="text-2xl font-bold text-white">{filtered.length}</p></div>
-        <div className="bg-slate-800 border border-slate-700 rounded-xl p-4"><p className="text-xs text-slate-500">C-1 3M Regional AVB</p><p className="text-2xl font-bold text-cyan-300">{analysis.regionStats["C-1"]?.avg?.toFixed(2) || "0.00"}%</p><p className="text-[11px] text-emerald-100/60">Top culprit: {topC1?.site.siteName || "—"}</p></div>
-        <div className="bg-slate-800 border border-slate-700 rounded-xl p-4"><p className="text-xs text-slate-500">C-6 3M Regional AVB</p><p className="text-2xl font-bold text-cyan-300">{analysis.regionStats["C-6"]?.avg?.toFixed(2) || "0.00"}%</p><p className="text-[11px] text-emerald-100/60">Top culprit: {topC6?.site.siteName || "—"}</p></div>
-        <div className="bg-slate-800 border border-slate-700 rounded-xl p-4"><p className="text-xs text-slate-500">Recurring Rule</p><p className="text-lg font-bold text-amber-300">{minimumRecurringMonths}/3 months &lt; {threshold}%</p><p className="text-[11px] text-emerald-100/60">Complete 3-month history required</p></div>
+        <div className="bg-slate-800 border border-slate-700 rounded-xl p-4"><p className="text-xs text-slate-500">Recurring Sites</p><p className="text-xl sm:text-2xl font-extrabold tracking-tight text-white">{filtered.length}</p></div>
+        <div className="bg-slate-800 border border-slate-700 rounded-xl p-4"><p className="text-xs text-slate-500">C-1 3M Regional AVB</p><p className="text-2xl font-bold text-cyan-300">{analysis.regionStats["C-1"]?.avg?.toFixed(2) || "0.00"}%</p><p className="text-[11px] text-slate-500">Top culprit: {topC1?.site.siteName || "—"}</p></div>
+        <div className="bg-slate-800 border border-slate-700 rounded-xl p-4"><p className="text-xs text-slate-500">C-6 3M Regional AVB</p><p className="text-2xl font-bold text-cyan-300">{analysis.regionStats["C-6"]?.avg?.toFixed(2) || "0.00"}%</p><p className="text-[11px] text-slate-500">Top culprit: {topC6?.site.siteName || "—"}</p></div>
+        <div className="bg-slate-800 border border-slate-700 rounded-xl p-4"><p className="text-xs text-slate-500">Recurring Rule</p><p className="text-lg font-bold text-amber-300">{minimumRecurringMonths}/3 months &lt; {threshold}%</p><p className="text-[11px] text-slate-500">Complete 3-month history required</p></div>
       </div>
 
       <div className="bg-slate-800/70 border border-slate-700 rounded-xl p-4 space-y-3">
@@ -4762,7 +4149,7 @@ function SiteQuery({ sites, historyData = null, rawData = null }: { sites: SiteD
           <Search className="w-6 h-6 text-cyan-400" />
           <div>
             <h3 className="text-white font-bold text-lg">Site Query</h3>
-            <p className="text-slate-300 text-sm">
+            <p className="text-slate-200 text-sm">
               Search for a site to view detailed information, daily AVB vs Load Shedding trend, and location
             </p>
           </div>
@@ -4851,7 +4238,7 @@ function SiteQuery({ sites, historyData = null, rawData = null }: { sites: SiteD
       {!selectedSite && !search.trim() && (
         <div className="bg-slate-800 border border-slate-700 rounded-xl p-12 text-center">
           <Search className="w-12 h-12 text-slate-600 mx-auto mb-4" />
-          <p className="text-slate-400 text-sm">
+          <p className="text-slate-300 text-sm">
             Start typing a Site ID, Grid, Sub-Region, or Cluster Owner to search
           </p>
           <div className="mt-4 flex flex-wrap justify-center gap-2">
@@ -4941,8 +4328,8 @@ function RcaSummary({ rcaData }: { rcaData: SheetPayload | null }) {
       <div className="bg-gradient-to-r from-indigo-500/10 to-purple-500/10 border border-indigo-500/20 rounded-xl p-6">
         <div className="flex items-center justify-between flex-wrap gap-4">
           <div>
-            <h2 className="text-2xl font-bold text-white mb-1">RCA of Platinum+</h2>
-            <p className="text-slate-400 text-sm">Root cause analysis and action items for Platinum+ sites</p>
+            <h2 className="text-xl sm:text-2xl font-extrabold tracking-tight text-white mb-1">RCA of Platinum+</h2>
+            <p className="text-slate-300 text-sm">Root cause analysis and action items for Platinum+ sites</p>
             <p className="text-xs text-slate-500 mt-1">{records.length} total action items</p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -4971,7 +4358,7 @@ function RcaSummary({ rcaData }: { rcaData: SheetPayload | null }) {
               <ListChecks className="w-5 h-5 text-blue-400" />
             </div>
             <div>
-              <div className="text-2xl font-bold text-white">{total}</div>
+              <div className="text-xl sm:text-2xl font-extrabold tracking-tight text-white">{total}</div>
               <div className="text-xs text-slate-400">Total Actions</div>
             </div>
           </div>
@@ -4982,7 +4369,7 @@ function RcaSummary({ rcaData }: { rcaData: SheetPayload | null }) {
               <AlertTriangle className="w-5 h-5 text-red-400" />
             </div>
             <div>
-              <div className="text-2xl font-bold text-white">{openCount}</div>
+              <div className="text-xl sm:text-2xl font-extrabold tracking-tight text-white">{openCount}</div>
               <div className="text-xs text-slate-400">Open</div>
             </div>
           </div>
@@ -4993,7 +4380,7 @@ function RcaSummary({ rcaData }: { rcaData: SheetPayload | null }) {
               <Clock className="w-5 h-5 text-amber-400" />
             </div>
             <div>
-              <div className="text-2xl font-bold text-white">{inProgressCount}</div>
+              <div className="text-xl sm:text-2xl font-extrabold tracking-tight text-white">{inProgressCount}</div>
               <div className="text-xs text-slate-400">In Progress</div>
             </div>
           </div>
@@ -5004,7 +4391,7 @@ function RcaSummary({ rcaData }: { rcaData: SheetPayload | null }) {
               <CheckCircle2 className="w-5 h-5 text-emerald-400" />
             </div>
             <div>
-              <div className="text-2xl font-bold text-white">{resolvedCount}</div>
+              <div className="text-xl sm:text-2xl font-extrabold tracking-tight text-white">{resolvedCount}</div>
               <div className="text-xs text-slate-400">Resolved</div>
             </div>
           </div>
@@ -5276,541 +4663,6 @@ function GridScoreBadge({ score, max: _max }: { score: number; max: number }) {
   );
 }
 
-const LightAppTheme = () => (
-  <style>{`
-    /* ========================================================
-       LIGHT MANAGEMENT THEME
-       Clean white / soft-gray UI with strong navy typography.
-       These rules intentionally override legacy dark Tailwind
-       classes used by imported dashboard components as well.
-       ======================================================== */
-    .light-app {
-      background: #f3f4f6 !important;
-      color: #172033 !important;
-      font-family: Inter, "Segoe UI", Roboto, Arial, sans-serif;
-      -webkit-font-smoothing: antialiased;
-      text-rendering: optimizeLegibility;
-    }
-
-    .light-app main { background: #f5f6f8 !important; }
-
-    /* Convert legacy dark surfaces into clean light cards */
-    .light-app [class*="bg-slate-950"],
-    .light-app [class*="bg-slate-900"],
-    .light-app [class*="bg-slate-800"] {
-      background-color: #ffffff !important;
-    }
-    .light-app [class*="bg-slate-700"] {
-      background-color: #eef1f5 !important;
-    }
-    .light-app [class*="bg-[#0"],
-    .light-app [class*="bg-[#1"] {
-      background-color: #ffffff !important;
-    }
-
-    /* Borders / separators */
-    .light-app [class*="border-slate-8"],
-    .light-app [class*="border-slate-7"],
-    .light-app [class*="border-slate-6"] {
-      border-color: #d6dbe3 !important;
-    }
-
-    /* Primary typography */
-    .light-app .text-white,
-    .light-app .text-slate-100,
-    .light-app .text-slate-200 {
-      color: #15213a !important;
-    }
-    .light-app .text-slate-300 { color: #28364f !important; }
-    .light-app .text-slate-400 { color: #526078 !important; }
-    .light-app .text-slate-500 { color: #69768d !important; }
-    .light-app .text-slate-600 { color: #7b879b !important; }
-
-    .light-app h1,
-    .light-app h2,
-    .light-app h3,
-    .light-app h4 {
-      color: #11213f !important;
-      letter-spacing: -0.015em;
-    }
-    .light-app h2 { font-weight: 800 !important; }
-    .light-app h3, .light-app h4 { font-weight: 750 !important; }
-
-    /* Card treatment */
-    .light-app main > div [class*="rounded-xl"],
-    .light-app main > div [class*="rounded-2xl"] {
-      box-shadow: 0 1px 2px rgba(15, 23, 42, .05), 0 8px 24px rgba(15, 23, 42, .04);
-    }
-
-    /* Tables */
-    .light-app table {
-      color: #1d2a44 !important;
-      font-variant-numeric: tabular-nums;
-    }
-    .light-app thead,
-    .light-app thead tr {
-      background: #e9edf3 !important;
-    }
-    .light-app th {
-      color: #263650 !important;
-      font-weight: 800 !important;
-    }
-    .light-app td { color: #24324a; }
-    .light-app tbody tr:hover { background: #f0f4f8 !important; }
-
-    /* Inputs / filters */
-    .light-app input,
-    .light-app select {
-      background: #ffffff !important;
-      color: #1d2a44 !important;
-      border-color: #cbd3df !important;
-    }
-    .light-app input::placeholder { color: #8a96a8 !important; }
-
-    /* Sidebar */
-    .light-app aside {
-      background: #eef1f4 !important;
-      border-color: #cfd6df !important;
-    }
-    .light-app aside h1 { color: #12213c !important; }
-    .light-app aside nav button {
-      color: #44536b !important;
-      font-weight: 650 !important;
-    }
-    .light-app aside nav button:hover {
-      background: #e2e8f0 !important;
-      color: #10213f !important;
-    }
-    .light-app aside nav button[class*="bg-cyan"] {
-      background: #dff4f8 !important;
-      border-color: #79cbd8 !important;
-      color: #0585a0 !important;
-      box-shadow: inset 3px 0 0 #06a9c4;
-    }
-
-    /* Top header */
-    .light-app > div > header {
-      background: rgba(255,255,255,.96) !important;
-      border-color: #d5dbe4 !important;
-      box-shadow: 0 1px 8px rgba(15,23,42,.06);
-    }
-
-    /* Standard dark buttons become premium slate buttons */
-    .light-app button[class*="bg-slate-800"],
-    .light-app button[class*="bg-slate-700"] {
-      background: #e7ebf0 !important;
-      color: #20304a !important;
-      border: 1px solid #cbd3df !important;
-    }
-    .light-app button[class*="bg-slate-800"]:hover,
-    .light-app button[class*="bg-slate-700"]:hover {
-      background: #dce3eb !important;
-      color: #10203d !important;
-    }
-
-    /* Preserve semantic accent text so KPIs remain easy to scan */
-    .light-app .text-cyan-300, .light-app .text-cyan-400 { color: #008eaa !important; }
-    .light-app .text-emerald-300, .light-app .text-emerald-400 { color: #067a58 !important; }
-    .light-app .text-red-300, .light-app .text-red-400 { color: #c62828 !important; }
-    .light-app .text-amber-300, .light-app .text-amber-400 { color: #a45d00 !important; }
-
-
-    /* ========================================================
-       OVERALL SUMMARY — HIGH CONTRAST + GRADIENT KPI CARDS
-       ======================================================== */
-    .overall-summary-light {
-      color: #12213f !important;
-    }
-
-    /* Main Overall Summary banner: premium navy/teal gradient with white text */
-    .overall-summary-light > div > div:first-child {
-      background: linear-gradient(135deg, #0f2742 0%, #164e63 52%, #0f766e 100%) !important;
-      border: 1px solid #1f6f7e !important;
-      box-shadow: 0 12px 32px rgba(15, 39, 66, .18) !important;
-    }
-    .overall-summary-light > div > div:first-child h1,
-    .overall-summary-light > div > div:first-child h2,
-    .overall-summary-light > div > div:first-child h3,
-    .overall-summary-light > div > div:first-child p,
-    .overall-summary-light > div > div:first-child span,
-    .overall-summary-light > div > div:first-child svg {
-      color: #ffffff !important;
-    }
-    .overall-summary-light > div > div:first-child h2,
-    .overall-summary-light > div > div:first-child h3 {
-      font-weight: 900 !important;
-      letter-spacing: -0.02em !important;
-    }
-    .overall-summary-light > div > div:first-child p {
-      color: #d7eef4 !important;
-      font-weight: 500 !important;
-    }
-    .overall-summary-light > div > div:first-child button {
-      background: rgba(255,255,255,.94) !important;
-      color: #14304b !important;
-      border-color: rgba(255,255,255,.72) !important;
-      font-weight: 800 !important;
-    }
-    .overall-summary-light > div > div:first-child button svg,
-    .overall-summary-light > div > div:first-child button span {
-      color: #14304b !important;
-    }
-
-    /* Top KPI row: filled light gradients instead of plain white cards */
-    .overall-summary-light > div > div:nth-child(2) > div {
-      border-width: 1px !important;
-      border-color: rgba(148,163,184,.32) !important;
-      box-shadow: 0 7px 20px rgba(15,23,42,.08) !important;
-      position: relative;
-      overflow: hidden;
-    }
-    .overall-summary-light > div > div:nth-child(2) > div:nth-child(1) {
-      background: linear-gradient(135deg, #e8f1ff 0%, #dbeafe 55%, #c7ddff 100%) !important;
-    }
-    .overall-summary-light > div > div:nth-child(2) > div:nth-child(2) {
-      background: linear-gradient(135deg, #e9fbf5 0%, #d1fae5 55%, #bcefdc 100%) !important;
-    }
-    .overall-summary-light > div > div:nth-child(2) > div:nth-child(3) {
-      background: linear-gradient(135deg, #e7f9fd 0%, #cffafe 55%, #b9edf5 100%) !important;
-    }
-    .overall-summary-light > div > div:nth-child(2) > div:nth-child(4) {
-      background: linear-gradient(135deg, #f0efff 0%, #e0e7ff 55%, #d5d7ff 100%) !important;
-    }
-    .overall-summary-light > div > div:nth-child(2) > div:nth-child(5) {
-      background: linear-gradient(135deg, #fff0f1 0%, #fee2e2 55%, #ffd2d5 100%) !important;
-    }
-
-    /* Make KPI numbers and labels much easier to read */
-    .overall-summary-light > div > div:nth-child(2) > div [class*="text-2xl"],
-    .overall-summary-light > div > div:nth-child(2) > div [class*="text-3xl"] {
-      color: #0f2342 !important;
-      font-weight: 900 !important;
-      letter-spacing: -0.02em !important;
-    }
-    .overall-summary-light > div > div:nth-child(2) > div [class*="text-xs"],
-    .overall-summary-light > div > div:nth-child(2) > div [class*="text-sm"] {
-      color: #4d5f79 !important;
-      font-weight: 650 !important;
-    }
-
-    /* Keep KPI icon tiles saturated enough to stand out on gradient cards */
-    .overall-summary-light > div > div:nth-child(2) > div > div > div:first-child {
-      box-shadow: inset 0 0 0 1px rgba(255,255,255,.55), 0 3px 10px rgba(15,23,42,.08);
-    }
-
-    /* Category section: crisp titles and stronger card readability */
-    .overall-summary-light [class*="Cell Availability"] h3,
-    .overall-summary-light h3 {
-      color: #10213f !important;
-    }
-    .overall-summary-light [class*="rounded-xl"] p,
-    .overall-summary-light [class*="rounded-xl"] span {
-      text-shadow: none !important;
-    }
-
-
-    /* ========================================================
-       GLOBAL KPI / TABLE GRADIENT SYSTEM
-       Apply soft gradients consistently across every KPI card,
-       regional category card and data table without hurting readability.
-       ======================================================== */
-
-    /* Overall Summary section containers */
-    .overall-summary-light [class*="border-slate-700"],
-    .overall-summary-light [class*="border-slate-600"] {
-      border-color: #d4dde8 !important;
-    }
-
-    /* Regional C-1 / C-6 panels get a very soft blue-violet wash */
-    .overall-summary-light > div > div:nth-child(n+3) [class*="rounded-xl"][class*="border"] {
-      background: linear-gradient(135deg, #ffffff 0%, #f8fbff 46%, #eef4fb 100%) !important;
-      box-shadow: 0 6px 18px rgba(15, 23, 42, .055) !important;
-    }
-
-    /* Every category KPI card inside C-1 / C-6 receives a category gradient. */
-    .overall-summary-light [class*="grid-cols-5"] > div:nth-child(1),
-    .overall-summary-light [class*="grid-cols-4"] > div:nth-child(1) {
-      background: linear-gradient(135deg, #fffdf5 0%, #fff7dc 52%, #ffefbd 100%) !important;
-      border-color: #f3d58a !important;
-    }
-    .overall-summary-light [class*="grid-cols-5"] > div:nth-child(2),
-    .overall-summary-light [class*="grid-cols-4"] > div:nth-child(2) {
-      background: linear-gradient(135deg, #f3fcff 0%, #e2f8fd 52%, #cceff8 100%) !important;
-      border-color: #a9deea !important;
-    }
-    .overall-summary-light [class*="grid-cols-5"] > div:nth-child(3),
-    .overall-summary-light [class*="grid-cols-4"] > div:nth-child(3) {
-      background: linear-gradient(135deg, #f8f7ff 0%, #eeecff 52%, #dfdcff 100%) !important;
-      border-color: #ccc6fb !important;
-    }
-    .overall-summary-light [class*="grid-cols-5"] > div:nth-child(4),
-    .overall-summary-light [class*="grid-cols-4"] > div:nth-child(4) {
-      background: linear-gradient(135deg, #fff9f4 0%, #fff0df 52%, #ffe0bd 100%) !important;
-      border-color: #f6c994 !important;
-    }
-    .overall-summary-light [class*="grid-cols-5"] > div:nth-child(5),
-    .overall-summary-light [class*="grid-cols-4"] > div:nth-child(5) {
-      background: linear-gradient(135deg, #f2fdf8 0%, #ddf8ea 52%, #c3f0db 100%) !important;
-      border-color: #a9dfc7 !important;
-    }
-
-    /* Strong, consistent text on every KPI card */
-    .overall-summary-light [class*="grid-cols-5"] > div,
-    .overall-summary-light [class*="grid-cols-4"] > div {
-      color: #10213f !important;
-      box-shadow: 0 5px 14px rgba(15,23,42,.065) !important;
-    }
-    .overall-summary-light [class*="grid-cols-5"] > div [class*="font-bold"],
-    .overall-summary-light [class*="grid-cols-4"] > div [class*="font-bold"],
-    .overall-summary-light [class*="grid-cols-5"] > div [class*="font-semibold"],
-    .overall-summary-light [class*="grid-cols-4"] > div [class*="font-semibold"] {
-      color: #10213f !important;
-      font-weight: 850 !important;
-    }
-    .overall-summary-light [class*="grid-cols-5"] > div [class*="text-slate-400"],
-    .overall-summary-light [class*="grid-cols-4"] > div [class*="text-slate-400"],
-    .overall-summary-light [class*="grid-cols-5"] > div [class*="text-slate-500"],
-    .overall-summary-light [class*="grid-cols-4"] > div [class*="text-slate-500"] {
-      color: #5b6b82 !important;
-    }
-
-    /* Tables across the application: gradient header + alternating gradient rows. */
-    .light-app table {
-      border-collapse: separate !important;
-      border-spacing: 0 !important;
-      overflow: hidden;
-      border-radius: 14px;
-      background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%) !important;
-      box-shadow: inset 0 0 0 1px #d9e1ea;
-    }
-    .light-app table thead tr,
-    .light-app thead tr {
-      background: linear-gradient(90deg, #dfe8f3 0%, #edf3f8 50%, #dfe8f3 100%) !important;
-    }
-    .light-app table thead th {
-      color: #173052 !important;
-      font-weight: 850 !important;
-      border-bottom: 1px solid #c8d3df !important;
-    }
-    .light-app table tbody tr:nth-child(odd) {
-      background: linear-gradient(90deg, #ffffff 0%, #f8fbfe 100%) !important;
-    }
-    .light-app table tbody tr:nth-child(even) {
-      background: linear-gradient(90deg, #f7f9fc 0%, #eef4f8 100%) !important;
-    }
-    .light-app table tbody tr:hover {
-      background: linear-gradient(90deg, #eaf4fb 0%, #e3f0f8 100%) !important;
-    }
-    .light-app table td {
-      border-bottom-color: #dde5ee !important;
-      color: #20324d !important;
-    }
-
-    /* KPI score / status badges should look filled, not flat. */
-    .light-app span[class*="bg-emerald-500"],
-    .light-app div[class*="bg-emerald-500"] {
-      background: linear-gradient(135deg, #dcfce7 0%, #bbf7d0 100%) !important;
-      color: #047857 !important;
-      border-color: #86efac !important;
-    }
-    .light-app span[class*="bg-red-500"],
-    .light-app div[class*="bg-red-500"] {
-      background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%) !important;
-      color: #b91c1c !important;
-      border-color: #fca5a5 !important;
-    }
-    .light-app span[class*="bg-amber-500"],
-    .light-app div[class*="bg-amber-500"] {
-      background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%) !important;
-      color: #92400e !important;
-      border-color: #fcd34d !important;
-    }
-    .light-app span[class*="bg-cyan-500"],
-    .light-app div[class*="bg-cyan-500"] {
-      background: linear-gradient(135deg, #cffafe 0%, #a5f3fc 100%) !important;
-      color: #0e7490 !important;
-      border-color: #67e8f9 !important;
-    }
-    .light-app span[class*="bg-blue-500"],
-    .light-app div[class*="bg-blue-500"] {
-      background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%) !important;
-      color: #1d4ed8 !important;
-      border-color: #93c5fd !important;
-    }
-
-    /* Keep progress bars visually strong on top of light gradients. */
-    .overall-summary-light [class*="h-1"],
-    .overall-summary-light [class*="h-1.5"],
-    .overall-summary-light [class*="h-2"] {
-      box-shadow: inset 0 0 0 1px rgba(15,23,42,.06);
-    }
-
-    /* Grid Performance title normalized to 14px */
-    .grid-performance-light-title {
-      font-size: 14px !important;
-      line-height: 1.08 !important;
-      font-weight: 900 !important;
-      color: #10213f !important;
-      letter-spacing: -0.025em;
-    }
-
-    @media (max-width: 1100px) {
-      .grid-performance-light-title { font-size: 14px !important; }
-    }
-
-    /* ========================================================
-       GLOBAL DASHBOARD TYPOGRAPHY + TABLE THEME
-       Applies to ALL tabs, including imported components such
-       as EmployeePerformance, OverallSummary and Weather widgets.
-       ======================================================== */
-    .light-app,
-    .light-app button,
-    .light-app input,
-    .light-app select,
-    .light-app textarea,
-    .light-app table {
-      font-family: Inter, "Segoe UI", Arial, sans-serif !important;
-    }
-
-    .light-app h1, .light-app h2, .light-app h3,
-    .light-app h4, .light-app h5, .light-app h6 {
-      color: #0B2559 !important;
-      font-weight: 700 !important;
-      letter-spacing: -0.015em;
-    }
-
-    .light-app table {
-      width: 100%;
-      color: #0B2559 !important;
-      border-collapse: separate;
-      border-spacing: 0;
-      font-size: 13px !important;
-      background: #ffffff !important;
-    }
-
-    .light-app table thead,
-    .light-app table thead tr {
-      background: linear-gradient(180deg, #07599D 0%, #03477F 100%) !important;
-    }
-
-    .light-app table thead th {
-      background: transparent !important;
-      color: #ffffff !important;
-      -webkit-text-fill-color: #ffffff !important;
-      font-size: 12px !important;
-      line-height: 1.25 !important;
-      font-weight: 700 !important;
-      letter-spacing: 0 !important;
-      text-transform: none !important;
-      border-color: rgba(255,255,255,.18) !important;
-      padding-top: 11px !important;
-      padding-bottom: 11px !important;
-    }
-
-    /* Force white header content in every dashboard table, including
-       Worst 10 tables in AGM/Platinum+/PGS/SB/DG and imported tabs. */
-    .light-app table thead th *,
-    .light-app table thead th span,
-    .light-app table thead th div,
-    .light-app table thead th p,
-    .light-app table thead th button,
-    .light-app table thead th svg {
-      color: #ffffff !important;
-      -webkit-text-fill-color: #ffffff !important;
-      stroke: currentColor !important;
-    }
-
-    .light-app table thead [class*="text-slate"],
-    .light-app table thead [class*="text-gray"],
-    .light-app table thead [class*="text-blue"],
-    .light-app table thead [class*="text-cyan"] {
-      color: #ffffff !important;
-      -webkit-text-fill-color: #ffffff !important;
-    }
-
-    /* Drill-down / View tables use a light header, therefore black text is required. */
-    .light-app .grid-performance-detail-table thead,
-    .light-app .grid-performance-detail-table thead tr,
-    .light-app .grid-performance-detail-table thead th {
-      background: #f8fafc !important;
-      background-color: #f8fafc !important;
-      color: #111827 !important;
-      -webkit-text-fill-color: #111827 !important;
-    }
-    .light-app .grid-performance-detail-table thead th *,
-    .light-app .grid-performance-detail-table thead th span,
-    .light-app .grid-performance-detail-table thead th div {
-      color: #111827 !important;
-      -webkit-text-fill-color: #111827 !important;
-    }
-
-    .light-app table tbody tr {
-      background: #ffffff !important;
-    }
-    .light-app table tbody tr:nth-child(even) {
-      background: #F1F6FA !important;
-    }
-    .light-app table tbody tr:hover {
-      background: #E7F1F8 !important;
-    }
-    .light-app table tbody td {
-      color: #0B2559 !important;
-      border-color: #D7E2ED !important;
-      font-weight: 500 !important;
-      padding-top: 9px !important;
-      padding-bottom: 9px !important;
-    }
-
-    /* IDs and key numeric values */
-    .light-app table tbody td.font-mono {
-      font-family: Inter, "Segoe UI", Arial, sans-serif !important;
-      color: #07599D !important;
-      font-weight: 600 !important;
-    }
-    .light-app table .font-bold,
-    .light-app table .font-extrabold,
-    .light-app table .font-semibold { font-weight: 700 !important; }
-
-    /* Preserve semantic KPI colours in every tab */
-    .light-app .text-emerald-300, .light-app .text-emerald-400,
-    .light-app .text-emerald-500, .light-app .text-emerald-600,
-    .light-app .text-emerald-700, .light-app .text-emerald-800,
-    .light-app .text-green-400, .light-app .text-green-700 { color: #00875A !important; }
-    .light-app .text-red-300, .light-app .text-red-400,
-    .light-app .text-red-500, .light-app .text-red-600,
-    .light-app .text-red-700, .light-app .text-red-800 { color: #D90000 !important; }
-    .light-app .text-amber-300, .light-app .text-amber-400,
-    .light-app .text-amber-500, .light-app .text-amber-600,
-    .light-app .text-amber-700, .light-app .text-amber-800 { color: #92400E !important; }
-    .light-app .text-cyan-300, .light-app .text-cyan-400,
-    .light-app .text-cyan-500, .light-app .text-blue-400 { color: #07599D !important; }
-
-    .light-app [class*="bg-emerald-"] { background-color: #D9FAE9 !important; border-color: #38DFA1 !important; }
-    .light-app [class*="bg-red-"] { background-color: #FFE1E1 !important; border-color: #FCA5A5 !important; }
-    .light-app [class*="bg-amber-"] { background-color: #FFF4CC !important; border-color: #F5B800 !important; }
-
-    /* Imported EmployeePerformance and all other tab cards */
-    .light-app main > div,
-    .light-app main section { color: #0B2559; }
-    .light-app main [class*="border-slate-"] { border-color: #D7E2ED !important; }
-    .light-app main [class*="text-slate-100"],
-    .light-app main [class*="text-slate-200"],
-    .light-app main [class*="text-slate-300"] { color: #0B2559 !important; }
-    .light-app main [class*="text-slate-400"] { color: #47617F !important; }
-    .light-app main [class*="text-slate-500"] { color: #5E7390 !important; }
-
-    .light-app input, .light-app select, .light-app textarea {
-      background: #ffffff !important;
-      color: #0B2559 !important;
-      border-color: #D7E2ED !important;
-      font-weight: 500 !important;
-    }
-    .light-app input:focus, .light-app select:focus, .light-app textarea:focus {
-      border-color: #07599D !important;
-      box-shadow: 0 0 0 2px rgba(7,89,157,.10) !important;
-    }
-  `}</style>
-);
 
 function GridPerformanceScorecard({
   rawData,
@@ -7569,7 +6421,7 @@ function LoadingScreen() {
       />
       <div className="text-center">
         <h2 className="text-xl font-semibold text-white">Loading Dashboard</h2>
-        <p className="text-slate-400 text-sm mt-1">Preparing your data…</p>
+        <p className="text-slate-300 text-sm mt-1">Preparing your data…</p>
       </div>
     </div>
   );
@@ -7583,7 +6435,7 @@ function ErrorScreen({ message, onRetry }: { message: string; onRetry: () => voi
       </div>
       <div className="text-center max-w-md">
         <h2 className="text-xl font-semibold text-white">Couldn't load the sheet</h2>
-        <p className="text-slate-400 text-sm mt-2 break-words">{message}</p>
+        <p className="text-slate-300 text-sm mt-2 break-words">{message}</p>
       </div>
       <button
         onClick={onRetry}
@@ -7597,12 +6449,12 @@ function ErrorScreen({ message, onRetry }: { message: string; onRetry: () => voi
 
 function SectionBanner({ icon, title, subtitle, gradient, className = "" }: { icon: React.ReactNode; title: string; subtitle: string; gradient: string; className?: string }) {
   return (
-    <div className={`rounded-xl bg-gradient-to-r ${gradient} border p-5 ${className}`}>
+    <div className={`rounded-2xl bg-gradient-to-r ${gradient} border border-slate-200 p-5 shadow-sm ${className}`}>
       <div className="flex items-center gap-3">
         {icon}
         <div>
-          <h3 className="text-white font-bold text-lg">{title}</h3>
-          <p className="text-slate-300 text-sm">{subtitle}</p>
+          <h3 className="text-slate-900 font-extrabold text-lg">{title}</h3>
+          <p className="text-slate-600 text-sm">{subtitle}</p>
         </div>
       </div>
     </div>
@@ -7864,8 +6716,8 @@ function PreVsPostAnalysis({
       <div className="bg-gradient-to-r from-purple-500/10 to-pink-500/10 border border-purple-500/20 rounded-xl p-6">
         <div className="flex items-center justify-between flex-wrap gap-4">
           <div>
-            <h2 className="text-2xl font-bold text-white">Plat+ and DG Sites Pre Vs Post Analysis</h2>
-            <p className="text-slate-400 text-sm">{employeeFilteredSites.length} sites in total</p>
+            <h2 className="text-xl sm:text-2xl font-extrabold tracking-tight text-white">Plat+ and DG Sites Pre Vs Post Analysis</h2>
+            <p className="text-slate-300 text-sm">{employeeFilteredSites.length} sites in total</p>
             <p className="text-xs text-slate-500 mt-1">Comparing July (Pre) vs August (Post) performance</p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -7929,7 +6781,7 @@ function PreVsPostAnalysis({
           <div key={cat} className="bg-slate-800 border border-slate-700 rounded-xl p-4">
             <div className="flex items-center justify-between">
               <span className="text-sm text-slate-400">{cat}</span>
-              <span className="text-2xl font-bold text-white">{count}</span>
+              <span className="text-xl sm:text-2xl font-extrabold tracking-tight text-white">{count}</span>
             </div>
           </div>
         ))}
@@ -8249,7 +7101,7 @@ function KpiCard({ label, value, icon, color }: { label: string; value: string |
       <div className="flex items-center gap-3">
         <div className={`w-10 h-10 rounded-lg ${colorMap[color]} flex items-center justify-center`}>{icon}</div>
         <div>
-          <div className="text-2xl font-bold text-white">{value}</div>
+          <div className="text-xl sm:text-2xl font-extrabold tracking-tight text-white">{value}</div>
           <div className="text-xs text-slate-400">{label}</div>
         </div>
       </div>
@@ -8358,7 +7210,7 @@ function LoginScreen({ onLogin }: { onLogin: (success: boolean) => void }) {
         <div className="bg-slate-800/90 backdrop-blur-xl border border-slate-700/60 rounded-2xl p-8 shadow-2xl">
           <div className="text-center mb-8">
             <h2 className="text-3xl font-bold text-white">Welcome Back</h2>
-            <p className="text-slate-400 text-sm mt-2">Sign in to access the C1 & C6 Dashboard</p>
+            <p className="text-slate-300 text-sm mt-2">Sign in to access the C1 & C6 Dashboard</p>
           </div>
           <form onSubmit={handleSubmit} className="space-y-5">
             <div>
@@ -8423,7 +7275,6 @@ export default function App() {
   const [errorMsg, setErrorMsg] = useState("");
 
   const [monthData, setMonthData] = useState<SheetPayload | null>(null);
-  const [monthHardware, setMonthHardware] = useState<SheetPayload | null>(null);
   const [monthRca, setMonthRca] = useState<SheetPayload | null>(null);
   const [month5G, setMonth5G] = useState<SheetPayload | null>(null);
   const [monthCellAvbHistory, setMonthCellAvbHistory] = useState<SheetPayload | null>(null);
@@ -8431,6 +7282,7 @@ export default function App() {
   const [monthRevenueLost, setMonthRevenueLost] = useState<SheetPayload | null>(null);
   const [month3Basics, setMonth3Basics] = useState<SheetPayload | null>(null);
   const [fuelHistory, setFuelHistory] = useState<SheetPayload | null>(null);
+  const [fuelDeviation, setFuelDeviation] = useState<SheetPayload | null>(null);
   const [preVsPostData, setPreVsPostData] = useState<SheetPayload | null>(null);
   const [prePostSites, setPrePostSites] = useState<SiteData[]>([]);
   const [prePostLastUpdated, setPrePostLastUpdated] = useState("");
@@ -8513,7 +7365,6 @@ export default function App() {
     // This prevents stale August data from remaining visible while September loads
     // or when one of the optional September tabs is unavailable.
     setMonthData(null);
-    setMonthHardware(null);
     setMonthRca(null);
     setMonth5G(null);
     setMonthCellAvbHistory(null);
@@ -8540,8 +7391,7 @@ export default function App() {
 
       // Supporting tabs are optional. A missing supporting tab must NOT cause
       // the whole dashboard to fall back to old/mock data.
-      const [hwResult, dateResult, rcaResult, fiveGResult, historyResult, s2sResult, revenueLostResult, threeBasicsResult] = await Promise.allSettled([
-        fetchGoogleSheet(sheetId, "Hardware issues"),
+      const [dateResult, rcaResult, fiveGResult, historyResult, s2sResult, revenueLostResult, threeBasicsResult] = await Promise.allSettled([
         fetchGoogleSheet(sheetId, "Updated Date"),
         fetchGoogleSheet(sheetId, "RCA of Plat +"),
         (month === "august" || month === "september" || month === "october")
@@ -8563,7 +7413,6 @@ export default function App() {
 
       if (requestId !== monthLoadSeq.current) return;
 
-      const hwData = hwResult.status === "fulfilled" ? hwResult.value : null;
       const dateData = dateResult.status === "fulfilled" ? dateResult.value : null;
       const rcaSheet = rcaResult.status === "fulfilled" ? rcaResult.value : null;
       const fiveGSheet = fiveGResult.status === "fulfilled" ? fiveGResult.value : null;
@@ -8572,7 +7421,6 @@ export default function App() {
       const revenueLostData = revenueLostResult.status === "fulfilled" ? revenueLostResult.value : null;
       const threeBasicsData = threeBasicsResult.status === "fulfilled" ? threeBasicsResult.value : null;
 
-      if (hwResult.status === "rejected") console.warn(`[Cell AVB] ${month}: Hardware issues tab unavailable`, hwResult.reason);
       if (dateResult.status === "rejected") console.warn(`[Cell AVB] ${month}: Updated Date tab unavailable`, dateResult.reason);
       if (rcaResult.status === "rejected") console.warn(`[Cell AVB] ${month}: RCA of Plat + tab unavailable`, rcaResult.reason);
       if (fiveGResult.status === "rejected") console.warn(`[Cell AVB] ${month}: 5G tab unavailable`, fiveGResult.reason);
@@ -8581,7 +7429,6 @@ export default function App() {
       if (revenueLostResult.status === "rejected") console.warn(`[Cell AVB] ${month}: Revenue Lost sites tab unavailable`, revenueLostResult.reason);
       if (threeBasicsResult.status === "rejected") console.warn(`[Cell AVB] ${month}: 3 Basics KPIs tab unavailable`, threeBasicsResult.reason);
 
-      setMonthHardware(hwData);
       setMonthRca(rcaSheet);
       setMonth5G(fiveGSheet);
       setMonthCellAvbHistory((month === "september" || month === "october") ? cellAvbHistory : null);
@@ -8606,8 +7453,7 @@ export default function App() {
 
       // Never leave the previous month's data on screen after a failed month switch.
       setMonthData(null);
-      setMonthHardware(null);
-      setMonthRca(null);
+        setMonthRca(null);
       setMonth5G(null);
       setMonthCellAvbHistory(null);
       setMonthS2SBB(null);
@@ -8629,20 +7475,58 @@ export default function App() {
   const loadFuelDashboard = async () => {
     setAppState("loading");
     setErrorMsg("");
-    try {
-      // Fuel History is maintained in the latest / live workbook.
-      const data = await fetchGoogleSheet(SHEET_IDS.october, "Fuel History");
-      if (!data || !Array.isArray(data.rows)) throw new Error("Fuel History tab returned no rows");
-      setFuelHistory(data);
-      setViewMode("fuel");
-      setAppState("dashboard");
-    } catch (error) {
-      console.error("Error loading Fuel History:", error);
-      setFuelHistory(null);
-      setViewMode("fuel");
-      setErrorMsg("Failed to load Fuel History. Confirm the tab name is exactly 'Fuel History'.");
-      setAppState("error");
+    // Fuel History and Deviation Fuel may live in a workbook other than the
+    // active Cell AVB month. Search configured workbooks, newest first.
+    const workbooks = [
+      SHEET_IDS.october,
+      SHEET_IDS.september,
+      SHEET_IDS.august,
+      SHEET_IDS.july,
+    ];
+    const attempts: string[] = [];
+    let history: SheetPayload | null = null;
+    let deviation: SheetPayload | null = null;
+    let historyWorkbook: string | null = null;
+    for (const workbook of workbooks) {
+      try {
+        const result = await fetchGoogleSheet(workbook, "Fuel History");
+        if (result && Array.isArray(result.rows) && result.rows.length > 0) {
+          history = result;
+          historyWorkbook = workbook;
+          break;
+        }
+        attempts.push(`${workbook.slice(0, 8)}…: no Fuel History rows`);
+      } catch (error) {
+        attempts.push(`${workbook.slice(0, 8)}…: ${error instanceof Error ? error.message : String(error)}`);
+      }
     }
+    if (!history) {
+      console.error("Fuel History lookup failed:", attempts);
+      setFuelHistory(null);
+      setFuelDeviation(null);
+      setViewMode("fuel");
+      setErrorMsg("Fuel History could not be retrieved from the configured workbooks. Check Google Sheet access, the 'Fuel History' tab name and the browser console for the actual request errors. " + attempts[0]);
+      setAppState("error");
+      return;
+    }
+    // Prefer the same workbook as Fuel History, but permit the new
+    // Deviation Fuel tab to be in another configured workbook.
+    const deviationWorkbooks = [historyWorkbook!, ...workbooks.filter(id => id !== historyWorkbook)];
+    for (const workbook of deviationWorkbooks) {
+      try {
+        const result = await fetchGoogleSheet(workbook, "Deviation Fuel");
+        if (result && Array.isArray(result.rows) && result.rows.length > 0) {
+          deviation = result;
+          break;
+        }
+      } catch (error) {
+        console.warn("Deviation Fuel not available in workbook", workbook, error);
+      }
+    }
+    setFuelHistory(history);
+    setFuelDeviation(deviation);
+    setViewMode("fuel");
+    setAppState("dashboard");
   };
 
   const load5GPage = async () => {
@@ -8721,35 +7605,11 @@ export default function App() {
     }
   };
 
-  const loadHardwareIssues = async () => {
-    setAppState("loading");
-    setErrorMsg("");
-    try {
-      const sheetId = SHEET_IDS.september;
-      const data = await fetchGoogleSheet(sheetId, "Hardware issues");
-      setMonthHardware(data);
-      const dateData = await fetchGoogleSheet(sheetId, "Updated Date");
-      if (dateData && dateData.rows && dateData.rows.length > 0) {
-        const row = dateData.rows[0];
-        setMonthLastUpdated(row["Last Updated"] || row["Date"] || row["Last Date"] || "1-Sep-26");
-      } else {
-        setMonthLastUpdated("1-Sep-26");
-      }
-      setViewMode("hardware");
-      setAppState("dashboard");
-    } catch (error) {
-      console.error("Error loading Hardware Issues:", error);
-      setErrorMsg("Failed to load Hardware Issues data. Please try again.");
-      setAppState("error");
-    }
-  };
-
   const goHome = () => {
     setViewMode("home");
     setSelectedMonth(null);
     setActiveTab("overall");
     setMonthData(null);
-    setMonthHardware(null);
     setMonthRca(null);
     setMonth5G(null);
     setMonthCellAvbHistory(null);
@@ -8785,26 +7645,6 @@ export default function App() {
     });
   }, [monthData, useMock]);
 
-  const hardwareData: SheetPayload | null = useMemo(() => {
-    if (useMock) {
-      return {
-        sheetTitle: "Hardware issues",
-        tabTitle: "Hardware issues",
-        headers: ["Site ID", "Issue Type", "Status", "Priority", "Reported Date"],
-        rows: MOCK_SITES.map((site) => ({
-          "Site ID": site.siteName,
-          "Issue Type": ["Battery Failure", "Generator Issue", "AC Failure"][Math.floor(Math.random() * 3)],
-          "Status": ["Open", "In Progress", "Resolved"][Math.floor(Math.random() * 3)],
-          "Priority": ["High", "Medium", "Low"][Math.floor(Math.random() * 3)],
-          "Reported Date": new Date().toLocaleDateString(),
-        })),
-        totalRows: MOCK_SITES.length,
-        fetchedAt: new Date().toISOString(),
-      };
-    }
-    return monthHardware;
-  }, [monthHardware, useMock]);
-
   const rcaData = monthRca;
 
   const platinumPlusRows = useMemo(() => sites.filter((s) => s.revenueCategory === "Platinum +"), [sites]);
@@ -8819,7 +7659,7 @@ export default function App() {
   const activeLabel = NAV_ITEMS.find((item) => item.id === activeTab)?.label ?? "";
 
   if (appState === "loading") return <LoadingScreen />;
-  if (appState === "error") return <ErrorScreen message={errorMsg} onRetry={viewMode === "prepost" ? loadPreVsPost : viewMode === "hardware" ? loadHardwareIssues : viewMode === "fuel" ? loadFuelDashboard : () => loadMonthData(selectedMonth || "june")} />;
+  if (appState === "error") return <ErrorScreen message={errorMsg} onRetry={viewMode === "prepost" ? loadPreVsPost : viewMode === "fuel" ? loadFuelDashboard : () => loadMonthData(selectedMonth || "october")} />;
   if (!isAuthenticated) return <LoginScreen onLogin={handleLogin} />;
 
   // ----- HOME SCREEN (four buttons) -----
@@ -8827,61 +7667,55 @@ export default function App() {
     return (
       <div className="min-h-screen relative flex items-center justify-center overflow-hidden">
         <div className="absolute inset-0 z-0" style={{ backgroundImage: `url('/zong 5G.png')`, backgroundSize: 'cover', backgroundPosition: 'center' }} />
-        <div className="absolute inset-0 z-1 bg-black/60" />
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.8, ease: "easeOut" }} className="relative z-10 max-w-5xl w-full px-6 text-center">
+        <div className="absolute inset-0 z-1 bg-gradient-to-b from-slate-950/80 via-slate-950/65 to-emerald-950/80" />
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.8, ease: "easeOut" }} className="relative z-10 max-w-6xl w-full px-5 sm:px-8 py-12 text-center">
           <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ delay: 0.2, duration: 0.5 }} className="inline-block mb-8 px-8 py-3 rounded-full bg-cyan-500/10 border border-cyan-400/30 backdrop-blur-sm">
             <span className="text-cyan-300 font-bold tracking-widest text-sm">📶 ZONG 5G</span>
           </motion.div>
           <h1 className="text-5xl md:text-7xl font-extrabold text-white leading-tight mb-6 drop-shadow-lg">C1 & C6 <br /><span className="bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">Cell Avb Analysis</span></h1>
-          <motion.div variants={{ hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.15 } } }} initial="hidden" animate="show" className="flex flex-wrap justify-center items-stretch gap-6 mt-8">
-            <motion.button variants={{ hidden: { opacity: 0, y: 30 }, show: { opacity: 1, y: 0 } }} whileHover={{ scale: 1.03, boxShadow: "0 0 40px rgba(6, 182, 212, 0.25)" }} whileTap={{ scale: 0.98 }} onClick={() => loadMonthData("june")} className="group relative flex-1 min-w-[180px] px-8 py-7 rounded-2xl bg-gradient-to-br from-slate-800/90 to-slate-900/90 border border-slate-600/50 hover:border-cyan-400 transition-all duration-300 shadow-xl backdrop-blur-sm overflow-hidden">
+          <motion.div variants={{ hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.15 } } }} initial="hidden" animate="show" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5 mt-9">
+
+            <motion.button variants={{ hidden: { opacity: 0, y: 30 }, show: { opacity: 1, y: 0 } }} whileHover={{ scale: 1.03, boxShadow: "0 0 40px rgba(6, 182, 212, 0.25)" }} whileTap={{ scale: 0.98 }} onClick={() => loadMonthData("july")} className="group relative w-full min-h-[142px] px-6 py-7 rounded-2xl bg-gradient-to-br from-slate-800/90 to-slate-900/90 border border-slate-600/50 hover:border-cyan-400 transition-all duration-300 shadow-xl backdrop-blur-sm overflow-hidden">
               <span className="absolute inset-0 bg-gradient-to-r from-cyan-500/10 to-blue-500/10 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-              <div className="relative text-center"><span className="block text-2xl font-bold text-white">June 2026</span><span className="text-slate-400 text-sm">Final data · 30 days</span></div>
+              <div className="relative text-center"><span className="block text-xl sm:text-2xl font-extrabold tracking-tight text-white">July 2026</span><span className="text-slate-300 text-sm">Final data · 31 days</span></div>
             </motion.button>
-            <motion.button variants={{ hidden: { opacity: 0, y: 30 }, show: { opacity: 1, y: 0 } }} whileHover={{ scale: 1.03, boxShadow: "0 0 40px rgba(6, 182, 212, 0.25)" }} whileTap={{ scale: 0.98 }} onClick={() => loadMonthData("july")} className="group relative flex-1 min-w-[180px] px-8 py-7 rounded-2xl bg-gradient-to-br from-slate-800/90 to-slate-900/90 border border-slate-600/50 hover:border-cyan-400 transition-all duration-300 shadow-xl backdrop-blur-sm overflow-hidden">
+            <motion.button variants={{ hidden: { opacity: 0, y: 30 }, show: { opacity: 1, y: 0 } }} whileHover={{ scale: 1.03, boxShadow: "0 0 40px rgba(6, 182, 212, 0.25)" }} whileTap={{ scale: 0.98 }} onClick={() => loadMonthData("august")} className="group relative w-full min-h-[142px] px-6 py-7 rounded-2xl bg-gradient-to-br from-slate-800/90 to-slate-900/90 border border-slate-600/50 hover:border-cyan-400 transition-all duration-300 shadow-xl backdrop-blur-sm overflow-hidden">
               <span className="absolute inset-0 bg-gradient-to-r from-cyan-500/10 to-blue-500/10 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-              <div className="relative text-center"><span className="block text-2xl font-bold text-white">July 2026</span><span className="text-slate-400 text-sm">Final data · 31 days</span></div>
+              <div className="relative text-center"><span className="block text-xl sm:text-2xl font-extrabold tracking-tight text-white">August 2026</span><span className="text-slate-300 text-sm">Final data · 31 days</span></div>
             </motion.button>
-            <motion.button variants={{ hidden: { opacity: 0, y: 30 }, show: { opacity: 1, y: 0 } }} whileHover={{ scale: 1.03, boxShadow: "0 0 40px rgba(6, 182, 212, 0.25)" }} whileTap={{ scale: 0.98 }} onClick={() => loadMonthData("august")} className="group relative flex-1 min-w-[180px] px-8 py-7 rounded-2xl bg-gradient-to-br from-slate-800/90 to-slate-900/90 border border-slate-600/50 hover:border-cyan-400 transition-all duration-300 shadow-xl backdrop-blur-sm overflow-hidden">
-              <span className="absolute inset-0 bg-gradient-to-r from-cyan-500/10 to-blue-500/10 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-              <div className="relative text-center"><span className="block text-2xl font-bold text-white">August 2026</span><span className="text-slate-400 text-sm">Final data · 31 days</span></div>
-            </motion.button>
-            <motion.button variants={{ hidden: { opacity: 0, y: 30 }, show: { opacity: 1, y: 0 } }} whileHover={{ scale: 1.03, boxShadow: "0 0 40px rgba(16, 185, 129, 0.35)" }} whileTap={{ scale: 0.98 }} onClick={() => loadMonthData("september")} className="group relative flex-1 min-w-[180px] px-8 py-7 rounded-2xl bg-gradient-to-br from-emerald-500/20 to-green-500/20 border border-emerald-400/30 hover:border-emerald-300 transition-all duration-300 shadow-xl hover:shadow-emerald-500/40 backdrop-blur-sm overflow-hidden">
+            <motion.button variants={{ hidden: { opacity: 0, y: 30 }, show: { opacity: 1, y: 0 } }} whileHover={{ scale: 1.03, boxShadow: "0 0 40px rgba(16, 185, 129, 0.35)" }} whileTap={{ scale: 0.98 }} onClick={() => loadMonthData("september")} className="group relative w-full min-h-[142px] px-6 py-7 rounded-2xl bg-gradient-to-br from-emerald-500/20 to-green-500/20 border border-emerald-400/30 hover:border-emerald-300 transition-all duration-300 shadow-xl hover:shadow-emerald-500/40 backdrop-blur-sm overflow-hidden">
               <span className="absolute inset-0 bg-gradient-to-r from-emerald-400/20 to-green-400/20 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-              <div className="relative text-center"><span className="block text-2xl font-bold text-white">September 2026</span><span className="text-slate-300 text-sm">Live updates · Progressive</span></div>
+              <div className="relative text-center"><span className="block text-xl sm:text-2xl font-extrabold tracking-tight text-white">September 2026</span><span className="text-slate-200 text-sm">Live updates · Progressive</span></div>
             </motion.button>
-            <motion.button variants={{ hidden: { opacity: 0, y: 30 }, show: { opacity: 1, y: 0 } }} whileHover={{ scale: 1.03, boxShadow: "0 0 40px rgba(34, 211, 238, 0.35)" }} whileTap={{ scale: 0.98 }} onClick={() => loadMonthData("october")} className="group relative flex-1 min-w-[180px] px-8 py-7 rounded-2xl bg-gradient-to-br from-cyan-500/20 to-emerald-500/20 border border-cyan-400/30 hover:border-cyan-300 transition-all duration-300 shadow-xl hover:shadow-cyan-500/40 backdrop-blur-sm overflow-hidden">
+            <motion.button variants={{ hidden: { opacity: 0, y: 30 }, show: { opacity: 1, y: 0 } }} whileHover={{ scale: 1.03, boxShadow: "0 0 40px rgba(34, 211, 238, 0.35)" }} whileTap={{ scale: 0.98 }} onClick={() => loadMonthData("october")} className="group relative w-full min-h-[142px] px-6 py-7 rounded-2xl bg-gradient-to-br from-cyan-500/20 to-emerald-500/20 border border-cyan-400/30 hover:border-cyan-300 transition-all duration-300 shadow-xl hover:shadow-cyan-500/40 backdrop-blur-sm overflow-hidden">
               <span className="absolute inset-0 bg-gradient-to-r from-cyan-400/20 to-emerald-400/20 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-              <div className="relative text-center"><span className="block text-2xl font-bold text-white">October 2026</span><span className="text-cyan-200 text-sm">LIVE · Active data</span></div>
+              <div className="relative text-center"><span className="block text-xl sm:text-2xl font-extrabold tracking-tight text-white">October 2026</span><span className="text-cyan-200 text-sm">LIVE · Active data</span></div>
             </motion.button>
-            <motion.button variants={{ hidden: { opacity: 0, y: 30 }, show: { opacity: 1, y: 0 } }} whileHover={{ scale: 1.03, boxShadow: "0 0 40px rgba(34, 197, 94, 0.35)" }} whileTap={{ scale: 0.98 }} onClick={loadFuelDashboard} className="group relative flex-1 min-w-[180px] px-8 py-7 rounded-2xl bg-gradient-to-br from-green-500/25 to-emerald-700/25 border border-green-400/40 hover:border-green-300 transition-all duration-300 shadow-xl hover:shadow-green-500/40 backdrop-blur-sm overflow-hidden">
+            <motion.button variants={{ hidden: { opacity: 0, y: 30 }, show: { opacity: 1, y: 0 } }} whileHover={{ scale: 1.03, boxShadow: "0 0 40px rgba(34, 197, 94, 0.35)" }} whileTap={{ scale: 0.98 }} onClick={loadFuelDashboard} className="group relative w-full min-h-[142px] px-6 py-7 rounded-2xl bg-gradient-to-br from-green-500/25 to-emerald-700/25 border border-green-400/40 hover:border-green-300 transition-all duration-300 shadow-xl hover:shadow-green-500/40 backdrop-blur-sm overflow-hidden">
               <span className="absolute inset-0 bg-gradient-to-r from-green-400/20 to-emerald-400/20 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-              <div className="relative text-center"><Fuel className="mx-auto mb-2 h-7 w-7 text-green-300"/><span className="block text-2xl font-bold text-white">Fuel</span><span className="text-slate-300 text-sm">2025 vs 2026 · Saving & Control</span></div>
+              <div className="relative text-center"><Fuel className="mx-auto mb-2 h-7 w-7 text-green-300"/><span className="block text-xl sm:text-2xl font-extrabold tracking-tight text-white">Fuel</span><span className="text-slate-200 text-sm">2025 vs 2026 · Saving & Control</span></div>
             </motion.button>
             <motion.button
               variants={{ hidden: { opacity: 0, y: 30 }, show: { opacity: 1, y: 0 } }}
               whileHover={{ scale: 1.03, boxShadow: "0 0 40px rgba(14, 165, 233, 0.35)" }}
               whileTap={{ scale: 0.98 }}
               onClick={load5GPage}
-              className="group relative flex-1 min-w-[180px] px-8 py-7 rounded-2xl bg-gradient-to-br from-cyan-500/20 to-blue-500/20 border border-cyan-400/30 hover:border-cyan-300 transition-all duration-300 shadow-xl hover:shadow-cyan-500/40 backdrop-blur-sm overflow-hidden"
+              className="group relative w-full min-h-[142px] px-6 py-7 rounded-2xl bg-gradient-to-br from-cyan-500/20 to-blue-500/20 border border-cyan-400/30 hover:border-cyan-300 transition-all duration-300 shadow-xl hover:shadow-cyan-500/40 backdrop-blur-sm overflow-hidden"
             >
               <span className="absolute inset-0 bg-gradient-to-r from-cyan-400/20 to-blue-400/20 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
               <div className="relative text-center">
-                <span className="block text-2xl font-bold text-white">5G Sites</span>
-                <span className="text-slate-300 text-sm">September 2026 · KPI Dashboard</span>
+                <span className="block text-xl sm:text-2xl font-extrabold tracking-tight text-white">5G Sites</span>
+                <span className="text-slate-200 text-sm">September 2026 · KPI Dashboard</span>
               </div>
             </motion.button>
 
-            <motion.button variants={{ hidden: { opacity: 0, y: 30 }, show: { opacity: 1, y: 0 } }} whileHover={{ scale: 1.03, boxShadow: "0 0 40px rgba(168, 85, 247, 0.25)" }} whileTap={{ scale: 0.98 }} onClick={loadPreVsPost} className="group relative flex-1 min-w-[200px] px-8 py-7 rounded-2xl bg-gradient-to-br from-purple-500/20 to-pink-500/20 border border-purple-400/30 hover:border-purple-300 transition-all duration-300 shadow-xl hover:shadow-purple-500/40 backdrop-blur-sm overflow-hidden">
+            <motion.button variants={{ hidden: { opacity: 0, y: 30 }, show: { opacity: 1, y: 0 } }} whileHover={{ scale: 1.03, boxShadow: "0 0 40px rgba(168, 85, 247, 0.25)" }} whileTap={{ scale: 0.98 }} onClick={loadPreVsPost} className="group relative w-full min-h-[142px] px-6 py-7 rounded-2xl bg-gradient-to-br from-purple-500/20 to-pink-500/20 border border-purple-400/30 hover:border-purple-300 transition-all duration-300 shadow-xl hover:shadow-purple-500/40 backdrop-blur-sm overflow-hidden">
               <span className="absolute inset-0 bg-gradient-to-r from-purple-400/20 to-pink-400/20 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-              <div className="relative text-center"><span className="block text-2xl font-bold text-white">Plat+ & DG Pre Vs Post</span><span className="text-slate-300 text-sm">July vs August comparison</span></div>
+              <div className="relative text-center"><span className="block text-xl sm:text-2xl font-extrabold tracking-tight text-white">Plat+ & DG Pre Vs Post</span><span className="text-slate-200 text-sm">July vs August comparison</span></div>
             </motion.button>
-            <motion.button variants={{ hidden: { opacity: 0, y: 30 }, show: { opacity: 1, y: 0 } }} whileHover={{ scale: 1.03, boxShadow: "0 0 40px rgba(245, 158, 11, 0.25)" }} whileTap={{ scale: 0.98 }} onClick={loadHardwareIssues} className="group relative flex-1 min-w-[180px] px-8 py-7 rounded-2xl bg-gradient-to-br from-amber-500/20 to-yellow-500/20 border border-amber-400/30 hover:border-amber-300 transition-all duration-300 shadow-xl hover:shadow-amber-500/40 backdrop-blur-sm overflow-hidden">
-              <span className="absolute inset-0 bg-gradient-to-r from-amber-400/20 to-yellow-400/20 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-              <div className="relative text-center"><span className="block text-2xl font-bold text-white">Hardware Issues</span><span className="text-slate-300 text-sm">View hardware problems</span></div>
-            </motion.button>
+
           </motion.div>
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.6 }} className="mt-12 text-slate-400 text-sm flex items-center justify-center gap-2">
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.6 }} className="mt-12 text-slate-300 text-sm flex items-center justify-center gap-2">
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
             <span>Real-time data from Google Sheets</span>
           </motion.div>
@@ -8892,7 +7726,7 @@ export default function App() {
 
   // ----- FUEL MANAGEMENT FULL PAGE -----
   if (viewMode === "fuel") {
-    return <FuelDashboard data={fuelHistory} onBack={goHome} />;
+    return <FuelDashboard data={fuelHistory} deviationData={fuelDeviation} onBack={goHome} />;
   }
 
   // ----- PRE‑VS‑POST FULL PAGE WITH SIDEBAR -----
@@ -8979,29 +7813,9 @@ export default function App() {
   );
 }
 
-  // ----- HARDWARE ISSUES FULL PAGE -----
-  if (viewMode === "hardware") {
-    return (
-      <div className="min-h-screen bg-slate-900 text-slate-100">
-        <RainAlertWidget />
-        <div className="p-4 sm:p-6">
-          <div className="flex items-center justify-between mb-4">
-            <button onClick={goHome} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm font-medium transition-colors">
-              <span className="text-slate-400">←</span> Back to Home
-            </button>
-            <div className="text-xs text-slate-500">Data updated: {monthLastUpdated || "1-Sep-26"}</div>
-          </div>
-          {hardwareData ? <HardwareIssues data={hardwareData} /> : <div className="bg-slate-800 border border-slate-700 rounded-xl p-12 text-center text-slate-400">No hardware issues data available.</div>}
-        </div>
-      </div>
-    );
-  }
-
   // ----- MONTH DASHBOARD (with sidebar) -----
   const monthLabel =
-    selectedMonth === "june"
-      ? "June 2026"
-      : selectedMonth === "july"
+    selectedMonth === "july"
         ? "July 2026"
         : selectedMonth === "august"
           ? "August 2026"
@@ -9012,7 +7826,7 @@ export default function App() {
 
   return (
     <div className="light-app min-h-screen bg-[#eef0f3] text-slate-900 flex">
-      <LightAppTheme />
+      
       <RainAlertWidget />
       <aside className={`fixed lg:sticky top-0 z-40 h-screen w-64 bg-[#e5e7eb] border-r border-slate-300 flex flex-col transition-transform ${sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}`}>
         <div className="p-5 border-b border-slate-800">
@@ -9065,7 +7879,7 @@ export default function App() {
                 </h2>
                 <p className="text-[11px] text-emerald-100/60 truncate flex items-center gap-2 flex-wrap">
                   {monthLastUpdated && <span className="text-cyan-400 font-medium">Report Updated: {monthLastUpdated}</span>}
-                  {!monthLastUpdated && useMock && <span className="text-cyan-400 font-medium">Report Updated: {selectedMonth === "june" ? "30-Jun-26" : selectedMonth === "july" ? "31-Jul-26" : selectedMonth === "august" ? "31-Aug-26" : selectedMonth === "september" ? "30-Sep-26" : "1-Oct-26"}</span>}
+                  {!monthLastUpdated && useMock && <span className="text-cyan-400 font-medium">Report Updated: {selectedMonth === "july" ? "31-Jul-26" : selectedMonth === "august" ? "31-Aug-26" : selectedMonth === "september" ? "30-Sep-26" : "1-Oct-26"}</span>}
                 </p>
               </div>
             </div>
@@ -9123,7 +7937,6 @@ export default function App() {
                 {activeTab === "below-base" && <CategoryPage sites={sites} title="Below Base Sites" description={`${belowBaseRows.length} sites flagged below base threshold`} threshold={95} filterFn={(s) => isBelowBase(s)} lastUpdatedDate={monthLastUpdated} lastColumnIndex={monthLastColumnIndex} />}
                 {activeTab === "agm" && <CategoryPage sites={sites} title="AGM Battery Backup Sites" description={`${agmRows.length} sites with AGM battery banks`} threshold={95} filterFn={(s) => hasAGM(s)} lastUpdatedDate={monthLastUpdated} lastColumnIndex={monthLastColumnIndex} />}
                 {activeTab === "rca" && <RcaSummary rcaData={rcaData} />}
-                {activeTab === "hardware" && hardwareData && <HardwareIssues data={hardwareData} />}
                 {activeTab === "query" && <SiteQuery sites={sites} rawData={monthData} historyData={(selectedMonth === "september" || selectedMonth === "october") ? monthCellAvbHistory : null} />}
                 {activeTab === "weather" && <WeatherRadar />}
               </motion.div>

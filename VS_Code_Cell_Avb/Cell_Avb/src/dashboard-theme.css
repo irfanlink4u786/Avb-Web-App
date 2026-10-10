@@ -1,0 +1,396 @@
+/* ========================================================
+   LIGHT MANAGEMENT THEME
+   Clean white / soft-gray UI with strong navy typography.
+   Overrides legacy dark Tailwind classes for light mode.
+   ======================================================== */
+
+/* --------------------------------------------------------
+   1. GLOBAL TYPOGRAPHY & CONTAINER BASE
+   -------------------------------------------------------- */
+.light-app,
+.light-app button,
+.light-app input,
+.light-app select,
+.light-app textarea,
+.light-app table {
+  font-family: Inter, "Segoe UI", Roboto, Arial, sans-serif !important;
+}
+
+.light-app {
+  background: radial-gradient(circle at 12% 10%, rgba(66,153,225,.11), transparent 31%), radial-gradient(circle at 90% 24%, rgba(45,212,191,.09), transparent 28%), linear-gradient(155deg, #e9f3ff 0%, #f3f8ff 50%, #eaf2fc 100%) !important;
+  color: #172033 !important;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+.light-app main {
+  background: transparent !important;
+  color: #0B2559;
+}
+
+.light-app main section,
+.light-app main > div {
+  color: #0B2559;
+}
+
+/* Headings */
+.light-app main :is(h1, h2, h3, h4, h5, h6):not(.text-white) {
+  color: #0B2559 !important;
+  font-weight: 700 !important;
+  letter-spacing: -0.015em;
+}
+
+
+
+/* Readable secondary text; preserve white text on dark surfaces. */
+.light-app .text-slate-400 { color: #526780; }
+.light-app .text-slate-500 { color: #60748d; }
+.light-app .text-slate-600 { color: #42556e; }
+
+/* --------------------------------------------------------
+   2. TAILWIND SURFACE & BORDER OVERRIDES
+   -------------------------------------------------------- */
+/* Preserve dark navigation and semantic headers; cards get their own surfaces. */
+.light-app main .dashboard-surface {
+  background: rgba(255,255,255,.94);
+  border: 1px solid #d8e5f2;
+  border-radius: 18px;
+  box-shadow: 0 8px 28px rgba(16, 57, 105, .065);
+}
+
+/* Borders & Dividers */
+.light-app :is([class*="border-slate-8"], [class*="border-slate-7"], [class*="border-slate-6"]),
+.light-app main [class*="border-slate-"] {
+  border-color: #D7E2ED !important;
+}
+
+/* Card Elevation & Shadows */
+.light-app main > div :is([class*="rounded-xl"], [class*="rounded-2xl"]) {
+  box-shadow: 0 1px 2px rgba(15, 23, 42, .05), 0 8px 24px rgba(15, 23, 42, .04);
+}
+
+
+/* --------------------------------------------------------
+   3. FORM CONTROLS, BUTTONS & NAVIGATION
+   -------------------------------------------------------- */
+.light-app input,
+.light-app select,
+.light-app textarea {
+  background: #ffffff !important;
+  color: #0B2559 !important;
+  border: 1px solid #D7E2ED !important;
+  font-weight: 500 !important;
+}
+
+.light-app input::placeholder {
+  color: #8a96a8 !important;
+}
+
+.light-app :is(input, select, textarea):focus {
+  border-color: #07599D !important;
+  box-shadow: 0 0 0 2px rgba(7, 89, 157, .10) !important;
+}
+
+/* Buttons */
+.light-app button:is([class*="bg-slate-800"], [class*="bg-slate-700"]) {
+  background: #e7ebf0 !important;
+  color: #20304a !important;
+  border: 1px solid #cbd3df !important;
+}
+
+.light-app button:is([class*="bg-slate-800"], [class*="bg-slate-700"]):hover {
+  background: #dce3eb !important;
+  color: #10203d !important;
+}
+
+/* Sidebar */
+.light-app aside {
+  background: linear-gradient(180deg, #0b3457 0%, #075c63 100%) !important;
+  border-color: #cfd6df !important;
+}
+
+.light-app aside h1 { color: #ffffff !important; }
+
+.light-app aside nav button {
+  color: #e3f2f7 !important;
+  font-weight: 650 !important;
+}
+
+.light-app aside nav button:hover {
+  background: rgba(255,255,255,.13) !important;
+  color: #ffffff !important;
+}
+
+.light-app aside nav button[class*="bg-cyan"] {
+  background: rgba(255,255,255,.94) !important;
+  border-color: #79cbd8 !important;
+  color: #0585a0 !important;
+  box-shadow: inset 3px 0 0 #06a9c4;
+}
+
+/* Header */
+.light-app > div > header {
+  background: rgba(255, 255, 255, .96) !important;
+  border-color: #d5dbe4 !important;
+  box-shadow: 0 1px 8px rgba(15, 23, 42, .06);
+}
+
+
+/* --------------------------------------------------------
+   4. TABLES & DATA GRIDS
+   -------------------------------------------------------- */
+.light-app table {
+  width: 100%;
+  color: #0B2559 !important;
+  border-collapse: separate !important;
+  border-spacing: 0 !important;
+  font-size: 13.5px !important;
+  font-variant-numeric: tabular-nums;
+  border-radius: 14px;
+  overflow: hidden;
+  background: #ffffff !important;
+  box-shadow: inset 0 0 0 1px #d9e1ea;
+}
+
+/* Dark Navy Gradient Table Headers */
+.light-app table thead,
+.light-app table thead tr {
+  background: linear-gradient(180deg, #123b62 0%, #0b2b4a 100%) !important;
+}
+
+.light-app table thead th {
+  background: transparent !important;
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
+  font-size: 12px !important;
+  line-height: 1.25 !important;
+  font-weight: 700 !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+  border-bottom: 1px solid rgba(255, 255, 255, .18) !important;
+  padding: 13px 16px !important;
+}
+
+/* Force white text/icons on primary table headers */
+.light-app table thead th :is(*, span, div, p, button, svg),
+.light-app table thead :is([class*="text-slate"], [class*="text-gray"], [class*="text-blue"], [class*="text-cyan"]) {
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
+  
+}
+
+/* Table Rows & Cells */
+.light-app table tbody tr { background: #ffffff !important; }
+.light-app table tbody tr:nth-child(even) { background: #F1F6FA !important; }
+.light-app table tbody tr:hover { background: #E7F1F8 !important; }
+
+.light-app table tbody td {
+  color: #0B2559 !important;
+  border-bottom: 1px solid #D7E2ED !important;
+  font-weight: 500 !important;
+  padding: 12px 16px !important;
+}
+
+.light-app table tbody td.font-mono {
+  font-family: Inter, "Segoe UI", Roboto, Arial, sans-serif !important;
+  color: #07599D !important;
+  font-weight: 600 !important;
+}
+
+.light-app table :is(.font-bold, .font-extrabold, .font-semibold) {
+  font-weight: 700 !important;
+}
+
+/* Drill-Down / Detail Light Header Override */
+.light-app .grid-performance-detail-table thead,
+.light-app .grid-performance-detail-table thead tr,
+.light-app .grid-performance-detail-table thead th {
+  background: #f8fafc !important;
+  color: #111827 !important;
+  -webkit-text-fill-color: #111827 !important;
+}
+
+.light-app .grid-performance-detail-table thead th :is(*, span, div) {
+  color: #111827 !important;
+  -webkit-text-fill-color: #111827 !important;
+}
+
+
+/* --------------------------------------------------------
+   5. OVERALL SUMMARY & GRADIENT KPI CARDS
+   -------------------------------------------------------- */
+.overall-summary-light {
+  color: #12213f !important;
+}
+
+.overall-summary-light :is([class*="border-slate-700"], [class*="border-slate-600"]) {
+  border-color: #d4dde8 !important;
+}
+
+/* Main Banner */
+.overall-summary-light > div > div:first-child {
+  background: linear-gradient(135deg, #0f2742 0%, #164e63 52%, #0f766e 100%) !important;
+  border: 1px solid #1f6f7e !important;
+  box-shadow: 0 12px 32px rgba(15, 39, 66, .18) !important;
+}
+
+.overall-summary-light > div > div:first-child :is(h1, h2, h3, p, span, svg) {
+  color: #ffffff !important;
+}
+
+.overall-summary-light > div > div:first-child :is(h2, h3) {
+  font-weight: 900 !important;
+  letter-spacing: -0.02em !important;
+}
+
+.overall-summary-light > div > div:first-child p {
+  color: #d7eef4 !important;
+  font-weight: 500 !important;
+}
+
+.overall-summary-light > div > div:first-child button {
+  background: rgba(255, 255, 255, .94) !important;
+  color: #14304b !important;
+  border-color: rgba(255, 255, 255, .72) !important;
+  font-weight: 800 !important;
+}
+
+.overall-summary-light > div > div:first-child button :is(svg, span) {
+  color: #14304b !important;
+}
+
+/* Top KPI Row Cards */
+.overall-summary-light > div > div:nth-child(2) > div {
+  border: 1px solid rgba(148, 163, 184, .32) !important;
+  box-shadow: 0 7px 20px rgba(15, 23, 42, .08) !important;
+  position: relative;
+  overflow: hidden;
+}
+
+.overall-summary-light > div > div:nth-child(2) > div:nth-child(1) { background: linear-gradient(135deg, #e8f1ff 0%, #dbeafe 55%, #c7ddff 100%) !important; }
+.overall-summary-light > div > div:nth-child(2) > div:nth-child(2) { background: linear-gradient(135deg, #e9fbf5 0%, #d1fae5 55%, #bcefdc 100%) !important; }
+.overall-summary-light > div > div:nth-child(2) > div:nth-child(3) { background: linear-gradient(135deg, #e7f9fd 0%, #cffafe 55%, #b9edf5 100%) !important; }
+.overall-summary-light > div > div:nth-child(2) > div:nth-child(4) { background: linear-gradient(135deg, #f0efff 0%, #e0e7ff 55%, #d5d7ff 100%) !important; }
+.overall-summary-light > div > div:nth-child(2) > div:nth-child(5) { background: linear-gradient(135deg, #fff0f1 0%, #fee2e2 55%, #ffd2d5 100%) !important; }
+
+.overall-summary-light > div > div:nth-child(2) > div :is([class*="text-2xl"], [class*="text-3xl"]) {
+  color: #0f2342 !important;
+  font-weight: 900 !important;
+  letter-spacing: -0.02em !important;
+}
+
+.overall-summary-light > div > div:nth-child(2) > div :is([class*="text-xs"], [class*="text-sm"]) {
+  color: #4d5f79 !important;
+  font-weight: 650 !important;
+}
+
+.overall-summary-light > div > div:nth-child(2) > div > div > div:first-child {
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .55), 0 3px 10px rgba(15, 23, 42, .08);
+}
+
+/* Regional Category Panels */
+.overall-summary-light > div > div:nth-child(n+3) [class*="rounded-xl"][class*="border"] {
+  background: linear-gradient(135deg, #ffffff 0%, #f8fbff 46%, #eef4fb 100%) !important;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, .055) !important;
+}
+
+/* KPI cards are tinted only within the summary, never all layout grids. */
+.overall-summary-light .kpi-card,
+.light-app .dashboard-kpi-card {
+  background: linear-gradient(140deg, #ffffff 0%, #eef6ff 100%);
+  border: 1px solid #cbdff2;
+  border-radius: 16px;
+  box-shadow: 0 5px 16px rgba(15, 49, 94, .07);
+}
+.overall-summary-light .kpi-card:nth-child(3n+2),
+.light-app .dashboard-kpi-card:nth-child(3n+2) {
+  background: linear-gradient(140deg, #ffffff 0%, #e9f8f3 100%);
+}
+.overall-summary-light .kpi-card:nth-child(3n+3),
+.light-app .dashboard-kpi-card:nth-child(3n+3) {
+  background: linear-gradient(140deg, #ffffff 0%, #eef0ff 100%);
+}
+
+/* --------------------------------------------------------
+   6. SEMANTIC KPI COLORS & BADGES
+   -------------------------------------------------------- */
+/* Accent Text Colors */
+.light-app :is(.text-emerald-300, .text-emerald-400, .text-emerald-500, .text-emerald-600, .text-emerald-700, .text-emerald-800, .text-green-400, .text-green-700) {
+  color: #00875A !important;
+}
+
+.light-app :is(.text-red-300, .text-red-400, .text-red-500, .text-red-600, .text-red-700, .text-red-800) {
+  color: #D90000 !important;
+}
+
+.light-app :is(.text-amber-300, .text-amber-400, .text-amber-500, .text-amber-600, .text-amber-700, .text-amber-800) {
+  color: #92400E !important;
+}
+
+.light-app :is(.text-cyan-300, .text-cyan-400, .text-cyan-500, .text-blue-400) {
+  color: #07599D !important;
+}
+
+/* Restrict pastel status styling to pill-sized badges. */
+.light-app .status-badge,
+.light-app .performance-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  line-height: 1.3;
+  font-weight: 750;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+.light-app :is(.status-badge,.performance-badge).good { background: #dff7ed; color: #086746; border-color: #b8e8d1; }
+.light-app :is(.status-badge,.performance-badge).warning { background: #fff1d7; color: #8c5409; border-color: #f9d79a; }
+.light-app :is(.status-badge,.performance-badge).critical { background: #fee8e8; color: #b42332; border-color: #f8c4c9; }
+
+/* --------------------------------------------------------
+   7. COMPONENT-SPECIFIC UTILITIES
+   -------------------------------------------------------- */
+.grid-performance-light-title {
+  font-size: 14px !important;
+  line-height: 1.08 !important;
+  font-weight: 900 !important;
+  color: #10213f !important;
+  letter-spacing: -0.025em;
+}
+
+@media (max-width: 1100px) {
+  .grid-performance-light-title {
+    font-size: 14px !important;
+  }
+}
+/* ========================================================
+   BLUE ENTERPRISE FINISHING LAYER
+   ======================================================== */
+.light-app main { min-width: 0; }
+.light-app main :is(button, a, input, select, textarea) {
+  transition: background-color .2s ease, border-color .2s ease,
+    color .2s ease, box-shadow .2s ease, transform .2s ease;
+}
+.light-app main :is(button, a, input, select, textarea):focus-visible {
+  outline: 2px solid #0891b2;
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px rgba(8,145,178,.13);
+}
+.light-app main button:not(:disabled):active { transform: translateY(1px); }
+.light-app main button:disabled { opacity: .55; cursor: not-allowed; }
+.light-app table tbody tr { transition: background-color .18s ease; }
+.light-app table tbody tr:nth-child(even) { background: #f3f8fd !important; }
+.light-app table tbody tr:hover { background: #e5f2ff !important; }
+.light-app table tbody td { line-height: 1.5 !important; }
+.light-app main :is(h1, h2, h3) { line-height: 1.25; }
+.light-app main :is([class*="rounded-xl"], [class*="rounded-2xl"]) { border-color: #d8e5f2; }
+@media (max-width: 768px) {
+  .light-app table { font-size: 12.5px !important; }
+  .light-app table thead th, .light-app table tbody td { padding: 9px 10px !important; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .light-app *, .light-app *::before, .light-app *::after { transition-duration: .01ms !important; }
+}
