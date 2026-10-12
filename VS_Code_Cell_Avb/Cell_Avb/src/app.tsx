@@ -4959,7 +4959,7 @@ function GridPerformanceScorecard({
         <button
           onClick={() => openSites(row, result.config.key)}
           disabled={result.sites.length === 0}
-          className="rounded-md border border-slate-300 bg-white px-2 py-1 text-[10px] font-medium text-cyan-400 transition-colors hover:border-cyan-500 hover:bg-cyan-500/10 disabled:cursor-not-allowed disabled:opacity-30"
+          className="rounded-md border border-slate-300 bg-white px-2 py-1 text-[10px] font-semibold !text-black transition-colors hover:border-cyan-500 hover:bg-cyan-50 hover:!text-black disabled:cursor-not-allowed disabled:opacity-30"
         >
           View {result.sites.length}
         </button>
