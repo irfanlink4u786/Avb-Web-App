@@ -1,4 +1,5 @@
 import "./dashboard-theme.css";
+import "./enterprise-polish.css";
 import FuelDashboard from "./FuelDashboard";
 import ElectricityDashboard from "./ElectricityDashboard";
 import React, { useState, useEffect, useMemo, Fragment, useRef } from "react";
@@ -1070,7 +1071,7 @@ function ThreeBasicsKpiPage({
       </div>
 
       {/* KPI visibility cards */}
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
+      <div className="basics-kpi-color-grid grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
         {THREE_BASIC_KPIS.map(k => {
           const total = ownerFilteredRows.filter(r => r.kpi === k).length;
           const open = ownerFilteredRows.filter(r => r.kpi === k && statusIsOpen(r.status)).length;
@@ -2035,7 +2036,7 @@ function CategoryPage({
   }));
 
   return (
-    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="max-w-[1600px] mx-auto space-y-6">
+    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="category-vibrant max-w-[1600px] mx-auto space-y-6">
       <div
         className="rounded-xl border p-6 flex items-center justify-between flex-wrap gap-4"
         style={{ background: `linear-gradient(to right, ${color}15, transparent)`, borderColor: `${color}40` }}
@@ -5089,7 +5090,7 @@ function GridPerformanceScorecard({
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div className="grid-score-kpi-color-grid grid grid-cols-2 gap-4 lg:grid-cols-4">
         <div className="rounded-xl border border-slate-300 bg-white p-4">
           <div className="text-[10px] uppercase text-slate-500">Worst Grid</div>
           <div className="mt-1 text-xl font-bold text-red-400">{lowestGrid?.grid || "—"}</div>
@@ -5678,7 +5679,7 @@ function EnhancedOverallSummary({
   }, [siteMap, latest3Dates]);
 
   return (
-    <div ref={hostRef} className="overall-summary-enhanced">
+    <div ref={hostRef} className="overall-summary-enhanced overall-kpi-color-scope">
       <style>{`
         /* Keep the main blue summary headers white. */
         .overall-summary-enhanced > div > table > thead th {
@@ -7760,7 +7761,7 @@ export default function App() {
 
   // ----- ELECTRICITY UNIT CONSUMPTION (ABS MONTH REFERENCE) -----
   if (viewMode === "electricity") {
-    return <ElectricityDashboard sheetId={SHEET_IDS.october} sheetName="ABS" onBack={goHome} />;
+    return <div className="electricity-polished"><ElectricityDashboard sheetId={SHEET_IDS.october} sheetName="ABS" onBack={goHome} /></div>;
   }
 
   // ----- FUEL MANAGEMENT FULL PAGE -----
@@ -7933,9 +7934,9 @@ export default function App() {
           <ErrorBoundary key={activeTab + selectedMonth}>
             <AnimatePresence mode="wait">
               <motion.div key={activeTab + selectedMonth} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.2 }} className="space-y-6">
-                {activeTab === "overall" && <OverallSummaryWithExport sites={sites} rawData={monthData} lastUpdatedDate={monthLastUpdated} />}
-                {activeTab === "grid-performance" && <GridPerformanceScorecard rawData={monthData} lastUpdatedDate={monthLastUpdated} />}
-                {activeTab === "3-basics-kpis" && <ThreeBasicsKpiPage kpiData={month3Basics} sites={sites} lastUpdatedDate={monthLastUpdated} />}
+                {activeTab === "overall" && <div className="overall-vibrant"><OverallSummaryWithExport sites={sites} rawData={monthData} lastUpdatedDate={monthLastUpdated} /></div>}
+                {activeTab === "grid-performance" && <div className="grid-vibrant"><GridPerformanceScorecard rawData={monthData} lastUpdatedDate={monthLastUpdated} /></div>}
+                {activeTab === "3-basics-kpis" && <div className="basics-vibrant"><ThreeBasicsKpiPage kpiData={month3Basics} sites={sites} lastUpdatedDate={monthLastUpdated} /></div>}
                 {activeTab === "recurring" && <RecurringSitesPage sites={sites} historyData={monthCellAvbHistory} />}
                 {activeTab === "s2s-bb" && <S2SBBPerformancePage sites={sites} s2sData={monthS2SBB} historyData={monthCellAvbHistory} rawData={monthData} lastUpdatedDate={monthLastUpdated} />}
                 {activeTab === "revenue-lost" && <RevenueLostSitesPage sites={sites} revenueLostData={monthRevenueLost} lastUpdatedDate={monthLastUpdated} />}
