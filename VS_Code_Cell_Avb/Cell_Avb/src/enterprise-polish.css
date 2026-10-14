@@ -1,441 +1,328 @@
 /* Zong 5G — high-contrast management dashboard polish.
 
+
+
+
+
+
+
    Import AFTER dashboard-theme.css. Visual-only; no KPI logic changes. */
+
+
+
+
+
+
 
 .light-app { background:#f3f6fa !important; color:#14263d !important; font-size:14px; }
 
+
+
+
+
+
+
 .light-app main { background:#f3f6fa !important; min-width:0; }
+
+
+
+
+
+
 
 .light-app aside { background:linear-gradient(180deg,#092a40,#075647) !important; border-right:1px solid #14576a !important; width:230px !important; }
 
+
+
+
+
+
+
 .light-app aside h1 { color:#fff !important; font-size:14px !important; }
+
+
+
+
+
+
 
 .light-app aside nav { padding:12px 10px !important; }
 
+
+
+
+
+
+
 .light-app aside nav button { background:transparent !important; border:1px solid transparent !important; color:#e1f2f2 !important; font-size:13px !important; font-weight:650 !important; padding:10px 12px !important; margin-bottom:3px; border-radius:9px !important; }
+
+
+
+
+
+
 
 .light-app aside nav button:hover { background:#ffffff1c !important; color:#fff !important; }
 
-.light-app aside nav button[class*="bg-cyan"] { background:#fff !important; color:#075a53 !important; border-color:#b6e4d8 !important; box-shadow:0 3px 10px #001d281a; }
+
+
+
+
+
+
+.light-app aside nav button[class\\*="bg-cyan"] { background:#fff !important; color:#075a53 !important; border-color:#b6e4d8 !important; box-shadow:0 3px 10px #001d281a; }
+
+
+
+
+
+
 
 .light-app main :is(h1,h2,h3,h4) { letter-spacing:-.015em; }
 
-.light-app main :is([class*="rounded-xl"],[class*="rounded-2xl"]) { box-shadow:0 2px 12px #132e4a0a; }
+
+
+
+
+
+
+.light-app main :is([class\\*="rounded-xl"],[class\\*="rounded-2xl"]) { box-shadow:0 2px 12px #132e4a0a; }
+
+
+
+
+
+
 
 .light-app main button, .light-app main select, .light-app main input { font-size:13px; }
 
+
+
+
+
+
+
 .light-app main select, .light-app main input { color:#15263c !important; background:#fff !important; border-color:#bdcad9 !important; }
+
+
+
+
+
+
 
 .light-app table { border-collapse:separate; border-spacing:0; font-size:13px !important; }
 
+
+
+
+
+
+
 .light-app table thead, .light-app table thead tr { background:#e8eff6 !important; }
+
+
+
+
+
+
 
 .light-app table thead th, .light-app .grid-performance-detail-table thead th { background:#e8eff6 !important; color:#18354f !important; font-size:12px !important; font-weight:800 !important; padding:12px 14px !important; border-bottom:1px solid #cbd9e7 !important; white-space:nowrap; }
 
+
+
+
+
+
+
 .light-app table thead th * { color:inherit !important; }
+
+
+
+
+
+
 
 .light-app table tbody td { color:#20364d; padding:11px 14px !important; border-bottom:1px solid #e5edf4; }
 
+
+
+
+
+
+
 .light-app table tbody tr:nth-child(even) { background:#f8fafc !important; }
+
+
+
+
+
+
 
 .light-app table tbody tr:hover { background:#eaf5f1 !important; }
 
+
+
+
+
+
+
 /* Remove old dark-on-dark KPI cards and translucent nested panels. */
 
-.overall-summary-light > div > div:nth-child(2) > div { background:#fff !important; border:1px solid #d9e3ed !important; box-shadow:0 3px 14px #122c4310 !important; }
 
-.overall-summary-light > div > div:nth-child(2) > div :is(h2,h3,h4,p,span,div) { color:#16324a !important; }
 
-.overall-summary-light > div > div:nth-child(2) > div [class*="text-red"] { color:#c3283b !important; }
 
-.overall-summary-light [class*="bg-slate-8"], .overall-summary-light [class*="bg-slate-9"] { background:#fff !important; }
 
-.overall-summary-light [class*="bg-slate-8"] :is(h2,h3,h4,p,span,div), .overall-summary-light [class*="bg-slate-9"] :is(h2,h3,h4,p,span,div) { color:#17324b !important; }
 
-.overall-summary-light [class*="text-slate-4"], .overall-summary-light [class*="text-slate-5"] { color:#51647a !important; }
 
-.overall-summary-light [class*="bg-gradient"] { border:1px solid #d8e6ef; }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+.overall-summary-light > div > div:nth-child(2) > div [class\\*="text-red"] { color:#c3283b !important; }
+
+
+
+
+
+
+
+.overall-summary-light [class\\*="bg-slate-8"], .overall-summary-light [class\\*="bg-slate-9"] { background:#fff !important; }
+
+
+
+
+
+
+
+.overall-summary-light [class\\*="bg-slate-8"] :is(h2,h3,h4,p,span,div), .overall-summary-light [class\\*="bg-slate-9"] :is(h2,h3,h4,p,span,div) { color:#17324b !important; }
+
+
+
+
+
+
+
+.overall-summary-light [class\\*="text-slate-4"], .overall-summary-light [class\\*="text-slate-5"] { color:#51647a !important; }
+
+
+
+
+
+
+
+.overall-summary-light [class\\*="bg-gradient"] { border:1px solid #d8e6ef; }
+
+
+
+
+
+
 
 .overall-summary-light button { font-weight:700 !important; }
 
+
+
+
+
+
+
 /* Electricity is a full-page child view, outside .light-app. */
+
+
+
+
+
+
 
 .electricity-polished { background:#f3f6fa; min-height:100vh; color:#18324b; }
 
+
+
+
+
+
+
 .electricity-polished table { font-size:13px; border-collapse:separate; border-spacing:0; }
+
+
+
+
+
+
 
 .electricity-polished table thead th { background:#e8eff6 !important; color:#18354f !important; font-size:12px; font-weight:800; padding:12px !important; border-bottom:1px solid #d5e0eb; }
 
+
+
+
+
+
+
 .electricity-polished table tbody td { padding:11px 12px !important; border-bottom:1px solid #e5edf4; }
+
+
+
+
+
+
 
 .electricity-polished table tbody tr:nth-child(even) { background:#f8fafc; }
 
+
+
+
+
+
+
 .electricity-polished table tbody tr:hover { background:#edf7f3; }
+
+
+
+
+
+
 
 .electricity-polished select, .electricity-polished input { color:#142b42 !important; background:#fff !important; border:1px solid #bccbd9 !important; min-height:36px; }
 
+
+
+
+
+
+
 .electricity-polished :is(h1,h2,h3) { color:#102a43; font-weight:800; }
 
-.electricity-polished [class*="text-[10px]"], .electricity-polished [class*="text-[11px]"] { font-size:12px; }
+
+
+
+
+
+
+.electricity-polished [class\\*="text-[10px]"], .electricity-polished [class\\*="text-[11px]"] { font-size:12px; }
+
+
+
+
+
+
 
 @media(max-width:768px) { .light-app aside { width:230px !important; } .light-app table, .electricity-polished table { font-size:12px !important; } }
 
-/* v2: consistent light surfaces across EVERY category tab.
 
-   Prior version left dark panels with dark table text and invisible white headings. */
 
-.light-app main [class~="bg-slate-800"],
 
-.light-app main [class~="bg-slate-800/50"],
 
-.light-app main [class~="bg-slate-900"],
 
-.light-app main [class~="bg-slate-900/50"],
 
-.light-app main [class~="bg-red-500/5"] {
-
-  background:#fff !important;
-
-  border-color:#dbe4ee !important;
-
-  box-shadow:0 2px 10px rgba(15,35,55,.045) !important;
-
-}
-
-.light-app main [class~="bg-slate-800"] :is(h2,h3,h4),
-
-.light-app main [class~="bg-slate-800/50"] :is(h2,h3,h4),
-
-.light-app main [class~="bg-red-500/5"] :is(h2,h3,h4),
-
-.light-app main [class~="bg-slate-900"] :is(h2,h3,h4) { color:#102b42 !important; }
-
-.light-app main [class~="bg-slate-800"] .text-white,
-
-.light-app main [class~="bg-slate-800/50"] .text-white,
-
-.light-app main [class~="bg-red-500/5"] .text-white { color:#122b43 !important; }
-
-.light-app main [class~="bg-slate-800"] :is(.text-slate-300,.text-slate-400,.text-slate-500),
-
-.light-app main [class~="bg-slate-800/50"] :is(.text-slate-300,.text-slate-400,.text-slate-500),
-
-.light-app main [class~="bg-red-500/5"] :is(.text-slate-300,.text-slate-400,.text-slate-500) { color:#53677c !important; }
-
-/* Dark text on dark buttons was caused by overly broad inherited styles. */
-
-.light-app main button[class*="bg-slate-9"],
-
-.light-app main button[class*="bg-slate-8"] { background:#eaf0f6 !important; color:#17344e !important; border:1px solid #cbd9e5 !important; }
-
-.light-app main button[class*="bg-cyan"],
-
-.light-app main button[class*="bg-blue-6"],
-
-.light-app main button[class*="bg-emerald-6"] { color:#fff !important; }
-
-/* Titles and descriptions on pale gradient category banners. */
-
-.light-app main [class*="from-cyan-"],
-
-.light-app main [class*="from-blue-"],
-
-.light-app main [class*="from-emerald-"] { color:#17344e; }
-
-.light-app main [class*="from-cyan-"] :is(h1,h2,h3,h4,.text-white),
-
-.light-app main [class*="from-blue-"] :is(h1,h2,h3,h4,.text-white),
-
-.light-app main [class*="from-emerald-"] :is(h1,h2,h3,h4,.text-white) { color:#102b42 !important; }
-
-/* Preserve KPI number contrast while replacing dark tiles with white cards. */
-
-.light-app main .grid > [class~="bg-slate-800"] { background:#fff !important; border:1px solid #dbe4ee !important; }
-
-.light-app main .grid > [class~="bg-slate-800"] .text-white { color:#102b42 !important; }
-
-.light-app main .grid > [class~="bg-slate-800"] .text-slate-400 { color:#62758a !important; }
-
-/* Tables in expanded grid views must be readable regardless of legacy classes. */
-
-.light-app main table tbody td[class*="text-slate-3"],
-
-.light-app main table tbody td[class*="text-slate-4"] { color:#213a53 !important; }
-
-.light-app main table tbody td[class*="text-red"] { color:#be123c !important; }
-
-.light-app main table tbody td[class*="text-emerald"] { color:#047857 !important; }
-
-.light-app main table tbody td[class*="text-amber"] { color:#a16207 !important; }
-
-.light-app main table tbody td { font-size:12.5px !important; line-height:1.5; }
-
-.light-app main table tbody tr { background:#fff !important; }
-
-.light-app main table tbody tr:nth-child(even) { background:#f3f7fb !important; }
-
-.light-app main table tbody tr:hover { background:#eaf5f1 !important; }
-
-.light-app main [class*="bg-red-500/5"] { background:#fff9fa !important; border-color:#fecdd3 !important; }
-
-.light-app main [class*="bg-red-500/5"] h4 { color:#9f1239 !important; }
-
-.light-app main [class*="text-[10px]"] { font-size:11px !important; }
-
-.light-app main [class*="text-[11px]"] { font-size:12px !important; }
-
-.light-app main .overflow-x-auto { scrollbar-width:thin; scrollbar-color:#b5c5d4 #f2f6fa; }
-
-/* v3 — scoped multicolor category design: accessible white-on-color headings/cards */
-
-.light-app main .category-vibrant > div:first-child {
-
-  background:linear-gradient(115deg,#075985 0%,#0e7490 48%,#047857 100%) !important;
-
-  border:1px solid #0e7490 !important;
-
-  box-shadow:0 8px 24px #07598524 !important;
-
-}
-
-.light-app main .category-vibrant > div:first-child :is(h2,p),
-
-.light-app main .category-vibrant > div:first-child .text-white,
-
-.light-app main .category-vibrant > div:first-child .text-slate-300,
-
-.light-app main .category-vibrant > div:first-child .text-slate-500 {color:#fff !important;opacity:1 !important;}
-
-.light-app main .category-vibrant > div:first-child p {color:#e0f2fe !important;}
-
-.light-app main .category-vibrant > .grid:nth-child(2) > div {border:0 !important; border-radius:14px !important; box-shadow:0 5px 16px #12243b24 !important;}
-
-.light-app main .category-vibrant > .grid:nth-child(2) > div:nth-child(4n+1) {background:#1d4ed8 !important;}
-
-.light-app main .category-vibrant > .grid:nth-child(2) > div:nth-child(4n+2) {background:#047857 !important;}
-
-.light-app main .category-vibrant > .grid:nth-child(2) > div:nth-child(4n+3) {background:#be123c !important;}
-
-.light-app main .category-vibrant > .grid:nth-child(2) > div:nth-child(4n+4) {background:#6d28d9 !important;}
-
-.light-app main .category-vibrant > .grid:nth-child(2) > div :is(div,span,p),
-
-.light-app main .category-vibrant > .grid:nth-child(2) > div .text-white,
-
-.light-app main .category-vibrant > .grid:nth-child(2) > div .text-slate-400 {color:#fff !important;}
-
-.light-app main .category-vibrant > .grid:nth-child(2) > div svg {color:#fff !important;stroke:#fff !important;}
-
-.light-app main .category-vibrant > .grid:nth-child(2) > div [class*="bg-"] {background:#ffffff2b !important;}
-
-/* Employee controls: bright surface, readable buttons and active selection */
-
-.light-app main .category-vibrant > div:nth-child(3) {background:#e8f3fc !important;border:1px solid #b7d5ee !important;}
-
-.light-app main .category-vibrant > div:nth-child(3) span {color:#17324d !important;}
-
-.light-app main .category-vibrant > div:nth-child(3) button {color:#17324d !important;}
-
-.light-app main .category-vibrant > div:nth-child(3) button[class*="bg-cyan"] {background:#0369a1 !important;color:#fff !important;}
-
-/* Legacy dark grid panels: dark text cannot remain on dark background */
-
-.light-app main .category-vibrant [class~="bg-slate-900"],
-
-.light-app main .category-vibrant [class~="bg-slate-800"] {background:#fff !important;}
-
-.light-app main .category-vibrant table tbody td {color:#17324d !important;}
-
-.light-app main .category-vibrant table thead th {background:#dcebf7 !important;color:#0f2942 !important;}
-
-.light-app main .category-vibrant table tbody tr:nth-child(odd) {background:#fff !important;}
-
-.light-app main .category-vibrant table tbody tr:nth-child(even) {background:#f0f6fb !important;}
-
-.light-app main .category-vibrant table tbody tr:hover {background:#dff3ef !important;}
-
-.light-app main .category-vibrant [class*="bg-slate-900"] > :is(h2,h3,h4),
-
-.light-app main .category-vibrant [class*="bg-slate-800"] > :is(h2,h3,h4) {color:#102b42 !important;}
-
-/* v4 — 3 remaining dashboards: legible, multi-color, high contrast */
-
-.light-app main .basics-vibrant > div > div:first-child {background:linear-gradient(110deg,#164e96,#0e7490) !important;border-color:#155e75 !important;}
-
-.light-app main .basics-vibrant > div > div:first-child :is(h1,h2,h3,p,span) {color:#fff !important;}
-
-.light-app main .basics-vibrant > div > div:nth-child(4) > button {border:0 !important;box-shadow:0 5px 14px #10283e1b !important;min-height:110px;}
-
-.light-app main .basics-vibrant > div > div:nth-child(4) > button:nth-child(7n+1) {background:#1d4ed8 !important;}
-
-.light-app main .basics-vibrant > div > div:nth-child(4) > button:nth-child(7n+2) {background:#be123c !important;}
-
-.light-app main .basics-vibrant > div > div:nth-child(4) > button:nth-child(7n+3) {background:#0f766e !important;}
-
-.light-app main .basics-vibrant > div > div:nth-child(4) > button:nth-child(7n+4) {background:#6d28d9 !important;}
-
-.light-app main .basics-vibrant > div > div:nth-child(4) > button:nth-child(7n+5) {background:#b45309 !important;}
-
-.light-app main .basics-vibrant > div > div:nth-child(4) > button:nth-child(7n+6) {background:#0369a1 !important;}
-
-.light-app main .basics-vibrant > div > div:nth-child(4) > button:nth-child(7n+7) {background:#047857 !important;}
-
-.light-app main .basics-vibrant > div > div:nth-child(4) > button :is(div,span) {color:#fff !important;opacity:1 !important;}
-
-.light-app main .basics-vibrant > div > div:nth-child(4) > button div:nth-child(2) {font-size:27px !important;line-height:1.3 !important;}
-
-.light-app main .basics-vibrant > div > div:nth-child(4) > button div:last-child {color:#fff !important;}
-
-.light-app main .basics-vibrant > div > div:nth-child(5),
-
-.light-app main .basics-vibrant > div > div:nth-child(6) {border:1px solid #cbd9e7 !important;overflow:hidden;}
-
-.light-app main .basics-vibrant > div > div:nth-child(5) > div:first-child {background:#075985 !important;padding:16px 20px !important;}
-
-.light-app main .basics-vibrant > div > div:nth-child(6) > div:first-child {background:#065f46 !important;padding:16px 20px !important;}
-
-.light-app main .basics-vibrant > div > div:nth-child(5) > div:first-child :is(h3,p),
-
-.light-app main .basics-vibrant > div > div:nth-child(6) > div:first-child :is(h3,p) {color:#fff !important;}
-
-/* Grid scorecard: preserve light data tables; distinguish section headers and cards. */
-
-.light-app main .grid-vibrant :is(h2,h3,h4) {color:#102b42;}
-
-.light-app main .grid-vibrant [class~="bg-slate-800"],
-
-.light-app main .grid-vibrant [class~="bg-slate-900"] {background:#fff !important;color:#102b42 !important;}
-
-.light-app main .grid-vibrant [class~="bg-slate-800"] :is(p,span,div,h2,h3,h4),
-
-.light-app main .grid-vibrant [class~="bg-slate-900"] :is(p,span,div,h2,h3,h4) {color:#102b42 !important;}
-
-.light-app main .grid-vibrant table th {background:#dcebf7 !important;color:#102b42 !important;}
-
-.light-app main .grid-vibrant table td {color:#102b42 !important;}
-
-.light-app main .grid-vibrant .grid-performance-detail-table {background:#fff !important;}
-
-/* Overall summary: colorful high-contrast top metrics, consistent table cells. */
-
-.light-app main .overall-vibrant .overall-summary-light [class~="bg-slate-800"],
-
-.light-app main .overall-vibrant .overall-summary-light [class~="bg-slate-900"] {background:#fff !important;}
-
-.light-app main .overall-vibrant .overall-summary-light [class~="bg-slate-800"] :is(p,span,div,h2,h3,h4),
-
-.light-app main .overall-vibrant .overall-summary-light [class~="bg-slate-900"] :is(p,span,div,h2,h3,h4) {color:#122b43 !important;}
-
-.light-app main .overall-vibrant table th {background:#dcebf7 !important;color:#122b43 !important;}
-
-.light-app main .overall-vibrant table td {color:#18324b !important;}
-
-.light-app main .overall-vibrant .overall-summary-light > div > div:nth-child(2) > div:nth-child(5n+1) {border-top:5px solid #1d4ed8 !important;}
-
-.light-app main .overall-vibrant .overall-summary-light > div > div:nth-child(2) > div:nth-child(5n+2) {border-top:5px solid #047857 !important;}
-
-.light-app main .overall-vibrant .overall-summary-light > div > div:nth-child(2) > div:nth-child(5n+3) {border-top:5px solid #0891b2 !important;}
-
-.light-app main .overall-vibrant .overall-summary-light > div > div:nth-child(2) > div:nth-child(5n+4) {border-top:5px solid #6d28d9 !important;}
-
-.light-app main .overall-vibrant .overall-summary-light > div > div:nth-child(2) > div:nth-child(5n+5) {border-top:5px solid #be123c !important;}
-
-.light-app main :is(.basics-vibrant,.grid-vibrant,.overall-vibrant) table {font-size:13px !important;}
-
-.light-app main :is(.basics-vibrant,.grid-vibrant,.overall-vibrant) table tbody td {font-size:13px !important;padding:12px 14px !important;}
-
-/* v5: direct, explicit KPI selectors. Previous nth-child paths missed actual markup. */
-
-.light-app main .basics-kpi-color-grid > button,
-
-.light-app main .grid-score-kpi-color-grid > div {border:0 !important; min-height:100px; box-shadow:0 6px 15px #10283e20 !important;}
-
-.light-app main .basics-kpi-color-grid > button:nth-child(7n+1),
-
-.light-app main .grid-score-kpi-color-grid > div:nth-child(4n+1) {background:#1d4ed8 !important;}
-
-.light-app main .basics-kpi-color-grid > button:nth-child(7n+2),
-
-.light-app main .grid-score-kpi-color-grid > div:nth-child(4n+2) {background:#047857 !important;}
-
-.light-app main .basics-kpi-color-grid > button:nth-child(7n+3),
-
-.light-app main .grid-score-kpi-color-grid > div:nth-child(4n+3) {background:#7c3aed !important;}
-
-.light-app main .basics-kpi-color-grid > button:nth-child(7n+4),
-
-.light-app main .grid-score-kpi-color-grid > div:nth-child(4n+4) {background:#be123c !important;}
-
-.light-app main .basics-kpi-color-grid > button:nth-child(7n+5) {background:#b45309 !important;}
-
-.light-app main .basics-kpi-color-grid > button:nth-child(7n+6) {background:#0369a1 !important;}
-
-.light-app main .basics-kpi-color-grid > button:nth-child(7n+7) {background:#0f766e !important;}
-
-.light-app main .basics-kpi-color-grid > button :is(div,span,p),
-
-.light-app main .grid-score-kpi-color-grid > div :is(div,span,p) {color:#fff !important; -webkit-text-fill-color:#fff !important; opacity:1 !important;}
-
-.light-app main .basics-kpi-color-grid > button > div:nth-child(2),
-
-.light-app main .grid-score-kpi-color-grid > div > div:nth-child(2) {font-size:26px !important;font-weight:900 !important;}
-
-/* Overall Summary imported component: target only its primary metric row. */
-
-.light-app main .overall-kpi-color-scope > div:not(style) > .grid:first-of-type > div:nth-child(5n+1) {background:#1d4ed8 !important;}
-
-.light-app main .overall-kpi-color-scope > div:not(style) > .grid:first-of-type > div:nth-child(5n+2) {background:#047857 !important;}
-
-.light-app main .overall-kpi-color-scope > div:not(style) > .grid:first-of-type > div:nth-child(5n+3) {background:#0369a1 !important;}
-
-.light-app main .overall-kpi-color-scope > div:not(style) > .grid:first-of-type > div:nth-child(5n+4) {background:#6d28d9 !important;}
-
-.light-app main .overall-kpi-color-scope > div:not(style) > .grid:first-of-type > div:nth-child(5n+5) {background:#be123c !important;}
-
-.light-app main .overall-kpi-color-scope > div:not(style) > .grid:first-of-type > div :is(div,p,span,h3,h4) {color:#fff !important;-webkit-text-fill-color:#fff !important;}
-
-/* v6 — FIX: actual Overall Summary contains five KPI tiles per row.
-
-   No App.tsx changes needed; existing overall-kpi-color-scope is present. */
-
-.light-app main .overall-kpi-color-scope .grid:has(> :nth-child(5):last-child) > :nth-child(1) {background:#1d4ed8 !important;}
-
-.light-app main .overall-kpi-color-scope .grid:has(> :nth-child(5):last-child) > :nth-child(2) {background:#047857 !important;}
-
-.light-app main .overall-kpi-color-scope .grid:has(> :nth-child(5):last-child) > :nth-child(3) {background:#0369a1 !important;}
-
-.light-app main .overall-kpi-color-scope .grid:has(> :nth-child(5):last-child) > :nth-child(4) {background:#6d28d9 !important;}
-
-.light-app main .overall-kpi-color-scope .grid:has(> :nth-child(5):last-child) > :nth-child(5) {background:#be123c !important;}
-
-.light-app main .overall-kpi-color-scope .grid:has(> :nth-child(5):last-child) > * {border-color:transparent !important;box-shadow:0 5px 14px #12243b24 !important;}
-
-.light-app main .overall-kpi-color-scope .grid:has(> :nth-child(5):last-child) > * :is(div,span,p,h2,h3,h4,strong,small) {color:#fff !important;-webkit-text-fill-color:#fff !important;opacity:1 !important;}
-
-.light-app main .overall-kpi-color-scope .grid:has(> :nth-child(5):last-child) > * svg {color:#fff !important;stroke:#fff !important;}
-
-.light-app main .overall-kpi-color-scope .grid:has(> :nth-child(5):last-child) > * [class*="bg-"] {background-color:#ffffff24 !important;}
-
-/* v7 — 99% CA target panel: fix invisible text on mixed dark/grey backgrounds */
-.light-app main .overall-vibrant div[class*="from-cyan-500/10"][class*="via-slate-800"] {
-  background:linear-gradient(115deg,#123b63 0%,#132a48 100%) !important;
-  border:1px solid #28749a !important;
-  color:#fff !important;
-}
-.light-app main .overall-vibrant div[class*="from-cyan-500/10"][class*="via-slate-800"] > div:first-child h3 {color:#fff !important;}
-.light-app main .overall-vibrant div[class*="from-cyan-500/10"][class*="via-slate-800"] > div:first-child p {color:#e1efff !important;opacity:1 !important;}
-.light-app main .overall-vibrant div[class*="from-cyan-500/10"][class*="via-slate-800"] > .grid > div {
-  background:#10243f !important;
-  border:1px solid #46617d !important;
-  color:#fff !important;
-}
-.light-app main .overall-vibrant div[class*="from-cyan-500/10"][class*="via-slate-800"] > .grid > div:nth-child(2) {background:#153450 !important;}
-.light-app main .overall-vibrant div[class*="from-cyan-500/10"][class*="via-slate-800"] > .grid > div .text-white,
-.light-app main .overall-vibrant div[class*="from-cyan-500/10"][class*="via-slate-800"] > .grid > div .text-slate-400,
-.light-app main .overall-vibrant div[class*="from-cyan-500/10"][class*="via-slate-800"] > .grid > div .text-slate-500 {color:#e8f2ff !important;opacity:1 !important;}
-.light-app main .overall-vibrant div[class*="from-cyan-500/10"][class*="via-slate-800"] > .grid > div .text-red-400 {color:#ff8293 !important;}
-.light-app main .overall-vibrant div[class*="from-cyan-500/10"][class*="via-slate-800"] > .grid > div .text-amber-300 {color:#ffe082 !important;}
-.light-app main .overall-vibrant div[class*="from-cyan-500/10"][class*="via-slate-800"] > .grid > div .text-cyan-300 {color:#8be9ff !important;}
-.light-app main .overall-vibrant div[class*="from-cyan-500/10"][class*="via-slate-800"] > .grid > div .text-emerald-400 {color:#86efac !important;}
-.light-app main .overall-vibrant div[class*="from-cyan-500/10"][class*="via-slate-800"] > .grid > div div[class*="bg-slate-800/60"] {background:#203a59 !important;border-color:#4d6680 !important;}
-.light-app main .overall-vibrant div[class*="from-cyan-500/10"][class*="via-slate-800"] button[class*="bg-cyan"] {background:#12648b !important;color:#fff !important;}

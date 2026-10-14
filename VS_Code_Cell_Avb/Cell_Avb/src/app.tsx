@@ -4051,6 +4051,23 @@ function SiteQuery({ sites, historyData = null, rawData = null }: { sites: SiteD
     );
   }
 
+  // Sheet1 column J: OMO ID. Match by Site ID (column A), not row position.
+  const omoIdBySite = useMemo(() => {
+    const normalize = (value: unknown) => String(value ?? "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+    const lookup = (row: Record<string, any>, aliases: string[]) => {
+      const names = new Set(aliases.map(normalize));
+      const pair = Object.entries(row).find(([key]) => names.has(normalize(key)));
+      return pair?.[1];
+    };
+    const result = new Map<string, string>();
+    for (const row of (rawData?.rows ?? []) as Record<string, any>[]) {
+      const id = String(lookup(row, ["Site ID", "SiteID", "Site", "Site Name", "BTS ID"]) ?? "").trim().replace(/\.0+$/, "");
+      const omo = String(lookup(row, ["OMO ID", "OMO_ID", "OMOID"]) ?? "").trim();
+      if (id && omo) result.set(id, omo);
+    }
+    return result;
+  }, [rawData]);
+
   function SiteInfoCard({ site }: { site: SiteData }) {
     const [expanded, setExpanded] = useState(false);
     const mainFields = [
@@ -4064,6 +4081,7 @@ function SiteQuery({ sites, historyData = null, rawData = null }: { sites: SiteD
       { label: "Terrain", value: site.terrain, icon: <MapPin className="w-3.5 h-3.5" /> },
       { label: "Technology", value: site.technology, icon: <Network className="w-3.5 h-3.5" /> },
       { label: "Sharing Status", value: site.sharingStatus, icon: <Share2 className="w-3.5 h-3.5" /> },
+      { label: "OMO ID", value: omoIdBySite.get(String(site.siteName ?? "").trim().replace(/\.0+$/, "")) || "—" },
       { label: "Indoor / Outdoor", value: site.indoorOutdoor, icon: <Building2 className="w-3.5 h-3.5" /> },
       { label: "DG Status", value: site.dgInstalled, icon: <Fuel className="w-3.5 h-3.5" /> },
       { label: "DG Rating", value: site.dgRating || "—" },
@@ -4145,7 +4163,7 @@ function SiteQuery({ sites, historyData = null, rawData = null }: { sites: SiteD
   }
 
   return (
-    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="max-w-[1600px] mx-auto space-y-6">
+    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="site-query-page max-w-[1600px] mx-auto space-y-6">
       <div className="bg-gradient-to-r from-cyan-500/10 to-blue-500/10 border border-cyan-500/20 rounded-xl p-5">
         <div className="flex items-center gap-3 mb-4">
           <Search className="w-6 h-6 text-cyan-400" />
