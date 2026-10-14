@@ -1,4 +1,3 @@
-import "./dashboard-theme.css";
 import "./enterprise-polish.css";
 import FuelDashboard from "./FuelDashboard";
 import ElectricityDashboard from "./ElectricityDashboard";
@@ -2038,13 +2037,13 @@ function CategoryPage({
   return (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="category-vibrant max-w-[1600px] mx-auto space-y-6">
       <div
-        className="rounded-xl border p-6 flex items-center justify-between flex-wrap gap-4"
+        className="category-page-banner rounded-xl border p-6 flex items-center justify-between flex-wrap gap-4"
         style={{ background: `linear-gradient(to right, ${color}15, transparent)`, borderColor: `${color}40` }}
       >
         <div>
-          <h2 className="text-xl sm:text-2xl font-extrabold tracking-tight text-white mb-1">{title}</h2>
-          <p className="text-slate-300 text-sm">{description}</p>
-          <p className="text-xs text-slate-500 mt-1">{filteredSites.length} sites in this category</p>
+          <h2 className="text-xl sm:text-2xl font-extrabold tracking-tight text-slate-900 mb-1" style={{ color: "#102a43" }}>{title}</h2>
+          <p className="text-slate-700 text-sm" style={{ color: "#475569" }}>{description}</p>
+          <p className="text-xs text-slate-600 mt-1">{filteredSites.length} sites in this category</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <ExportButtonComponent
@@ -2093,7 +2092,7 @@ function CategoryPage({
         ))}
       </div>
 
-      <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-4">
+      <div className="bg-slate-800 border border-slate-700 rounded-xl p-6">
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div className="flex items-center gap-3 flex-wrap">
             <div className="flex items-center gap-2">
@@ -2145,7 +2144,7 @@ function CategoryPage({
         </div>
       </div>
 
-      <div className="bg-red-500/5 border border-red-500/30 rounded-xl p-4">
+      <div className="bg-slate-800 border border-slate-700 rounded-xl p-6">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
             <AlertTriangle className="w-5 h-5 text-red-400" />
@@ -4345,7 +4344,7 @@ function RcaSummary({ rcaData }: { rcaData: SheetPayload | null }) {
 
   return (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="max-w-[1600px] mx-auto space-y-6">
-      <div className="bg-gradient-to-r from-indigo-500/10 to-purple-500/10 border border-indigo-500/20 rounded-xl p-6">
+      <div className="bg-slate-800 border border-slate-700 rounded-xl p-6">
         <div className="flex items-center justify-between flex-wrap gap-4">
           <div>
             <h2 className="text-xl sm:text-2xl font-extrabold tracking-tight text-white mb-1">RCA of Platinum+</h2>
@@ -4418,7 +4417,7 @@ function RcaSummary({ rcaData }: { rcaData: SheetPayload | null }) {
         </div>
       </div>
 
-      <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-4">
+      <div className="bg-slate-800 border border-slate-700 rounded-xl p-6">
         <div className="flex flex-wrap items-center gap-4">
           <div className="flex items-center gap-2">
             <span className="text-xs text-slate-400 font-medium">Filter by POC:</span>
@@ -4461,7 +4460,7 @@ function RcaSummary({ rcaData }: { rcaData: SheetPayload | null }) {
       </div>
 
       {pocWorkload.length > 0 && (
-        <div className="bg-slate-800/30 border border-slate-700 rounded-xl p-4">
+        <div className="bg-slate-800 border border-slate-700 rounded-xl p-6">
           <h4 className="text-sm font-semibold text-white mb-3">POC Workload (Open + In Progress)</h4>
           <div className="flex flex-wrap gap-3">
             {pocWorkload.map(([name, count]) => (
@@ -6469,12 +6468,12 @@ function ErrorScreen({ message, onRetry }: { message: string; onRetry: () => voi
 
 function SectionBanner({ icon, title, subtitle, gradient, className = "" }: { icon: React.ReactNode; title: string; subtitle: string; gradient: string; className?: string }) {
   return (
-    <div className={`rounded-2xl bg-gradient-to-r ${gradient} border border-slate-200 p-5 shadow-sm ${className}`}>
+    <div className={`category-page-banner rounded-2xl bg-gradient-to-r ${gradient} border border-slate-200 p-5 shadow-sm ${className}`}>
       <div className="flex items-center gap-3">
         {icon}
         <div>
-          <h3 className="text-slate-900 font-extrabold text-lg">{title}</h3>
-          <p className="text-slate-600 text-sm">{subtitle}</p>
+          <h3 className="text-slate-900 font-extrabold text-lg" style={{ color: "#102a43" }}>{title}</h3>
+          <p className="text-slate-600 text-sm" style={{ color: "#475569" }}>{subtitle}</p>
         </div>
       </div>
     </div>
@@ -6750,7 +6749,7 @@ function PreVsPostAnalysis({
       </div>
 
       {/* Employee Filter */}
-      <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-4">
+      <div className="bg-slate-800 border border-slate-700 rounded-xl p-6">
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div className="flex items-center gap-3 flex-wrap">
             <div className="flex items-center gap-2">
@@ -6819,7 +6818,7 @@ function PreVsPostAnalysis({
       </div>
 
       {/* Worst 10 */}
-      <div className="bg-red-500/5 border border-red-500/30 rounded-xl p-4">
+      <div className="bg-slate-800 border border-slate-700 rounded-xl p-6">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
             <AlertTriangle className="w-5 h-5 text-red-400" />

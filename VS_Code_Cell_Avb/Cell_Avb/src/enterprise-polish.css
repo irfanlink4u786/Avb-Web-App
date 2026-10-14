@@ -1,328 +1,623 @@
-/* Zong 5G — high-contrast management dashboard polish.
 
-
-
-
-
-
-
-   Import AFTER dashboard-theme.css. Visual-only; no KPI logic changes. */
-
-
-
-
-
-
-
-.light-app { background:#f3f6fa !important; color:#14263d !important; font-size:14px; }
-
-
-
-
-
-
-
-.light-app main { background:#f3f6fa !important; min-width:0; }
-
-
-
-
-
-
-
-.light-app aside { background:linear-gradient(180deg,#092a40,#075647) !important; border-right:1px solid #14576a !important; width:230px !important; }
-
-
-
-
-
-
-
-.light-app aside h1 { color:#fff !important; font-size:14px !important; }
-
-
-
-
-
-
-
-.light-app aside nav { padding:12px 10px !important; }
-
-
-
-
-
-
-
-.light-app aside nav button { background:transparent !important; border:1px solid transparent !important; color:#e1f2f2 !important; font-size:13px !important; font-weight:650 !important; padding:10px 12px !important; margin-bottom:3px; border-radius:9px !important; }
-
-
-
-
-
-
-
-.light-app aside nav button:hover { background:#ffffff1c !important; color:#fff !important; }
-
-
-
-
-
-
-
-.light-app aside nav button[class\\*="bg-cyan"] { background:#fff !important; color:#075a53 !important; border-color:#b6e4d8 !important; box-shadow:0 3px 10px #001d281a; }
-
-
-
-
-
-
-
-.light-app main :is(h1,h2,h3,h4) { letter-spacing:-.015em; }
-
-
-
-
-
-
-
-.light-app main :is([class\\*="rounded-xl"],[class\\*="rounded-2xl"]) { box-shadow:0 2px 12px #132e4a0a; }
-
-
-
-
-
-
-
-.light-app main button, .light-app main select, .light-app main input { font-size:13px; }
-
-
-
-
-
-
-
-.light-app main select, .light-app main input { color:#15263c !important; background:#fff !important; border-color:#bdcad9 !important; }
-
-
-
-
-
-
-
-.light-app table { border-collapse:separate; border-spacing:0; font-size:13px !important; }
-
-
-
-
-
-
-
-.light-app table thead, .light-app table thead tr { background:#e8eff6 !important; }
-
-
-
-
-
-
-
-.light-app table thead th, .light-app .grid-performance-detail-table thead th { background:#e8eff6 !important; color:#18354f !important; font-size:12px !important; font-weight:800 !important; padding:12px 14px !important; border-bottom:1px solid #cbd9e7 !important; white-space:nowrap; }
-
-
-
-
-
-
-
-.light-app table thead th * { color:inherit !important; }
-
-
-
-
-
-
-
-.light-app table tbody td { color:#20364d; padding:11px 14px !important; border-bottom:1px solid #e5edf4; }
-
-
-
-
-
-
-
-.light-app table tbody tr:nth-child(even) { background:#f8fafc !important; }
-
-
-
-
-
-
-
-.light-app table tbody tr:hover { background:#eaf5f1 !important; }
-
-
-
-
-
-
-
-/* Remove old dark-on-dark KPI cards and translucent nested panels. */
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-.overall-summary-light > div > div:nth-child(2) > div [class\\*="text-red"] { color:#c3283b !important; }
-
-
-
-
-
-
-
-.overall-summary-light [class\\*="bg-slate-8"], .overall-summary-light [class\\*="bg-slate-9"] { background:#fff !important; }
-
-
-
-
-
-
-
-.overall-summary-light [class\\*="bg-slate-8"] :is(h2,h3,h4,p,span,div), .overall-summary-light [class\\*="bg-slate-9"] :is(h2,h3,h4,p,span,div) { color:#17324b !important; }
-
-
-
-
-
-
-
-.overall-summary-light [class\\*="text-slate-4"], .overall-summary-light [class\\*="text-slate-5"] { color:#51647a !important; }
-
-
-
-
-
-
-
-.overall-summary-light [class\\*="bg-gradient"] { border:1px solid #d8e6ef; }
-
-
-
-
-
-
-
-.overall-summary-light button { font-weight:700 !important; }
-
-
-
-
-
-
-
-/* Electricity is a full-page child view, outside .light-app. */
-
-
-
-
-
-
-
-.electricity-polished { background:#f3f6fa; min-height:100vh; color:#18324b; }
-
-
-
-
-
-
-
-.electricity-polished table { font-size:13px; border-collapse:separate; border-spacing:0; }
-
-
-
-
-
-
-
-.electricity-polished table thead th { background:#e8eff6 !important; color:#18354f !important; font-size:12px; font-weight:800; padding:12px !important; border-bottom:1px solid #d5e0eb; }
-
-
-
-
-
-
-
-.electricity-polished table tbody td { padding:11px 12px !important; border-bottom:1px solid #e5edf4; }
-
-
-
-
-
-
-
-.electricity-polished table tbody tr:nth-child(even) { background:#f8fafc; }
-
-
-
-
-
-
-
-.electricity-polished table tbody tr:hover { background:#edf7f3; }
-
-
-
-
-
-
-
-.electricity-polished select, .electricity-polished input { color:#142b42 !important; background:#fff !important; border:1px solid #bccbd9 !important; min-height:36px; }
-
-
-
-
-
-
-
-.electricity-polished :is(h1,h2,h3) { color:#102a43; font-weight:800; }
-
-
-
-
-
-
-
-.electricity-polished [class\\*="text-[10px]"], .electricity-polished [class\\*="text-[11px]"] { font-size:12px; }
-
-
-
-
-
-
-
-@media(max-width:768px) { .light-app aside { width:230px !important; } .light-app table, .electricity-polished table { font-size:12px !important; } }
-
-
-
-
-
-
-
+/* ============================================================
+   ZONG 5G — UNIFIED ENTERPRISE DASHBOARD THEME
+
+   File: src/enterprise-polish.css
+
+   Replaces:
+   - dashboard-theme.css
+   - restore-light-dashboard.css
+
+   Purpose:
+   - Professional light dashboard
+   - Dark readable headings
+   - Green navigation sidebar
+   - Preserve dark KPI cards
+   - Preserve dark tables
+   - Improve light table readability
+   - Improve Site Query and Electricity pages
+
+   Visual styling only — no KPI logic changes
+============================================================ */
+
+
+/* ============================================================
+   1. GLOBAL THEME
+============================================================ */
+
+:root {
+  font-family:
+    Inter,
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+.light-app {
+  --zong-bg: #f3f6fa;
+  --zong-panel: #ffffff;
+  --zong-heading: #102a43;
+  --zong-text: #20364d;
+  --zong-muted: #52657c;
+  --zong-border: #d9e3ed;
+  --zong-navy: #1e293b;
+  --zong-green: #047857;
+
+  min-height: 100vh;
+  background: var(--zong-bg) !important;
+  color: var(--zong-text);
+  color-scheme: light;
+  font-size: 14px;
+}
+
+.light-app main {
+  min-width: 0;
+  background: var(--zong-bg) !important;
+}
+
+.light-app main :is(h1, h2, h3, h4) {
+  letter-spacing: -0.015em;
+}
+
+
+/* ============================================================
+   2. ZONG GREEN SIDEBAR
+============================================================ */
+
+.light-app aside {
+  background: linear-gradient(
+    180deg,
+    #092a40,
+    #075647
+  ) !important;
+
+  border-right: 1px solid #14576a !important;
+  width: 230px !important;
+}
+
+.light-app aside h1 {
+  color: #ffffff !important;
+  font-size: 14px !important;
+}
+
+.light-app aside nav {
+  padding: 12px 10px !important;
+}
+
+.light-app aside nav button {
+  background: transparent !important;
+  border: 1px solid transparent !important;
+  color: #e1f2f2 !important;
+
+  font-size: 13px !important;
+  font-weight: 650 !important;
+
+  padding: 10px 12px !important;
+  margin-bottom: 3px !important;
+  border-radius: 9px !important;
+}
+
+.light-app aside nav button:hover {
+  background: #ffffff1c !important;
+  color: #ffffff !important;
+}
+
+.light-app aside nav button[class*="bg-cyan"] {
+  background: #ffffff !important;
+  color: #075a53 !important;
+  border-color: #b6e4d8 !important;
+  box-shadow: 0 3px 10px #001d281a;
+}
+
+
+/* ============================================================
+   3. CATEGORY PAGE BANNERS
+   Platinum+, PGS, SB, NPS, 5G, DG, Li-ion, AGM
+============================================================ */
+
+.light-app main .category-page-banner {
+  background: linear-gradient(
+    110deg,
+    #e0f5fc,
+    #f2f6fc
+  ) !important;
+
+  border: 1px solid #a5e5f3 !important;
+  color: #102a43 !important;
+}
+
+.light-app main .category-page-banner
+:is(h1, h2, h3, h4) {
+  color: #102a43 !important;
+  -webkit-text-fill-color: #102a43 !important;
+  font-weight: 800 !important;
+}
+
+.light-app main .category-page-banner
+:is(p, small) {
+  color: #475569 !important;
+  -webkit-text-fill-color: #475569 !important;
+}
+
+/* Category headings rendered with nested spans */
+
+.light-app main .category-page-banner
+:is(h1, h2, h3, h4) span {
+  color: inherit !important;
+  -webkit-text-fill-color: currentColor !important;
+}
+
+/* Preserve button colors */
+
+.light-app main .category-page-banner
+button[class*="bg-slate-"],
+.light-app main .category-page-banner
+button[class*="bg-slate-"] * {
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
+}
+
+
+/* ============================================================
+   4. CATEGORY BANNER FALLBACK
+============================================================ */
+
+.light-app main .category-vibrant
+> :first-child:is(
+  [class*="from-cyan-50"],
+  [class*="from-sky-50"],
+  [class*="from-blue-50"],
+  [class*="bg-cyan-50"],
+  [class*="bg-sky-50"],
+  [class*="bg-blue-50"]
+) :is(h1, h2, h3, h4) {
+  color: #102a43 !important;
+  -webkit-text-fill-color: #102a43 !important;
+}
+
+.light-app main .category-vibrant
+> :first-child:is(
+  [class*="from-cyan-50"],
+  [class*="from-sky-50"],
+  [class*="from-blue-50"],
+  [class*="bg-cyan-50"],
+  [class*="bg-sky-50"],
+  [class*="bg-blue-50"]
+) :is(p, small) {
+  color: #475569 !important;
+  -webkit-text-fill-color: #475569 !important;
+}
+
+
+/* ============================================================
+   5. PANELS AND CARDS
+============================================================ */
+
+/* Subtle depth without changing original card colors */
+
+.light-app main :is(
+  [class*="rounded-xl"],
+  [class*="rounded-2xl"]
+) {
+  box-shadow: 0 2px 12px #132e4a0a;
+}
+
+/* Explicit light panel */
+
+.light-app main .dashboard-panel-light {
+  background: #ffffff !important;
+  color: #20364d !important;
+  border: 1px solid #d9e3ed;
+}
+
+.light-app main .dashboard-panel-light
+:is(h1, h2, h3, h4) {
+  color: #102a43 !important;
+}
+
+.light-app main .dashboard-panel-light
+:is(p, small) {
+  color: #52657c;
+}
+
+/* Explicit dark panel */
+
+.light-app main .dashboard-panel-dark {
+  background: #1e293b !important;
+  color: #ffffff !important;
+}
+
+.light-app main .dashboard-panel-dark
+:is(h1, h2, h3, h4) {
+  color: #ffffff !important;
+}
+
+/* Do not globally recolor all KPI children */
+
+
+/* ============================================================
+   6. FORM CONTROLS
+============================================================ */
+
+.light-app main :is(button, select, input) {
+  font-size: 13px;
+}
+
+.light-app main :is(
+  select,
+  input,
+  textarea
+) {
+  background: #ffffff !important;
+  color: #15263c !important;
+  border-color: #bdcad9 !important;
+  color-scheme: light;
+}
+
+.light-app main :is(
+  select,
+  input,
+  textarea
+):focus {
+  outline-color: #0891b2;
+}
+
+
+/* ============================================================
+   7. GENERAL TABLE LAYOUT
+   Do not force all tables to the same colors
+============================================================ */
+
+.light-app table {
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 13px;
+}
+
+.light-app table th {
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.light-app table td {
+  font-size: 13px;
+}
+
+/* No global table header background override */
+/* No global table cell color override */
+
+
+/* ============================================================
+   8. EXPLICIT LIGHT TABLES
+============================================================ */
+
+.light-app main .dashboard-table-light {
+  background: #ffffff !important;
+  color: #20364d !important;
+}
+
+.light-app main .dashboard-table-light thead,
+.light-app main .dashboard-table-light thead tr,
+.light-app main .dashboard-table-light thead th {
+  background: #e8eff6 !important;
+  color: #18354f !important;
+}
+
+.light-app main .dashboard-table-light thead th {
+  padding: 12px 14px !important;
+  border-bottom: 1px solid #cbd9e7 !important;
+}
+
+.light-app main .dashboard-table-light tbody tr {
+  background: #ffffff !important;
+}
+
+.light-app main .dashboard-table-light
+tbody tr:nth-child(even) {
+  background: #f8fafc !important;
+}
+
+.light-app main .dashboard-table-light
+tbody tr:hover {
+  background: #eaf5f1 !important;
+}
+
+.light-app main .dashboard-table-light tbody td {
+  color: #20364d !important;
+  padding: 11px 14px !important;
+  border-bottom: 1px solid #e5edf4 !important;
+}
+
+.light-app main .dashboard-table-light
+tbody td :is(.text-white, .text-slate-100,
+             .text-slate-200, .text-slate-300) {
+  color: #20364d !important;
+}
+
+
+/* ============================================================
+   9. EXPLICIT DARK TABLES
+============================================================ */
+
+.light-app main .dashboard-table-dark {
+  background: #1e293b !important;
+  color: #ffffff !important;
+}
+
+.light-app main .dashboard-table-dark thead,
+.light-app main .dashboard-table-dark thead tr,
+.light-app main .dashboard-table-dark thead th {
+  background: #0f172a !important;
+  color: #ffffff !important;
+}
+
+.light-app main .dashboard-table-dark thead th {
+  padding: 12px 14px !important;
+  border-bottom: 1px solid #475569 !important;
+}
+
+.light-app main .dashboard-table-dark tbody tr {
+  background: #1e293b !important;
+}
+
+.light-app main .dashboard-table-dark
+tbody tr:nth-child(even) {
+  background: #273449 !important;
+}
+
+.light-app main .dashboard-table-dark
+tbody tr:hover {
+  background: #334155 !important;
+}
+
+.light-app main .dashboard-table-dark tbody td {
+  color: #f1f5f9 !important;
+  padding: 11px 14px !important;
+  border-bottom: 1px solid #475569 !important;
+}
+
+
+/* ============================================================
+   10. TABLE STATUS COLORS
+============================================================ */
+
+.light-app main .dashboard-table-light
+:is(.text-red-600, .text-rose-600, .text-rose-700) {
+  color: #be123c !important;
+}
+
+.light-app main .dashboard-table-light
+:is(.text-emerald-600, .text-emerald-700,
+    .text-green-600) {
+  color: #047857 !important;
+}
+
+.light-app main .dashboard-table-light
+:is(.text-amber-600, .text-amber-700,
+    .text-yellow-600) {
+  color: #a16207 !important;
+}
+
+/* Preserve status colors on dark tables */
+
+.light-app main .dashboard-table-dark
+:is(.text-red-600, .text-rose-600) {
+  color: #fda4af !important;
+}
+
+.light-app main .dashboard-table-dark
+:is(.text-emerald-600, .text-green-600) {
+  color: #6ee7b7 !important;
+}
+
+.light-app main .dashboard-table-dark
+:is(.text-amber-600, .text-yellow-600) {
+  color: #fcd34d !important;
+}
+
+
+/* ============================================================
+   11. GRID PERFORMANCE DETAIL TABLE
+============================================================ */
+
+.light-app main .grid-performance-detail-table {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.light-app main .grid-performance-detail-table th {
+  padding: 12px 14px !important;
+  white-space: nowrap;
+}
+
+/* Original row colors are preserved */
+
+
+/* ============================================================
+   12. SITE QUERY
+============================================================ */
+
+.light-app main .site-query-page {
+  color: #20364d;
+}
+
+/* Convert legacy dark Site Query panels to light */
+
+.light-app main .site-query-page :is(
+  [class~="bg-slate-800"],
+  [class~="bg-slate-900"],
+  [class~="bg-slate-800/50"],
+  [class~="bg-slate-900/50"]
+) {
+  background: #ffffff !important;
+  border-color: #dbe4ee !important;
+  color: #17324b !important;
+}
+
+.light-app main .site-query-page
+:is(h1, h2, h3, h4) {
+  color: #102a43 !important;
+}
+
+.light-app main .site-query-page
+:is(
+  .text-white,
+  .text-slate-100,
+  .text-slate-200,
+  .text-slate-300
+) {
+  color: #17324b !important;
+}
+
+.light-app main .site-query-page
+:is(.text-slate-400, .text-slate-500) {
+  color: #52657c !important;
+}
+
+/* Site Query dark buttons */
+
+.light-app main .site-query-page
+button[class*="bg-slate-"] {
+  background: #243449 !important;
+  color: #ffffff !important;
+}
+
+.light-app main .site-query-page
+button[class*="bg-slate-"] * {
+  color: #ffffff !important;
+}
+
+
+/* ============================================================
+   13. OVERALL SUMMARY
+============================================================ */
+
+/* Preserve existing KPI tile colors */
+
+.light-app main .overall-summary-light {
+  color: #20364d;
+}
+
+/* Light sections can use explicit panel classes */
+
+.light-app main .overall-summary-light
+.dashboard-panel-light {
+  background: #ffffff !important;
+  color: #20364d !important;
+}
+
+.light-app main .overall-summary-light
+.dashboard-panel-light :is(h2, h3, h4) {
+  color: #102a43 !important;
+}
+
+/* Dark sections can use explicit panel classes */
+
+.light-app main .overall-summary-light
+.dashboard-panel-dark {
+  background: #1e293b !important;
+  color: #ffffff !important;
+}
+
+.light-app main .overall-summary-light
+.dashboard-panel-dark :is(h2, h3, h4) {
+  color: #ffffff !important;
+}
+
+
+/* ============================================================
+   14. ELECTRICITY DASHBOARD
+============================================================ */
+
+.electricity-polished {
+  background: #f3f6fa;
+  min-height: 100vh;
+  color: #18324b;
+}
+
+.electricity-polished table {
+  font-size: 13px;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.electricity-polished table thead th {
+  background: #e8eff6 !important;
+  color: #18354f !important;
+
+  font-size: 12px;
+  font-weight: 800;
+
+  padding: 12px !important;
+  border-bottom: 1px solid #d5e0eb;
+}
+
+.electricity-polished table tbody td {
+  padding: 11px 12px !important;
+  border-bottom: 1px solid #e5edf4;
+}
+
+.electricity-polished table tbody tr:nth-child(even) {
+  background: #f8fafc;
+}
+
+.electricity-polished table tbody tr:hover {
+  background: #edf7f3;
+}
+
+.electricity-polished :is(select, input) {
+  color: #142b42 !important;
+  background: #ffffff !important;
+  border: 1px solid #bccbd9 !important;
+  min-height: 36px;
+}
+
+.electricity-polished :is(h1, h2, h3) {
+  color: #102a43;
+  font-weight: 800;
+}
+
+
+/* ============================================================
+   15. ACCESSIBILITY
+============================================================ */
+
+.light-app main button:focus-visible,
+.light-app main a:focus-visible {
+  outline: 2px solid #0891b2;
+  outline-offset: 2px;
+}
+
+/* Improve text rendering */
+
+.light-app {
+  -webkit-font-smoothing: antialiased;
+}
+
+
+/* ============================================================
+   16. RESPONSIVE LAYOUT
+============================================================ */
+
+@media (max-width: 768px) {
+  .light-app aside {
+    width: 230px !important;
+  }
+
+  .light-app table,
+  .electricity-polished table {
+    font-size: 12px;
+  }
+
+  .light-app main .category-page-banner
+  :is(h1, h2, h3) {
+    font-size: 20px;
+  }
+}

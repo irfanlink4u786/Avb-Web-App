@@ -539,7 +539,7 @@ export default function WeatherRadar() {
         <motion.div
           initial={{ opacity: 0, scale: 0.98 }}
           animate={{ opacity: 1, scale: 1 }}
-          className="bg-red-500/10 border border-red-500/40 rounded-xl p-5"
+          className="bg-slate-800 border border-slate-700 rounded-xl p-6"
         >
           <div className="flex items-center gap-3 mb-3">
             <div className="w-10 h-10 rounded-lg bg-red-500/20 flex items-center justify-center">

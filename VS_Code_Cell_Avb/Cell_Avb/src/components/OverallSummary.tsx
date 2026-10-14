@@ -1996,7 +1996,7 @@ export default function OverallSummary({ sites }: { sites: SiteData[] }) {
 
       {/* CELL AVAILABILITY BY CATEGORY */}
 
-      <div className="bg-slate-800/30 border border-slate-700 rounded-xl p-5">
+      <div className="bg-slate-800 border border-slate-700 rounded-xl p-6">
 
         <div className="flex items-center justify-between mb-4">
 
@@ -2072,7 +2072,7 @@ export default function OverallSummary({ sites }: { sites: SiteData[] }) {
 
       {/* AI RECOMMENDATIONS */}
 
-      <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-6">
+      <div className="bg-slate-800 border border-slate-700 rounded-xl p-6">
 
         <div className="flex items-center gap-3 mb-1">
 
