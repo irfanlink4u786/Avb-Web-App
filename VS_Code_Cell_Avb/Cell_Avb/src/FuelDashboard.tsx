@@ -174,7 +174,62 @@ function ExportButtonComponent({
 //  FUEL HISTORY — YEAR-ON-YEAR / WORST SITES / DAILY MONITORING
 // ============================================================
 
-type FuelSubTab = "summary" | "yoy" | "currentMonth" | "deviation" | "tprime";
+function YesterdayFuelPage({rows}:{rows:FuelRow[]}) {
+  const [gridFilter,setGridFilter]=useState("__all");
+  const [search,setSearch]=useState("");
+  const [selectedDate,setSelectedDate]=useState(()=>{
+    const d=new Date();d.setDate(d.getDate()-1);
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+  });
+  const localDay=(d:Date)=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+  const daily=useMemo(()=>{
+    const valid=rows.filter(r=>r.siteId && r.date && r.filledQty>0).sort((a,b)=>a.date!.getTime()-b.date!.getTime());
+    const bySite=new Map<string,FuelRow[]>();
+    valid.forEach(r=>{const id=r.siteId.trim().toUpperCase();if(!bySite.has(id))bySite.set(id,[]);bySite.get(id)!.push(r);});
+    const grouped=new Map<string,{siteId:string;grid:string;events:number;filled:number;before:number;after:number;previousDate:string;previousTotal:number|null;consumption:number|null;days:number|null;dailyConsumption:number|null;lastDate:Date}>();
+    for(const [siteId,history] of bySite) {
+      const tickets=history.filter(r=>r.date && localDay(r.date)===selectedDate);
+      if(!tickets.length)continue;
+      const first=tickets[0],last=tickets[tickets.length-1];
+      const prior=history.filter(r=>r.date!.getTime()<first.date!.getTime()).slice(-1)[0];
+      const days=prior?.date ? (first.date!.getTime()-prior.date.getTime())/86400000 : null;
+      const previousTotal=prior?prior.beforeQty+prior.filledQty:null;
+      const consumption=previousTotal===null?null:previousTotal-first.beforeQty;
+      grouped.set(siteId,{siteId,grid:last.grid,events:tickets.length,filled:tickets.reduce((n,r)=>n+r.filledQty,0),
+        before:first.beforeQty,after:last.beforeQty+last.filledQty,
+        previousDate:prior?.date?.toLocaleString("en-GB")||"—",previousTotal,consumption,
+        days,dailyConsumption:consumption!==null&&days!==null&&days>0?consumption/days:null,lastDate:last.date!});
+    }
+    return [...grouped.values()].sort((a,b)=>b.filled-a.filled);
+  },[rows,selectedDate]);
+  const grids=[...new Set(daily.map(r=>r.grid))].sort();
+  const filtered=daily.filter(r=>(gridFilter==="__all"||r.grid===gridFilter)&&(!search||`${r.siteId} ${r.grid}`.toLowerCase().includes(search.toLowerCase())));
+  const total=filtered.reduce((n,r)=>n+r.filled,0);
+  const known=filtered.filter(r=>r.dailyConsumption!==null);
+  const fmt=(n:number|null)=>n===null?"—":n.toLocaleString(undefined,{maximumFractionDigits:2});
+  const exportData=filtered.map(r=>({"Site ID":r.siteId,Grid:r.grid,"Fill Events":r.events,"Fuel Filled L":r.filled,"Before First Fill L":r.before,"Latest After Fill L":r.after,"Previous Ticket Date":r.previousDate,"Previous Total L":r.previousTotal??"","Consumption Since Previous Ticket L":r.consumption??"","Elapsed Days":r.days??"","Consumed Per Day L":r.dailyConsumption??""}));
+  return <div className="space-y-4">
+    <section className="rounded-xl border border-emerald-200 bg-white p-5 shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-xl font-black text-emerald-950">Yesterday Fuel Filled & Consumption Story</h2><p className="mt-1 text-xs text-slate-600">Default: yesterday (local date) · positive fuel tickets only · one row per site · consumption estimated from previous ticket</p></div>
+      <ExportButtonComponent data={exportData} filename={`Yesterday_Fuel_Consumption_${selectedDate}`} label="Export Report" format="excel" variant="success"/></div>
+      <div className="mt-4 flex flex-wrap gap-3"><input type="date" value={selectedDate} onChange={e=>setSelectedDate(e.target.value)} className="rounded-lg border border-emerald-200 px-3 py-2 text-sm font-bold"/>
+      <select value={grids.includes(gridFilter)?gridFilter:"__all"} onChange={e=>setGridFilter(e.target.value)} className="rounded-lg border border-emerald-200 px-3 py-2 text-sm"><option value="__all">All Grids</option>{grids.map(g=><option key={g} value={g}>{g}</option>)}</select>
+      <input type="search" placeholder="Search site / grid" value={search} onChange={e=>setSearch(e.target.value)} className="rounded-lg border border-emerald-200 px-3 py-2 text-sm"/></div>
+    </section>
+    <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">{[
+      ["Fueled Sites",fmt(filtered.length),"Unique sites"],
+      ["Fuel Filled",`${fmt(total)} L`,"All fill events"],
+      ["Refueling Tickets",fmt(filtered.reduce((n,r)=>n+r.events,0)),"Selected date"],
+      ["Consumption Available",`${known.length} / ${filtered.length}`,"Sites with prior dated ticket"]
+    ].map(([label,value,detail])=><div key={label} className="rounded-xl border border-emerald-200 bg-white p-4"><p className="text-xs font-semibold text-slate-600">{label}</p><p className="mt-2 text-2xl font-black text-emerald-900">{value}</p><p className="text-xs text-slate-500">{detail}</p></div>)}</div>
+    <section className="rounded-xl border border-emerald-200 bg-white p-4 shadow-sm"><h3 className="mb-3 font-black text-emerald-950">Site-wise Fueling & Consumption · {selectedDate}</h3>
+      <div className="max-h-[650px] overflow-auto"><table className="w-full min-w-[1400px] border-collapse text-sm"><thead className="sticky top-0 bg-[#075B39] text-white"><tr>{["Site ID","Grid","Fill Events","Fuel Filled (L)","Before First Fill (L)","Latest After Fill (L)","Previous Ticket","Previous Total (L)","Consumption (L)","Elapsed Days","Consumed / Day (L)"].map(h=><th key={h} className="whitespace-nowrap px-3 py-3 text-right">{h}</th>)}</tr></thead><tbody>{filtered.map(r=><tr key={r.siteId} className="border-b border-slate-200 even:bg-emerald-50/50"><td className="px-3 py-2 text-right font-black text-emerald-900">{r.siteId}</td><td className="px-3 py-2 text-right">{r.grid}</td><td className="px-3 py-2 text-right">{r.events}</td><td className="px-3 py-2 text-right font-bold">{fmt(r.filled)}</td><td className="px-3 py-2 text-right">{fmt(r.before)}</td><td className="px-3 py-2 text-right">{fmt(r.after)}</td><td className="px-3 py-2 text-right">{r.previousDate}</td><td className="px-3 py-2 text-right">{fmt(r.previousTotal)}</td><td className="px-3 py-2 text-right">{fmt(r.consumption)}</td><td className="px-3 py-2 text-right">{fmt(r.days)}</td><td className="px-3 py-2 text-right font-black text-emerald-800">{fmt(r.dailyConsumption)}</td></tr>)}</tbody></table>{!filtered.length&&<p className="p-5 text-sm text-amber-800">No positive refueling tickets for the selected date and filters.</p>}</div>
+      <p className="mt-3 text-xs text-slate-500">Consumption = previous ticket's post-fill total − current day's first before-fill quantity; daily rate = consumption ÷ elapsed days. A negative value indicates an inventory discrepancy or unrecorded addition, not negative physical consumption. Multiple fills on the selected date are summed. This is a ticket-based estimate, not EASS-measured DG consumption.</p>
+    </section>
+  </div>;
+}
+
+type FuelSubTab = "summary" | "yoy" | "currentMonth" | "deviation" | "tprime" | "yesterday";
 type FuelView = "overall" | "C-1" | "C-6";
 
 type FuelRow = {
@@ -916,7 +971,7 @@ function TPrimePenaltyPage({fuelRows,primeData,deviationData}:{fuelRows:FuelRow[
   return <div className="space-y-5"><div className="rounded-xl border border-blue-200 bg-white p-5"><h2 className="text-xl font-black text-blue-950">T-Prime Fuel Penalty · Vendor Control · Sep–Oct 2026</h2><p className="mt-1 text-xs text-slate-600">Policy: four calendar days from incident start. Consecutive daily T-Prime records are grouped into one incident; a gap starts a new incident. Fuel Filled is read directly from the T_prime sheet. Only entries within the documented incident period are assessed. Confirm closure dates before imposing deductions.</p><div className="mt-3 grid gap-3 sm:grid-cols-2"><select className="rounded-lg border border-blue-200 p-2 text-sm" value={gridFilter} onChange={e=>setGridFilter(e.target.value)}><option value="__all">All Grids</option>{grids.map(g=><option key={g}>{g}</option>)}</select><select className="rounded-lg border border-blue-200 p-2 text-sm" value={ownerFilter} onChange={e=>setOwnerFilter(e.target.value)}><option value="__all">All Cluster Owners</option>{owners.map(o=><option key={o}>{o}</option>)}</select></div></div><div className="grid gap-3 sm:grid-cols-4">{[{label:"T-Prime Sites",value:String(new Set(filtered.map(r=>r.siteId)).size)},{label:"T-Prime Events",value:String(filtered.length)},{label:"Justified Fuel",value:`${fmt(filtered.reduce((s,r)=>s+r.allowed,0))} L`},{label:"Penalty Fuel",value:`${fmt(filtered.reduce((s,r)=>s+r.penalty,0))} L`}].map(c=><div key={c.label} className="rounded-xl border border-blue-200 bg-white p-4"><div className="text-xs font-semibold text-slate-600">{c.label}</div><div className="mt-2 text-2xl font-black text-blue-950">{c.value}</div></div>)}</div><section className="rounded-xl border border-blue-200 bg-white p-4"><div className="mb-3 flex flex-wrap items-center justify-between gap-3"><div><h3 className="text-lg font-black text-blue-950">Worst Sites · T-Prime Fuel Penalty · Sep–Oct 2026</h3><p className="text-xs text-slate-600">Sites with penalty litres only, ranked highest first. Select View to inspect each incident and fueling history.</p></div><div className="flex flex-wrap items-center gap-2"><select aria-label="Worst T-Prime sites count" value={worstLimit} onChange={e=>setWorstLimit(Number(e.target.value))} className="rounded-lg border border-blue-200 bg-white px-3 py-2 text-sm">{[10,20,50,100].map(n=><option key={n} value={n}>Top {n}</option>)}</select><ExportButtonComponent data={worstSites.map((r,i)=>({Rank:i+1,"Site ID":r.siteId,Grid:r.grid,"Cluster Owner":r.owner,Incidents:r.events,"Penalty Incidents":r.penaltyEvents,"Justified Fuel (L)":r.allowed,"Penalty Fuel (L)":r.penalty}))} filename="TPrime_Worst_Penalty_Sites_Sep_Oct_2026" label="Export Worst Sites" format="csv"/></div></div><div className="overflow-x-auto"><table className="w-full min-w-[800px] border-collapse"><thead><tr>{["Rank","Site ID","Grid","Cluster Owner","Incidents","Penalty Incidents","Justified (L)","Penalty (L)","Action"].map(h=><th key={h} className={header}>{h}</th>)}</tr></thead><tbody>{worstSites.slice(0,worstLimit).map((r,i)=><Fragment key={r.siteId}><tr className="even:bg-slate-50"><td className={cell}>{i+1}</td><td className={cell+" font-bold"}>{r.siteId}</td><td className={cell}>{r.grid}</td><td className={cell}>{r.owner}</td><td className={cell}>{r.events}</td><td className={cell}>{r.penaltyEvents}</td><td className={cell}>{fmt(r.allowed)}</td><td className={cell+" font-bold text-red-700"}>{fmt(r.penalty)}</td><td className={cell}><button className="rounded border border-blue-300 px-2 py-1 font-bold text-blue-800" onClick={()=>setExpanded(expanded===`worst-${r.siteId}`?null:`worst-${r.siteId}`)}>{expanded===`worst-${r.siteId}`?"Hide":"View"}</button></td></tr>{expanded===`worst-${r.siteId}`&&<tr><td colSpan={9} className="bg-blue-50 p-3">{renderHistory(r.incidents)}</td></tr>}</Fragment>)}{worstSites.length===0&&<tr><td colSpan={9} className="p-6 text-center text-sm font-semibold text-emerald-800">No penalty sites found for the selected filters.</td></tr>}</tbody></table></div></section>{([ ["Grid-wise Penalty · Worst First",gridSummary],["Cluster Owner-wise Penalty · Worst First",ownerSummary] ] as const).map(([title,items])=><section key={title} className="rounded-xl border border-blue-200 bg-white p-4"><div className="mb-3 flex flex-wrap items-center justify-between gap-2"><h3 className="font-black text-blue-950">{title}</h3><ExportButtonComponent data={items.map(x=>({Name:x.name,Sites:x.sites,Events:x.events,"Penalty Sites":x.affected,"Justified L":x.allowed,"Penalty L":x.penalty}))} filename={title.startsWith("Grid")?"TPrime_Grid":"TPrime_CO"} label="Export Summary" format="csv"/></div><div className="overflow-x-auto"><table className="w-full border-collapse"><thead><tr>{[title.startsWith("Grid")?"Grid":"Cluster Owner","Sites","Events","Penalty Sites","Justified (L)","Penalty (L)","Action"].map(h=><th key={h} className={header}>{h}</th>)}</tr></thead><tbody>{items.map(x=><Fragment key={x.name}><tr><td className={cell+" font-bold"}>{x.name}</td><td className={cell}>{x.sites}</td><td className={cell}>{x.events}</td><td className={cell}>{x.affected}</td><td className={cell}>{fmt(x.allowed)}</td><td className={cell+" font-bold text-red-700"}>{fmt(x.penalty)}</td><td className={cell}><button className="rounded border border-blue-300 px-2 py-1 font-bold text-blue-800" onClick={()=>setExpanded(expanded===`${title}-${x.name}`?null:`${title}-${x.name}`)}>View Sites</button></td></tr>{expanded===`${title}-${x.name}`&&<tr><td colSpan={7} className="bg-blue-50 p-3"><div className="mb-2 flex justify-end"><ExportButtonComponent data={exportData(x.rows)} filename={`TPrime_${x.name}`} label="Export Sites" format="csv"/></div>{renderHistory(x.rows)}</td></tr>}</Fragment>)}</tbody></table></div></section>)}<section className="rounded-xl border border-blue-200 bg-white p-4"><h3 className="text-lg font-black text-blue-950">Site Query · T-Prime Fuel History</h3><p className="mb-3 text-xs text-slate-600">Search all T-Prime sites regardless of grid and CO filters.</p><div className="flex flex-wrap gap-2"><input aria-label="T-Prime site ID" className="min-w-[230px] flex-1 rounded-lg border border-blue-300 px-3 py-2" value={siteQuery} onChange={e=>setSiteQuery(e.target.value)} placeholder="Enter exact Site ID (e.g. 4130)"/><button className="rounded-lg border border-blue-300 px-3 py-2 text-sm font-bold text-blue-800" onClick={()=>setSiteQuery("")}>Clear</button>{queried.length>0&&<ExportButtonComponent data={exportData(queried)} filename={`TPrime_Site_${siteQuery.trim()}`} label="Export Fuel History" format="csv"/>}</div>{siteQuery.trim()&&<div className="mt-4">{queried.length?renderHistory(queried):<p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-800">No T-Prime event found for this Site ID.</p>}</div>}</section></div>;
 }
 
-export default function FuelDashboard({ data, deviationData, tPrimeData, onBack }: { data: SheetPayload | null; deviationData: SheetPayload | null; tPrimeData: SheetPayload | null; onBack: () => void }) {
+export default function FuelDashboard({ data, deviationData, tPrimeData, sheet1Data, onBack }: { data: SheetPayload | null; deviationData: SheetPayload | null; tPrimeData: SheetPayload | null; sheet1Data: SheetPayload | null; onBack: () => void }) {
   const [tab, setTab] = useState<FuelSubTab>("summary");
   const [view, setView] = useState<FuelView>("overall");
   const [gridFilter, setGridFilter] = useState("__all");
@@ -1108,18 +1163,95 @@ export default function FuelDashboard({ data, deviationData, tPrimeData, onBack 
   const currentMonthName = FUEL_MONTH_ORDER[latestMonthIndex] || "Sep";
   const currentMonthLabel = `${currentMonthName}-${String(currentYear).slice(-2)}`;
 
+  // Ownership mapping from Deviation Fuel site master; current-month filters cascade.
+  const [monthCO,setMonthCO]=useState("__all");
+  const [monthGTL,setMonthGTL]=useState("__all");
+  const [monthLead,setMonthLead]=useState("__all");
+  // Site ownership MUST come from Cell AVB Sheet1, not Deviation Fuel.
+  const normalizeSiteKey=(value:unknown)=>String(value??"").trim().match(/\d{3,6}/)?.[0]||String(value??"").trim().toLowerCase();
+  const ownership = useMemo(()=>{
+    const map=new Map<string,{co:string;gtl:string;lead:string}>();
+    (sheet1Data?.rows||[]).forEach((row:Record<string,any>)=>{
+      const pick=(...names:string[])=>{
+        for(const name of names){
+          const key=Object.keys(row).find(k=>k.trim().toLowerCase()===name.toLowerCase());
+          if(key && String(row[key]??"").trim())return String(row[key]).trim();
+        }
+        return "";
+      };
+      const rawId=pick("Site ID","SITE ID","Site ID Name","Site","Site_ID");
+      const id=rawId.match(/\d{3,6}/)?.[0]||rawId.trim();
+      if(!id)return;
+      map.set(normalizeSiteKey(id),{
+        co:pick("Cluster Owner","CO")||"Unassigned",
+        gtl:pick("MS GTL","GTL")||"Unassigned",
+        lead:pick("Zone Lead","ZoneLead")||"Unassigned"
+      });
+    });
+    return map;
+  },[sheet1Data]);
+  const monthUnfiltered = useMemo(()=>rows.filter(r=>r.year===currentYear &&
+    fuelMonthLabel(r.month)===currentMonthName &&
+    (view==="overall"||fuelRegion(r.grid)===view) &&
+    (gridFilter==="__all"||r.grid===gridFilter)),[rows,currentYear,currentMonthName,view,gridFilter]);
+  const monthOwnerRows=useMemo(()=>monthUnfiltered.map(r=>({r,o:ownership.get(normalizeSiteKey(r.siteId))||
+    {co:"Unassigned",gtl:"Unassigned",lead:"Unassigned"}})),[monthUnfiltered,ownership]);
+  const monthCOOptions=useMemo(()=>[...new Set(monthOwnerRows.map(x=>x.o.co).filter(x=>x!=="Unassigned"))].sort(),[monthOwnerRows]);
+  const monthGTLOptions=useMemo(()=>[...new Set(monthOwnerRows.filter(x=>monthCO==="__all"||x.o.co===monthCO).map(x=>x.o.gtl).filter(x=>x!=="Unassigned"))].sort(),[monthOwnerRows,monthCO]);
+  const monthLeadOptions=useMemo(()=>[...new Set(monthOwnerRows.filter(x=>(monthCO==="__all"||x.o.co===monthCO)&&(monthGTL==="__all"||x.o.gtl===monthGTL)).map(x=>x.o.lead).filter(x=>x!=="Unassigned"))].sort(),[monthOwnerRows,monthCO,monthGTL]);
   const currentMonthRows = useMemo(() => rows.filter(r =>
     r.year === currentYear &&
     fuelMonthLabel(r.month) === currentMonthName &&
     (view === "overall" || fuelRegion(r.grid) === view) &&
-    (gridFilter === "__all" || r.grid === gridFilter)
-  ), [rows, currentYear, currentMonthName, view, gridFilter]);
+    (gridFilter === "__all" || r.grid === gridFilter) &&
+    (monthCO==="__all"||ownership.get(normalizeSiteKey(r.siteId))?.co===monthCO) &&
+    (monthGTL==="__all"||ownership.get(normalizeSiteKey(r.siteId))?.gtl===monthGTL) &&
+    (monthLead==="__all"||ownership.get(normalizeSiteKey(r.siteId))?.lead===monthLead)
+  ), [rows, currentYear, currentMonthName, view, gridFilter, monthCO,monthGTL,monthLead,ownership]);
 
   const currentMonthSiteRows = useMemo(() =>
     currentMonthRows.filter(r => !r.siteId.toLowerCase().startsWith("mobile dg")),
     [currentMonthRows]
   );
 
+  const [topFuelLimit,setTopFuelLimit]=useState(20);
+  const topCurrentMonthSites=useMemo(()=>{
+    const grouped=new Map<string,{siteId:string;grid:string;total:number;fills:number;latest:Date|null}>();
+    currentMonthSiteRows.filter(r=>r.siteId.trim()&&r.filledQty>0).forEach(r=>{
+      const key=`${r.grid.trim().toUpperCase()}|${r.siteId.trim().toUpperCase()}`;
+      const item=grouped.get(key)||{siteId:r.siteId.trim(),grid:r.grid,total:0,fills:0,latest:null};
+      item.total+=r.filledQty;item.fills++;
+      if(r.date&&(!item.latest||r.date>item.latest))item.latest=r.date;
+      grouped.set(key,item);
+    });
+    return [...grouped.values()].sort((a,b)=>b.total-a.total||a.siteId.localeCompare(b.siteId));
+  },[currentMonthSiteRows]);
+  const topFuelExport=topCurrentMonthSites.map((r,i)=>({Rank:i+1,"Site ID":r.siteId,Grid:r.grid,"Fuel Filled (L)":r.total,"Fill Events":r.fills,"Latest Fuel Date":r.latest?.toLocaleDateString("en-GB")||"—"}));
+  // Current Month site query searches the complete Fuel History, across all months/years.
+  const [currentFuelSiteQuery, setCurrentFuelSiteQuery] = useState("");
+  const fuelSiteHistory = useMemo(() => {
+    const q = currentFuelSiteQuery.trim().toLowerCase();
+    if (!q) return [];
+    return rows.filter(r => r.siteId.trim().toLowerCase() === q)
+      .sort((a,b) => (b.date?.getTime() ?? 0)-(a.date?.getTime() ?? 0));
+  }, [rows,currentFuelSiteQuery]);
+  const fuelSiteHistoryDetails = useMemo(() => fuelSiteHistory.map((r,i) => {
+    const older = fuelSiteHistory.slice(i+1).find(x=>x.date && r.date && x.date.getTime()<r.date.getTime());
+    const daysBetween = older?.date && r.date
+      ? (r.date.getTime()-older.date.getTime()) / 86400000 : null;
+    const estimatedUsed = older ? Math.max(0,older.beforeQty+older.filledQty-r.beforeQty) : null;
+    return {...r, afterQty:r.beforeQty+r.filledQty, estimatedUsed, daysBetween,
+      consumedPerDay:estimatedUsed!==null && daysBetween!==null && daysBetween>0
+        ? estimatedUsed/daysBetween : null};
+  }),[fuelSiteHistory]);
+  const fuelSiteHistoryExport = useMemo(() => fuelSiteHistoryDetails.map((r,i)=>({
+    "No":i+1,"Site ID":r.siteId,"Grid":r.grid,"Month":r.month,"Year":r.year,
+    "Refueling Date":r.refuelingTime,"Before Fuel (L)":r.beforeQty,
+    "Fuel Filled (L)":r.filledQty,"Total After Fill (L)":r.afterQty,
+    "Estimated Consumption Since Previous Ticket (L)":r.estimatedUsed??"",
+    "Days Between Refills":r.daysBetween??"",
+    "Consumption Per Day (L/day)":r.consumedPerDay??""
+  })),[fuelSiteHistoryDetails]);
   const currentMonthUnknownDateRows = currentMonthRows.filter(r => !r.date && r.filledQty > 0);
   const currentMonthDates = useMemo(() => {
     const days = new Set<number>();
@@ -1167,10 +1299,13 @@ export default function FuelDashboard({ data, deviationData, tPrimeData, onBack 
       if (!site.grid || !site.siteId) return;
       if (view !== "overall" && fuelRegion(site.grid) !== view) return;
       if (gridFilter !== "__all" && site.grid !== gridFilter) return;
+      if (monthCO!=="__all" && (ownership.get(normalizeSiteKey(site.siteId))?.co||"Unassigned")!==monthCO) return;
+      if (monthGTL!=="__all" && (ownership.get(normalizeSiteKey(site.siteId))?.gtl||"Unassigned")!==monthGTL) return;
+      if (monthLead!=="__all" && (ownership.get(normalizeSiteKey(site.siteId))?.lead||"Unassigned")!==monthLead) return;
       unique.set(`${site.grid}:${site.siteId}`, site);
     });
     return Array.from(unique.values());
-  }, [deviationData, view, gridFilter]);
+  }, [deviationData, view, gridFilter, monthCO, monthGTL, monthLead, ownership]);
   const dgCategory = (raw: string) => {
     const v = raw.toLowerCase().replace(/\s+/g, " ").trim();
     if (v.includes("ptn")) return "PTN Node";
@@ -1196,14 +1331,24 @@ export default function FuelDashboard({ data, deviationData, tPrimeData, onBack 
       byGrid.set(site.grid,g);
     });
     const fuel = new Map(currentMonthGridMatrix.map(r=>[r.grid,r.total]));
+    // Count each DG site only once, and only if it received positive fuel this month.
+    const fueledIdsByGrid = new Map<string, Set<string>>();
+    currentMonthSiteRows.filter(r => r.filledQty > 0).forEach(r => {
+      const key = r.grid.trim().toUpperCase();
+      const id = r.siteId.trim().toLowerCase();
+      if (!key || !id || id.startsWith("mobile dg")) return;
+      if (!fueledIdsByGrid.has(key)) fueledIdsByGrid.set(key, new Set());
+      fueledIdsByGrid.get(key)!.add(id);
+    });
     return Array.from(byGrid.values()).map(g=>{
       const totalDGs = g.ids.size;
       const fueled = fuel.get(g.grid) || 0;
-      return {...g,totalDGs,fueled,target:totalDGs*perDgMonthlyTarget,perDG:totalDGs?fueled/totalDGs:0};
+      const fueledDGs = fueledIdsByGrid.get(g.grid.trim().toUpperCase())?.size ?? 0;
+      return {...g,totalDGs,fueledDGs,fueled,target:fueledDGs*perDgMonthlyTarget,perDG:fueledDGs?fueled/fueledDGs:0};
     }).sort((a,b)=>a.grid.localeCompare(b.grid));
-  }, [dgInventory,currentMonthGridMatrix]);
+  }, [dgInventory,currentMonthGridMatrix,currentMonthSiteRows]);
   const currentMonthDgExport = currentMonthDgGridSummary.map(g=>({
-    Grid:g.grid,"Total DGs (Recon Sheet)":g.totalDGs,"PTN Node":g.ptn,
+    Grid:g.grid,"Total DGs (Recon Sheet)":g.totalDGs,"Unique Fueled DGs":g.fueledDGs,"PTN Node":g.ptn,
     "Critical Hub (10++)":g.critical,Single:g.single,"Minor Hub (1-4)":g.minor,
     "Major Hub (5-10)":g.major,"Other / Unclassified":g.other,
     "Monthly Fuel Filled (L)":g.fueled,"Fuel / DG (L)":Number(g.perDG.toFixed(2)),
@@ -1252,13 +1397,42 @@ export default function FuelDashboard({ data, deviationData, tPrimeData, onBack 
     });
     return Array.from(siteMap.values()).sort((a,b)=>b.total-a.total || a.siteId.localeCompare(b.siteId));
   }, [categoryDrillGrid,dgInventory,currentMonthRows]);
+  const categoryFuelHistory = useMemo(() => {
+    const map = new Map<string, {previousDate:string; previousFilled:number|null; previousBefore:number|null; previousTotal:number|null; latestBefore:number|null; latestTotal:number|null; estimatedConsumption:number|null; previousMonthFuel:number; previousMonth:string}>();
+    if (!categoryDrillGrid) return map;
+    const monthIndex = FUEL_MONTH_ORDER.indexOf(currentMonthName);
+    const previousMonth = FUEL_MONTH_ORDER[(monthIndex+11)%12];
+    const previousYear = monthIndex===0 ? currentYear-1 : currentYear;
+    const ids = new Set(categoryGridSites.map(s=>s.siteId.trim().toLowerCase()));
+    ids.forEach(id => {
+      const all = rows.filter(r=>r.siteId.trim().toLowerCase()===id && r.date && r.filledQty>0)
+        .sort((a,b)=>a.date!.getTime()-b.date!.getTime());
+      const current = all.filter(r=>r.year===currentYear && r.month===currentMonthName);
+      const last = current[current.length-1];
+      const preceding = last ? all.filter(r=>r.date!.getTime()<last.date!.getTime()).slice(-1)[0] : all.slice(-1)[0];
+      const consumption = last && preceding ? Math.max(0,preceding.beforeQty+preceding.filledQty-last.beforeQty) : null;
+      map.set(id,{
+        previousDate:preceding?.date?.toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"})||"—",
+        previousFilled:preceding?.filledQty??null,
+        previousBefore:preceding?.beforeQty??null,
+        previousTotal:preceding?preceding.beforeQty+preceding.filledQty:null,
+        latestBefore:last?.beforeQty??null,
+        latestTotal:last?last.beforeQty+last.filledQty:null,
+        estimatedConsumption:consumption,
+        previousMonthFuel:all.filter(r=>r.year===previousYear&&r.month===previousMonth).reduce((n,r)=>n+r.filledQty,0),
+        previousMonth
+      });
+    });
+    return map;
+  },[categoryDrillGrid,categoryGridSites,rows,currentMonthName,currentYear]);
+  const fuelHistoryNumber = (n:number|null|undefined) => n==null?"—":n.toLocaleString(undefined,{maximumFractionDigits:2});
   const categoryGridExport = useMemo(() => categoryGridSites.map((s,i)=>({
     Rank:i+1, Grid:categoryDrillGrid || "", "Site ID":s.siteId, "DG Category":s.category,
     "Fuel Poured (L)":Number(s.total.toFixed(2)), "Fill Events":s.fills,
-    "Latest Fuel Date":s.lastDate || "—", "Inventory Status":s.source,
+    "Latest Fuel Date":s.lastDate || "—", "Previous Fuel Date":categoryFuelHistory.get(s.siteId.trim().toLowerCase())?.previousDate||"—", "Previous Filled (L)":categoryFuelHistory.get(s.siteId.trim().toLowerCase())?.previousFilled??"", "Previous Before (L)":categoryFuelHistory.get(s.siteId.trim().toLowerCase())?.previousBefore??"", "Previous Total (L)":categoryFuelHistory.get(s.siteId.trim().toLowerCase())?.previousTotal??"", "Latest Before (L)":categoryFuelHistory.get(s.siteId.trim().toLowerCase())?.latestBefore??"", "Latest Total (L)":categoryFuelHistory.get(s.siteId.trim().toLowerCase())?.latestTotal??"", "Estimated Consumption (L)":categoryFuelHistory.get(s.siteId.trim().toLowerCase())?.estimatedConsumption??"",
     "Monthly Target / DG (L)":perDgMonthlyTarget,
     "Over 190 L":s.total>perDgMonthlyTarget?"YES":"NO"
-  })),[categoryGridSites,categoryDrillGrid]);
+  })),[categoryGridSites,categoryDrillGrid,categoryFuelHistory]);
   const octoberBudgetRemaining = octoberFuelBudget - currentMonthTotal;
 
   const currentMonthMatrixExport = useMemo(() => currentMonthGridMatrix.map(row => {
@@ -1380,6 +1554,7 @@ export default function FuelDashboard({ data, deviationData, tPrimeData, onBack 
             ["currentMonth",`Current Month · ${currentMonthLabel}`,CalendarDays],
             ["deviation","Fuel Deviation",AlertTriangle],
             ["tprime","T-Prime Penalty",AlertTriangle],
+            ["yesterday","Yesterday Fuel & Consumption",CalendarDays],
           ] as const).map(([id,label,Icon]) => <button key={id} onClick={()=>setTab(id as FuelSubTab)} className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-bold transition ${tab===id?"bg-white text-[#075E36] shadow-lg shadow-black/10":"text-emerald-50/75 hover:bg-white/10 hover:text-white"}`}><Icon className="h-4 w-4"/><span>{label}</span></button>)}
         </nav>
         <div className="border-t border-slate-800 p-4 text-[11px] text-emerald-100/60">Fuel History · Live Google Sheet</div>
@@ -1390,22 +1565,23 @@ export default function FuelDashboard({ data, deviationData, tPrimeData, onBack 
           <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-4 sm:px-6">
             <div>
               <div className="flex items-center gap-2 lg:hidden"><button onClick={onBack} className="rounded-lg bg-slate-800 px-3 py-2 text-xs font-bold text-white">← Home</button><Fuel className="h-5 w-5 text-emerald-600"/></div>
-              <h2 className="mt-1 text-xl font-black text-slate-950">{tab==="summary"?"Overall Fuel Summary":tab==="yoy"?"YoY & Worst Sites":tab==="deviation"?"Fuel Deviation":tab==="tprime"?"T-Prime Fuel Penalty":`${currentMonthLabel} Fuel Summary`}</h2>
+              <h2 className="mt-1 text-xl font-black text-slate-950">{tab==="summary"?"Overall Fuel Summary":tab==="yoy"?"YoY & Worst Sites":tab==="deviation"?"Fuel Deviation":tab==="tprime"?"T-Prime Fuel Penalty":tab==="yesterday"?"Yesterday Fuel & Consumption":`${currentMonthLabel} Fuel Summary`}</h2>
               <p className="text-xs text-slate-500">Fuel History · {previousYear} vs {currentYear} · comparable through {comparableMonths[comparableMonths.length-1]}</p>
             </div>
-            {tab!=="deviation" && tab!=="tprime" && <div className="flex flex-wrap gap-2">
+            {tab!=="deviation" && tab!=="tprime" && tab!=="yesterday" && <div className="flex flex-wrap gap-2">
               {(["overall","C-1","C-6"] as FuelView[]).map(v => <button key={v} onClick={()=>setView(v)} className={`rounded-lg px-4 py-2 text-sm font-black ${view===v?"bg-[#006B3C] text-white":"bg-slate-200 text-slate-700"}`}>{v==="overall"?"Overall":v}</button>)}
               <select aria-label="Fuel month" value={fuelMonthFilter} onChange={e=>setFuelMonthFilter(e.target.value)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-bold"><option value="__all">YTD (Jan–{FUEL_MONTH_ORDER[latestMonthIndex]})</option>{FUEL_MONTH_ORDER.slice(0,latestMonthIndex+1).map(m=><option key={m} value={m}>{m} · YoY</option>)}</select>
               <select value={gridFilter} onChange={e=>setGridFilter(e.target.value)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-bold"><option value="__all">All Grids</option>{grids.map(g=><option key={g}>{g}</option>)}</select>
             </div>}
           </div>
           <div className="flex gap-2 overflow-x-auto border-t border-slate-100 px-4 py-2 lg:hidden sm:px-6">
-            {[["summary","Summary"],["yoy","YoY / Worst Sites"],["currentMonth",currentMonthLabel],["deviation","Deviation"],["tprime","T-Prime Penalty"]].map(([id,label])=><button key={id} onClick={()=>setTab(id as FuelSubTab)} className={`whitespace-nowrap rounded-lg px-3 py-2 text-xs font-black ${tab===id?"bg-emerald-600 text-white":"bg-slate-100 text-slate-700"}`}>{label}</button>)}
+            {[["summary","Summary"],["yoy","YoY / Worst Sites"],["currentMonth",currentMonthLabel],["deviation","Deviation"],["tprime","T-Prime Penalty"],["yesterday","Yesterday Fuel"]].map(([id,label])=><button key={id} onClick={()=>setTab(id as FuelSubTab)} className={`whitespace-nowrap rounded-lg px-3 py-2 text-xs font-black ${tab===id?"bg-emerald-600 text-white":"bg-slate-100 text-slate-700"}`}>{label}</button>)}
           </div>
         </header>
 
         <main className="space-y-5 p-4 sm:p-6 fuel-dashboard-main">
         {tab==="deviation" && <FuelDeviationPage payload={deviationData} region={view} onRegionChange={setView} />}
+        {tab==="yesterday" && <YesterdayFuelPage rows={rows} />}
         {tab==="tprime" && <TPrimePenaltyPage fuelRows={rows} primeData={tPrimeData} deviationData={deviationData} />}
         {tab==="summary" && <>
           <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
@@ -1511,32 +1687,75 @@ export default function FuelDashboard({ data, deviationData, tPrimeData, onBack 
           {[["2026 YTD Highest Fuel",worstYtd,"current"],[`Last Two Months · ${lastTwoMonths.join(" + ")}`,worstLastTwo,"lastTwo"],["Persistent High Fuel · Top-20 overlap",persistent,"current"]].map(([title,list,metric]:any)=><div key={title} className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden"><div className="border-b border-slate-200 p-4 font-black">{title}</div><div className="overflow-x-auto"><table className={tableClass}><thead className="bg-emerald-900 text-white"><tr>{["#","Site ID","Grid",`${previousYear} L`,`${currentYear} L`,"YoY Increase/(Reduction)",`Last 2M L`].map(h=><th key={h} className={th}>{h}</th>)}</tr></thead><tbody>{(list as any[]).filter(x=>!siteSearch.trim()||`${x.siteId} ${x.grid}`.toLowerCase().includes(siteSearch.toLowerCase())).map((x,i)=><tr key={`${title}-${x.siteId}`} className="border-b border-slate-200 even:bg-slate-50"><td className={td}>{i+1}</td><td className={td+" font-black text-blue-700"}>{x.siteId}</td><td className={td}>{x.grid}</td><td className={td}>{Math.round(x.previous).toLocaleString()}</td><td className={td+" font-black"}>{Math.round(x.current).toLocaleString()}</td><td className={`${td} font-black ${x.variance>0?"text-red-600":"text-emerald-700"}`}>{x.variance>0?"+":""}{Math.round(x.variance).toLocaleString()}</td><td className={td+" font-black"}>{Math.round(x.lastTwo).toLocaleString()}</td></tr>)}</tbody></table></div></div>)}
         </>}
 
-        {tab==="currentMonth" && <>
-          {currentMonthName === "Oct" && <>
+        {tab==="currentMonth" && <section className="rounded-xl border border-emerald-200 bg-white p-4 shadow-sm">
+          <div className="mb-3"><h3 className="font-black text-[#075B39]">Current Month · Ownership Filters</h3><p className="text-xs text-slate-500">Filter fuel filling, rankings, DG category and daily consumption by Cluster Owner, MS GTL or Zone Lead. Mapping: Cell AVB Sheet1 (Cluster Owner / MS GTL / CMPAK GTL as Zone Lead).</p></div>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+            <select aria-label="Cluster Owner" value={monthCOOptions.includes(monthCO)?monthCO:"__all"} onChange={e=>{setMonthCO(e.target.value);setMonthGTL("__all");setMonthLead("__all");}} className="rounded-lg border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold"><option value="__all">All Cluster Owners</option>{monthCOOptions.map(x=><option key={x} value={x}>{x}</option>)}</select>
+            <select aria-label="MS GTL" value={monthGTLOptions.includes(monthGTL)?monthGTL:"__all"} onChange={e=>{setMonthGTL(e.target.value);setMonthLead("__all");}} className="rounded-lg border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold"><option value="__all">All MS GTLs</option>{monthGTLOptions.map(x=><option key={x} value={x}>{x}</option>)}</select>
+            <select aria-label="Zone Lead" value={monthLeadOptions.includes(monthLead)?monthLead:"__all"} onChange={e=>setMonthLead(e.target.value)} className="rounded-lg border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold"><option value="__all">All Zone Leads</option>{monthLeadOptions.map(x=><option key={x} value={x}>{x}</option>)}</select>
+            <button type="button" onClick={()=>{setMonthCO("__all");setMonthGTL("__all");setMonthLead("__all");}} className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm font-bold text-emerald-900">Reset Ownership Filters</button>
+          </div>
+          <p className="mt-2 text-xs text-slate-600">{!sheet1Data?.rows?.length ? "⚠ Sheet1 ownership unavailable — check Google Sheet loading. " : `Ownership matched: ${new Set(monthOwnerRows.filter(x=>x.o.co!=="Unassigned").map(x=>normalizeSiteKey(x.r.siteId))).size} of ${new Set(monthOwnerRows.map(x=>normalizeSiteKey(x.r.siteId))).size} fueled sites. `}{new Set(currentMonthRows.filter(r=>r.filledQty>0).map(r=>r.siteId.trim().toLowerCase())).size} fueled sites · {Math.round(currentMonthRows.reduce((n,r)=>n+r.filledQty,0)).toLocaleString()} L filled in selected ownership</p>
+        </section>}
+        {tab==="currentMonth" && currentMonthName === "Oct" && (
             <section className="rounded-xl border border-emerald-200 bg-white p-4 shadow-sm">
-              <div className="mb-3 flex flex-wrap items-center justify-between gap-2"><div><h3 className="text-base font-black text-[#075B39]">October Fuel Budget & DG Control</h3><p className="text-xs text-slate-500">28,000 L monthly budget · 190 L per DG planning benchmark</p></div><span className="rounded-lg bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-800">{view === "overall" && gridFilter === "__all" ? "Overall budget" : "Filtered consumption · overall budget unchanged"}</span></div>
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2"><div><h3 className="text-base font-black text-[#075B39]">October Fuel Budget & DG Control</h3><p className="text-xs text-slate-500">28,000 L monthly budget · 190 L per unique fueled DG benchmark</p></div><span className="rounded-lg bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-800">{view === "overall" && gridFilter === "__all" ? "Overall budget" : "Filtered consumption · overall budget unchanged"}</span></div>
               <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
                 {[
                   ["October Budget", `${octoberFuelBudget.toLocaleString()} L`, "Approved overall target"],
                   ["Fuel Filled MTD", `${Math.round(currentMonthTotal).toLocaleString()} L`, "Selected region/grid"],
                   ["Budget Balance", `${Math.round(octoberBudgetRemaining).toLocaleString()} L`, "Budget less displayed MTD fuel"],
-                  ["DG Benchmark", `${perDgMonthlyTarget} L / DG`, `${dgInventory.length} DGs in recon inventory`],
+                  ["DG Benchmark", `${perDgMonthlyTarget} L / DG`, `${new Set(currentMonthSiteRows.filter(r=>r.filledQty>0 && !r.siteId.toLowerCase().startsWith("mobile dg")).map(r=>`${r.grid}:${r.siteId.toLowerCase()}`)).size} unique fueled DG sites`],
                 ].map(([label,value,sub],i)=><div key={label} className="rounded-lg border border-slate-200 bg-slate-50 p-3"><div className="text-[11px] font-bold uppercase text-slate-600">{label}</div><div className={`mt-1 text-2xl font-black ${i===2&&octoberBudgetRemaining<0?"text-red-700":"text-[#075B39]"}`}>{value}</div><div className="mt-1 text-[11px] text-slate-500">{sub}</div></div>)}
               </div>
               <p className="mt-3 text-xs text-slate-600">Budget balance is the remaining <b>fuel allocation</b>, not physical diesel stock in tanks. When C-1, C-6 or a grid is selected, displayed fuel is filtered but the 28,000 L budget remains the overall target (no unapproved regional split assumed). The 190 L/DG benchmark is separate from the 28,000 L budget.</p>
             </section>
+        )}
+        {tab==="currentMonth" && <section className="mb-5 rounded-xl border border-emerald-200 bg-white p-5 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div><h3 className="text-lg font-extrabold text-emerald-950">Site Query · Complete Fueling History</h3>
+              <p className="text-xs text-slate-600">Search any Site ID · all available months and years · latest refueling first</p></div>
+            <ExportButtonComponent data={fuelSiteHistoryExport} filename={`Fuel_History_Site_${currentFuelSiteQuery.trim()||"Query"}`} label="Export Site History" format="excel" variant="success"/>
+          </div>
+          <input type="search" aria-label="Fuel history site ID" value={currentFuelSiteQuery} onChange={e=>setCurrentFuelSiteQuery(e.target.value)}
+            placeholder="Enter exact Site ID (e.g. 4612)" className="mt-3 w-full max-w-sm rounded-lg border border-emerald-300 bg-white px-4 py-3 text-sm font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-400"/>
+          {currentFuelSiteQuery.trim() && <>
+            <div className="mt-3 text-sm font-semibold text-slate-700">{fuelSiteHistoryDetails.length} fueling tickets · {fuelSiteHistoryDetails.reduce((n,r)=>n+r.filledQty,0).toLocaleString()} L total filled across available history</div>
+            <div className="mt-3 max-h-[480px] overflow-auto rounded-lg border border-slate-200">
+              <table className="w-full min-w-[1350px] text-sm"><thead className="sticky top-0 bg-[#075B39] text-white"><tr>
+                {["#","Site ID","Grid","Fueling Date","Month","Before Fuel (L)","Filled (L)","Total After Fill (L)","Estimated Consumption (L)","Days Between","Consumed / Day (L)"].map(h=><th key={h} className="px-3 py-3 text-right first:text-left">{h}</th>)}
+              </tr></thead><tbody>{fuelSiteHistoryDetails.map((r,i)=><tr key={`${r.siteId}-${r.refuelingTime}-${i}`} className="border-b border-slate-100 even:bg-emerald-50/40">
+                <td className="px-3 py-2 font-bold">{i+1}</td><td className="px-3 py-2 text-right font-bold text-emerald-900">{r.siteId}</td><td className="px-3 py-2 text-right">{r.grid}</td>
+                <td className="px-3 py-2 text-right">{r.date?r.date.toLocaleString("en-GB"):r.refuelingTime||"—"}</td><td className="px-3 py-2 text-right">{r.month}-{r.year}</td>
+                <td className="px-3 py-2 text-right">{r.beforeQty.toLocaleString()}</td><td className="px-3 py-2 text-right font-bold">{r.filledQty.toLocaleString()}</td>
+                <td className="px-3 py-2 text-right">{r.afterQty.toLocaleString()}</td><td className="px-3 py-2 text-right">{r.estimatedUsed===null?"—":r.estimatedUsed.toLocaleString()}</td>
+                <td className="px-3 py-2 text-right">{r.daysBetween===null?"—":Number(r.daysBetween.toFixed(2)).toLocaleString()}</td>
+                <td className="px-3 py-2 text-right font-extrabold text-emerald-800">{r.consumedPerDay===null?"—":r.consumedPerDay.toLocaleString(undefined,{maximumFractionDigits:2})}</td>
+              </tr>)}</tbody></table>
+              {!fuelSiteHistoryDetails.length && <div className="p-4 text-sm text-amber-800">No fueling records found for this Site ID.</div>}
+            </div>
+            <p className="mt-2 text-xs text-slate-500">Estimated consumption = preceding ticket's total after fill − current ticket's before fuel. Consumed per day = estimated consumption ÷ elapsed days between refueling tickets. For consecutive dates (15 vs 14 Oct), 73 L consumption = 73 L/day. Missing or unparseable dates may affect chronological order.</p>
+          </>}
+        </section>}
+        {tab==="currentMonth" && <section className="mb-5 rounded-xl border border-emerald-200 bg-white p-5 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="text-lg font-black text-emerald-950">{currentMonthLabel} · Highest Fuel Filled Sites</h3><p className="text-xs text-slate-600">Ranked by total fuel delivered this month, highest first · unique sites · follows region and grid filters</p></div><div className="flex flex-wrap gap-2"><select aria-label="Top fueled sites count" value={topFuelLimit} onChange={e=>setTopFuelLimit(Number(e.target.value))} className="rounded-lg border border-emerald-200 bg-white px-3 py-2 text-sm font-bold">{[10,20,50,100].map(n=><option key={n} value={n}>Top {n}</option>)}<option value={999999}>All Sites</option></select><ExportButtonComponent data={topFuelExport} filename={`Fuel_${currentMonthLabel}_Highest_Sites`} label="Export All Ranked Sites" format="excel" variant="success"/></div></div>
+          <div className="mt-3 max-h-[520px] overflow-auto rounded-lg border border-slate-200"><table className="w-full min-w-[760px] border-collapse text-sm"><thead className="sticky top-0 bg-[#075B39] text-white"><tr>{["Rank","Site ID","Grid","Total Fuel Filled (L)","Fill Events","Latest Fuel Date","Share of Month"].map(h=><th key={h} className="px-3 py-3 text-center">{h}</th>)}</tr></thead><tbody>{topCurrentMonthSites.slice(0,topFuelLimit).map((r,i)=><tr key={`${r.grid}-${r.siteId}`} className="border-b border-slate-200 even:bg-emerald-50/40"><td className="px-3 py-2 text-center font-bold">{i+1}</td><td className="px-3 py-2 text-center font-black text-emerald-900">{r.siteId}</td><td className="px-3 py-2 text-center">{r.grid}</td><td className="px-3 py-2 text-center font-black text-red-700">{r.total.toLocaleString()}</td><td className="px-3 py-2 text-center">{r.fills}</td><td className="px-3 py-2 text-center">{r.latest?.toLocaleDateString("en-GB")||"—"}</td><td className="px-3 py-2 text-center">{currentMonthTotal?(r.total/currentMonthTotal*100).toFixed(1):"0.0"}%</td></tr>)}</tbody></table>{!topCurrentMonthSites.length&&<p className="p-4 text-sm text-slate-600">No positive fueling records for this month and selection.</p>}</div>
+        </section>}
+        {tab==="currentMonth" && <>
+          {currentMonthName === "Oct" && <>
+
             <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
               <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
-                <div><h3 className="text-base font-black text-[#075B39]">Grid-wise DG Category & Fuel / DG</h3><p className="text-xs text-slate-500">Actual fuel poured (liters) by DG category · monthly benchmark 190 L per DG · highest category in each grid highlighted</p></div>
-                <ExportButtonComponent data={currentMonthCategoryFuel.matrix.map(r=>{const dg=currentMonthDgGridSummary.find(g=>g.grid===r.grid);return {Grid:r.grid,"Total DGs":dg?.totalDGs||0,...Object.fromEntries(currentMonthCategoryFuel.categories.map(c=>[`${c} (L)`,Number(r.values[c].toFixed(2))])),"Total Fuel (L)":Number(r.total.toFixed(2)),"Fuel / DG (L)":dg?.totalDGs?Number((r.total/dg.totalDGs).toFixed(2)):null,"Target / DG (L)":perDgMonthlyTarget,"Target Breached":dg?.totalDGs&&r.total/dg.totalDGs>perDgMonthlyTarget?"YES":"NO"}})} filename={`Fuel_${currentMonthLabel}_DG_Category_Litres_${view}`} label="Export DG Summary" format="excel" variant="success"/>
+                <div><h3 className="text-base font-black text-[#075B39]">Grid-wise DG Category & Fuel / DG</h3><p className="text-xs text-slate-500">Actual fuel poured (liters) by DG category · monthly benchmark 190 L per unique fueled DG · highest category in each grid highlighted</p></div>
+                <ExportButtonComponent data={currentMonthCategoryFuel.matrix.map(r=>{const dg=currentMonthDgGridSummary.find(g=>g.grid===r.grid);return {Grid:r.grid,"DG Fueled Sites":dg?.fueledDGs||0,...Object.fromEntries(currentMonthCategoryFuel.categories.map(c=>[`${c} (L)`,Number(r.values[c].toFixed(2))])),"Total Fuel (L)":Number(r.total.toFixed(2)),"Fuel / DG (L)":dg?.fueledDGs?Number((r.total/dg.fueledDGs).toFixed(2)):null,"Target / DG (L)":perDgMonthlyTarget,"Target Breached":dg?.fueledDGs&&r.total/dg.fueledDGs>perDgMonthlyTarget?"YES":"NO"}})} filename={`Fuel_${currentMonthLabel}_DG_Category_Litres_${view}`} label="Export DG Summary" format="excel" variant="success"/>
               </div>
               <div className="overflow-x-auto"><table className="w-full min-w-[1250px] text-[13px]">
-                <thead className="bg-emerald-900 text-white"><tr><th className="whitespace-nowrap px-3 py-3 text-left">Grid</th><th className="whitespace-nowrap px-3 py-3 text-right">Total DGs</th>{currentMonthCategoryFuel.categories.map(c=><th key={c} className="whitespace-nowrap px-3 py-3 text-right">{c} (L)</th>)}<th className="whitespace-nowrap px-3 py-3 text-right">Total Fuel (L)</th><th className="whitespace-nowrap px-3 py-3 text-right">Fuel / DG (L)</th><th className="px-3 py-3 text-center">Action</th></tr></thead>
-                <tbody>{currentMonthCategoryFuel.matrix.map(r=>{const dg=currentMonthDgGridSummary.find(g=>g.grid===r.grid);const count=dg?.totalDGs||0;const perDG=count?r.total/count:0;const expanded=categoryDrillGrid===r.grid;return <React.Fragment key={r.grid}><tr className={`border-b border-slate-100 even:bg-slate-50 hover:bg-emerald-50 ${expanded?"bg-emerald-50":""}`}><td className="px-3 py-2.5 font-bold text-[#075B39]">{r.grid}</td><td className="px-3 py-2.5 text-right tabular-nums">{count||"—"}</td>{currentMonthCategoryFuel.categories.map(c=><td key={c} className={`px-3 py-2.5 text-right tabular-nums ${r.dominant===c&&r.values[c]>0?"bg-emerald-50 font-bold text-emerald-900":""}`}>{Math.round(r.values[c]).toLocaleString()}</td>)}<td className="px-3 py-2.5 text-right font-bold tabular-nums">{Math.round(r.total).toLocaleString()}</td><td className={`px-3 py-2.5 text-right font-extrabold tabular-nums ${count&&perDG>perDgMonthlyTarget?"bg-red-100 text-red-700":"text-emerald-800"}`}>{count?perDG.toFixed(1):"N/A"}{count&&perDG>perDgMonthlyTarget?" ⚠":""}</td><td className="px-3 py-2 text-center"><button type="button" onClick={()=>setCategoryDrillGrid(expanded?null:r.grid)} className="inline-flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-xs font-bold text-emerald-800 hover:bg-emerald-100">{expanded?"Hide Sites":"View Sites"}{expanded?<ChevronUp className="h-3.5 w-3.5"/>:<ChevronDown className="h-3.5 w-3.5"/>}</button></td></tr>
-                {expanded&&<tr><td colSpan={currentMonthCategoryFuel.categories.length+5} className="bg-emerald-50 p-3"><div className="overflow-hidden rounded-lg border border-emerald-200 bg-white"><div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 px-3 py-2.5"><div><h4 className="text-sm font-extrabold text-slate-900">{r.grid} · All DG Sites ({categoryGridSites.length})</h4><p className="text-xs text-slate-500">Highest fuel poured first · includes zero-fuel inventory sites and unmatched refueling records</p></div><div className="flex items-center gap-2"><ExportButtonComponent data={categoryGridExport} filename={`Fuel_${currentMonthLabel}_${r.grid}_DG_Sites`} label="Export Sites CSV" format="csv" variant="success"/><button type="button" onClick={()=>setCategoryDrillGrid(null)} className="rounded-md border border-slate-200 px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-100">Close ×</button></div></div><div className="max-h-[430px] overflow-auto"><table className="w-full min-w-[850px] text-[13px]"><thead className="sticky top-0 z-10 bg-[#075B39] text-white"><tr>{["Site ID","DG Category","Fuel Poured (L)","Fill Events","Latest Fuel Date","Inventory Status","190 L/DG"].map((h,i)=><th key={h} className={`px-3 py-2.5 ${i===0||i===1||i===5?"text-left":"text-right"}`}>{h}</th>)}</tr></thead><tbody>{categoryGridSites.map(site=><tr key={site.siteId} className="border-b border-slate-100 even:bg-slate-50 hover:bg-emerald-50"><td className="px-3 py-2 font-bold text-[#075B39]">{site.siteId}</td><td className="px-3 py-2">{site.category}</td><td className={`px-3 py-2 text-right font-bold tabular-nums ${site.total>perDgMonthlyTarget?"text-red-700":""}`}>{site.total.toLocaleString(undefined,{maximumFractionDigits:2})}</td><td className="px-3 py-2 text-right">{site.fills}</td><td className="px-3 py-2 text-right">{site.lastDate||"—"}</td><td className="px-3 py-2 text-xs">{site.source}</td><td className={`px-3 py-2 text-right font-bold ${site.total>perDgMonthlyTarget?"text-red-700":"text-slate-500"}`}>{site.total>perDgMonthlyTarget?"Above target":"—"}</td></tr>)}</tbody></table></div><div className="border-t border-slate-100 px-3 py-2 text-xs text-slate-600">{categoryGridSites.length} sites · {Math.round(categoryGridSites.reduce((sum,s)=>sum+s.total,0)).toLocaleString()} L poured · 190 L is a full-month benchmark.</div></div></td></tr>}</React.Fragment>})}
-                <tr className="bg-emerald-100 font-black text-emerald-950"><td className="px-3 py-3">Total</td><td className="px-3 py-3 text-right">{currentMonthDgGridSummary.reduce((sum,g)=>sum+g.totalDGs,0)}</td>{currentMonthCategoryFuel.categories.map(c=><td key={c} className="px-3 py-3 text-right">{Math.round(currentMonthCategoryFuel.totals[c]).toLocaleString()}</td>)}<td className="px-3 py-3 text-right">{Math.round(currentMonthCategoryFuel.matrix.reduce((sum,r)=>sum+r.total,0)).toLocaleString()}</td><td className="px-3 py-3 text-right">{currentMonthDgGridSummary.reduce((sum,g)=>sum+g.totalDGs,0)?(currentMonthCategoryFuel.matrix.reduce((sum,r)=>sum+r.total,0)/currentMonthDgGridSummary.reduce((sum,g)=>sum+g.totalDGs,0)).toFixed(1):"N/A"}</td><td className="px-3 py-3 text-center">—</td></tr></tbody>
+                <thead className="bg-emerald-900 text-white"><tr><th className="whitespace-nowrap px-3 py-3 text-left">Grid</th><th className="whitespace-nowrap px-3 py-3 text-right">DG Fueled Sites</th>{currentMonthCategoryFuel.categories.map(c=><th key={c} className="whitespace-nowrap px-3 py-3 text-right">{c} (L)</th>)}<th className="whitespace-nowrap px-3 py-3 text-right">Total Fuel (L)</th><th className="whitespace-nowrap px-3 py-3 text-right">Fuel / DG (L)</th><th className="px-3 py-3 text-center">Action</th></tr></thead>
+                <tbody>{currentMonthCategoryFuel.matrix.map(r=>{const dg=currentMonthDgGridSummary.find(g=>g.grid===r.grid);const count=dg?.fueledDGs||0;const perDG=count?r.total/count:0;const expanded=categoryDrillGrid===r.grid;return <React.Fragment key={r.grid}><tr className={`border-b border-slate-100 even:bg-slate-50 hover:bg-emerald-50 ${expanded?"bg-emerald-50":""}`}><td className="px-3 py-2.5 font-bold text-[#075B39]">{r.grid}</td><td className="px-3 py-2.5 text-right tabular-nums">{count||"—"}</td>{currentMonthCategoryFuel.categories.map(c=><td key={c} className={`px-3 py-2.5 text-right tabular-nums ${r.dominant===c&&r.values[c]>0?"bg-emerald-50 font-bold text-emerald-900":""}`}>{Math.round(r.values[c]).toLocaleString()}</td>)}<td className="px-3 py-2.5 text-right font-bold tabular-nums">{Math.round(r.total).toLocaleString()}</td><td className={`px-3 py-2.5 text-right font-extrabold tabular-nums ${count&&perDG>perDgMonthlyTarget?"bg-red-100 text-red-700":"text-emerald-800"}`}>{count?perDG.toFixed(1):"N/A"}{count&&perDG>perDgMonthlyTarget?" ⚠":""}</td><td className="px-3 py-2 text-center"><button type="button" onClick={()=>setCategoryDrillGrid(expanded?null:r.grid)} className="inline-flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-xs font-bold text-emerald-800 hover:bg-emerald-100">{expanded?"Hide Sites":"View Sites"}{expanded?<ChevronUp className="h-3.5 w-3.5"/>:<ChevronDown className="h-3.5 w-3.5"/>}</button></td></tr>
+                {expanded&&<tr><td colSpan={currentMonthCategoryFuel.categories.length+5} className="bg-emerald-50 p-3"><div className="overflow-hidden rounded-lg border border-emerald-200 bg-white"><div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 px-3 py-2.5"><div><h4 className="text-sm font-extrabold text-slate-900">{r.grid} · All DG Sites ({categoryGridSites.length})</h4><p className="text-xs text-slate-500">Highest fuel poured first · previous and latest ticket quantities; estimated consumption between two tickets</p></div><div className="flex items-center gap-2"><ExportButtonComponent data={categoryGridExport} filename={`Fuel_${currentMonthLabel}_${r.grid}_DG_Sites`} label="Export Sites CSV" format="csv" variant="success"/><button type="button" onClick={()=>setCategoryDrillGrid(null)} className="rounded-md border border-slate-200 px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-100">Close ×</button></div></div><div className="max-h-[430px] overflow-auto"><table className="w-full min-w-[1550px] text-[13px]"><thead className="sticky top-0 z-10 bg-[#075B39] text-white"><tr>{["Site ID","DG Category","Fuel Poured (L)","Fill Events","Latest Fuel Date","Previous Fuel Date","Previous Filled (L)","Previous Before (L)","Previous Total (L)","Latest Before (L)","Latest Total (L)","Estimated Consumption (L)","190 L/DG"].map((h,i)=><th key={h} className={`px-3 py-2.5 ${i===0||i===1?"text-left":"text-right"}`}>{h}</th>)}</tr></thead><tbody>{categoryGridSites.map(site=><tr key={site.siteId} className="border-b border-slate-100 even:bg-slate-50 hover:bg-emerald-50"><td className="px-3 py-2 font-bold text-[#075B39]">{site.siteId}</td><td className="px-3 py-2">{site.category}</td><td className={`px-3 py-2 text-right font-bold tabular-nums ${site.total>perDgMonthlyTarget?"text-red-700":""}`}>{site.total.toLocaleString(undefined,{maximumFractionDigits:2})}</td><td className="px-3 py-2 text-right">{site.fills}</td><td className="px-3 py-2 text-right">{site.lastDate||"—"}</td>{(()=>{const h=categoryFuelHistory.get(site.siteId.trim().toLowerCase());return <><td className="px-3 py-2 text-right">{h?.previousDate||"—"}</td><td className="px-3 py-2 text-right">{fuelHistoryNumber(h?.previousFilled)}</td><td className="px-3 py-2 text-right">{fuelHistoryNumber(h?.previousBefore)}</td><td className="px-3 py-2 text-right font-semibold">{fuelHistoryNumber(h?.previousTotal)}</td><td className="px-3 py-2 text-right">{fuelHistoryNumber(h?.latestBefore)}</td><td className="px-3 py-2 text-right font-semibold">{fuelHistoryNumber(h?.latestTotal)}</td><td className="px-3 py-2 text-right">{fuelHistoryNumber(h?.estimatedConsumption)}</td></>})()}<td className={`px-3 py-2 text-right font-bold ${site.total>perDgMonthlyTarget?"text-red-700":"text-slate-500"}`}>{site.total>perDgMonthlyTarget?"Above target":"—"}</td></tr>)}</tbody></table></div><div className="border-t border-slate-100 px-3 py-2 text-xs text-slate-600">{categoryGridSites.length} sites · {Math.round(categoryGridSites.reduce((sum,s)=>sum+s.total,0)).toLocaleString()} L poured · Estimated consumption = previous post-fill total minus latest before-fill quantity (where both tickets exist). 190 L is a full-month benchmark.</div></div></td></tr>}</React.Fragment>})}
+                <tr className="bg-emerald-100 font-black text-emerald-950"><td className="px-3 py-3">Total</td><td className="px-3 py-3 text-right">{currentMonthDgGridSummary.reduce((sum,g)=>sum+g.fueledDGs,0)}</td>{currentMonthCategoryFuel.categories.map(c=><td key={c} className="px-3 py-3 text-right">{Math.round(currentMonthCategoryFuel.totals[c]).toLocaleString()}</td>)}<td className="px-3 py-3 text-right">{Math.round(currentMonthCategoryFuel.matrix.reduce((sum,r)=>sum+r.total,0)).toLocaleString()}</td><td className="px-3 py-3 text-right">{currentMonthDgGridSummary.reduce((sum,g)=>sum+g.fueledDGs,0)?(currentMonthCategoryFuel.matrix.reduce((sum,r)=>sum+r.total,0)/currentMonthDgGridSummary.reduce((sum,g)=>sum+g.fueledDGs,0)).toFixed(1):"N/A"}</td><td className="px-3 py-3 text-center">—</td></tr></tbody>
               </table></div>
-              <p className="border-t border-slate-100 px-4 py-2 text-xs text-slate-500">Fuel / DG = total grid fuel poured ÷ total DGs in the reconciliation inventory. Values above 190 L/DG are highlighted red. DG counts come from Deviation Fuel; actual fill liters from Fuel History. Unmatched fuel remains separate to preserve reconciliation. The 190 L target is a monthly benchmark; an in-progress month is not a full-month comparison.</p>
+              <p className="border-t border-slate-100 px-4 py-2 text-xs text-slate-500">Fuel / DG = total grid fuel poured ÷ unique DG sites actually fueled during the selected month. Values above 190 L/DG are highlighted red. Inventory DG counts come from Deviation Fuel; unique fueled DG counts and actual fill liters come from Fuel History. Unmatched fuel remains separate to preserve reconciliation. The 190 L target is a monthly benchmark; an in-progress month is not a full-month comparison.</p>
             </section>
           </>}
 

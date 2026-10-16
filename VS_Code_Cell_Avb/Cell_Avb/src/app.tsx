@@ -7303,6 +7303,7 @@ export default function App() {
   const [fuelHistory, setFuelHistory] = useState<SheetPayload | null>(null);
   const [fuelDeviation, setFuelDeviation] = useState<SheetPayload | null>(null);
   const [fuelTPrime, setFuelTPrime] = useState<SheetPayload | null>(null);
+  const [fuelOwnership, setFuelOwnership] = useState<SheetPayload | null>(null);
   const [preVsPostData, setPreVsPostData] = useState<SheetPayload | null>(null);
   const [prePostSites, setPrePostSites] = useState<SiteData[]>([]);
   const [prePostLastUpdated, setPrePostLastUpdated] = useState("");
@@ -7560,6 +7561,26 @@ export default function App() {
       }
       if (tPrime) break;
     }
+    // Load Sheet1 independently: Fuel page can open without first opening Cell AVB.
+    // normalizeRow is the same tested mapping used throughout the Cell AVB application.
+    let ownershipSheet: SheetPayload | null = null;
+    try {
+      const source = await fetchGoogleSheet(SHEET_IDS.october);
+      if (source?.rows?.length) {
+        ownershipSheet = { ...source, rows: source.rows.map(raw => {
+          const site = normalizeRow(raw);
+          return {
+            "Site ID": String(site.siteName ?? "").trim(),
+            "Cluster Owner": String(site.clusterOwner ?? "").trim(),
+            "MS GTL": String(site.msGtl ?? "").trim(),
+            "Zone Lead": String(site.zongLead ?? "").trim(),
+          };
+        }) };
+      }
+    } catch (err) {
+      console.error("Fuel ownership Sheet1 loading failed", err);
+    }
+    setFuelOwnership(ownershipSheet);
     setFuelTPrime(tPrime);
     setFuelHistory(history);
     setFuelDeviation(deviation);
@@ -7783,7 +7804,7 @@ export default function App() {
 
   // ----- FUEL MANAGEMENT FULL PAGE -----
   if (viewMode === "fuel") {
-    return <FuelDashboard data={fuelHistory} deviationData={fuelDeviation} tPrimeData={fuelTPrime} onBack={goHome} />;
+    return <FuelDashboard data={fuelHistory} deviationData={fuelDeviation} tPrimeData={fuelTPrime} sheet1Data={fuelOwnership} onBack={goHome} />;
   }
 
   // ----- PRE‑VS‑POST FULL PAGE WITH SIDEBAR -----
