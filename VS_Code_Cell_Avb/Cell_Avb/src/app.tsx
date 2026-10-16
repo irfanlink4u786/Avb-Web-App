@@ -7301,6 +7301,7 @@ export default function App() {
   const [monthRevenueLost, setMonthRevenueLost] = useState<SheetPayload | null>(null);
   const [month3Basics, setMonth3Basics] = useState<SheetPayload | null>(null);
   const [fuelHistory, setFuelHistory] = useState<SheetPayload | null>(null);
+  const [monthlyFuelData, setMonthlyFuelData] = useState<SheetPayload | null>(null);
   const [fuelDeviation, setFuelDeviation] = useState<SheetPayload | null>(null);
   const [fuelTPrime, setFuelTPrime] = useState<SheetPayload | null>(null);
   const [fuelOwnership, setFuelOwnership] = useState<SheetPayload | null>(null);
@@ -7524,6 +7525,7 @@ export default function App() {
     if (!history) {
       console.error("Fuel History lookup failed:", attempts);
       setFuelHistory(null);
+      setMonthlyFuelData(null);
       setFuelDeviation(null);
       setFuelTPrime(null);
       setViewMode("fuel");
@@ -7561,6 +7563,21 @@ export default function App() {
       }
       if (tPrime) break;
     }
+    // Monthly Fuel History is an independent optional sheet.
+    // Check the Fuel History workbook first, then other configured workbooks.
+    let monthlyHistory: SheetPayload | null = null;
+    for (const workbook of deviationWorkbooks) {
+      try {
+        const candidate = await fetchGoogleSheet(workbook, "Monthly Fuel History");
+        if (candidate?.rows?.length) {
+          monthlyHistory = candidate;
+          break;
+        }
+      } catch (err) {
+        console.warn("Monthly Fuel History unavailable in workbook", workbook, err);
+      }
+    }
+    setMonthlyFuelData(monthlyHistory);
     // Load Sheet1 independently: Fuel page can open without first opening Cell AVB.
     // normalizeRow is the same tested mapping used throughout the Cell AVB application.
     let ownershipSheet: SheetPayload | null = null;
@@ -7804,7 +7821,7 @@ export default function App() {
 
   // ----- FUEL MANAGEMENT FULL PAGE -----
   if (viewMode === "fuel") {
-    return <FuelDashboard data={fuelHistory} deviationData={fuelDeviation} tPrimeData={fuelTPrime} sheet1Data={fuelOwnership} onBack={goHome} />;
+    return <FuelDashboard data={fuelHistory} deviationData={fuelDeviation} tPrimeData={fuelTPrime} sheet1Data={fuelOwnership} monthlyFuelData={monthlyFuelData} onBack={goHome} />;
   }
 
   // ----- PRE‑VS‑POST FULL PAGE WITH SIDEBAR -----

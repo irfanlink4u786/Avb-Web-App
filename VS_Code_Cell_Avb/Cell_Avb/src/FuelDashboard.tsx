@@ -229,7 +229,91 @@ function YesterdayFuelPage({rows}:{rows:FuelRow[]}) {
   </div>;
 }
 
-type FuelSubTab = "summary" | "yoy" | "currentMonth" | "deviation" | "tprime" | "yesterday";
+function MonthlyFuelQueryPage({ payload, ownership, fuelRows }: { payload: SheetPayload | null; ownership: SheetPayload | null; fuelRows: FuelRow[] }) {
+  const [site, setSite] = useState("");
+  const [grid, setGrid] = useState("__all");
+  const [year, setYear] = useState("__all");
+  const [month, setMonth] = useState("__all");
+  const norm = (v: unknown) => String(v ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  const lookup = (r: Record<string, any>, names: string[]) => {
+    const entry = Object.entries(r).find(([key]) => names.some(name => norm(key) === norm(name)));
+    return entry?.[1] ?? "";
+  };
+  // Build a reliable Site ID -> Grid lookup from BOTH Sheet1 and Fuel History.
+  // Sheet1 column naming differs between workbook versions; Fuel History already
+  // has site/grid pairs and is a safe fallback when Sheet1 is incomplete.
+  const siteKey = (value: unknown) => {
+    const raw = String(value ?? "").trim();
+    return raw.match(/\b\d{3,6}\b/)?.[0] || raw.toUpperCase();
+  };
+  const gridBySite = useMemo(() => {
+    const map = new Map<string,string>();
+    const add = (id: unknown, gridValue: unknown) => {
+      const key = siteKey(id);
+      const match = String(gridValue ?? "").toUpperCase().match(/C\s*[-]?\s*[16]\s*0?\d{3,4}/);
+      const grid = match ? match[0].replace(/[\s-]/g, "") : String(gridValue ?? "").trim();
+      if (key && grid && grid !== "-" && !/unmapped|unassigned/i.test(grid)) map.set(key,grid);
+    };
+    (ownership?.rows ?? []).forEach((r: Record<string,any>) => {
+      const id = lookup(r,["Site ID Name","Site ID","Site","SID","Site_ID_Name","Site ID/Name","Site_ID"]);
+      const grid = lookup(r,["Grid","Grid ID","Grid Name","Grid_ID","MS Grid","Grid Code"]);
+      add(id,grid);
+    });
+    // Fuel History is the primary fallback for any sites missing from Sheet1.
+    fuelRows.forEach(r => add(r.siteId,r.grid));
+    return map;
+  },[ownership,fuelRows]);
+  const records = useMemo(() => {
+    const result: {siteId:string;grid:string;year:number;month:string;filled:number}[] = [];
+    (payload?.rows ?? []).forEach((r: Record<string,any>) => {
+      const siteId = String(lookup(r,["Site ID Name","Site ID","Site","SID","Site_ID_Name"])).trim();
+      if (!siteId || norm(siteId) === "total") return;
+      const gridId = String(lookup(r,["Grid","Grid ID"]) || gridBySite.get(siteKey(siteId)) || "").trim();
+      // Monthly Fuel History uses a WIDE format: one site per row, Jan-25, Feb-25 ... Oct-26 columns.
+      Object.entries(r).forEach(([header,value]) => {
+        const match = header.trim().match(/^(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t|tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)[\s._-]*(20\d{2}|\d{2})$/i);
+        if (!match) return;
+        const monthIndex = FUEL_MONTH_ORDER.findIndex(m => m.toLowerCase() === match[1].slice(0,3).toLowerCase());
+        if (monthIndex < 0) return;
+        const yearValue = match[2].length === 2 ? 2000 + Number(match[2]) : Number(match[2]);
+        const filled = Number(String(value ?? "0").replace(/,/g, ""));
+        if (!Number.isFinite(filled)) return;
+        result.push({siteId,grid:gridId,year:yearValue,month:FUEL_MONTH_ORDER[monthIndex],filled});
+      });
+      // Also accept ticket/long-format rows if the source changes later.
+      if (!Object.keys(r).some(h => /^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[\s._-]*\d{2,4}$/i.test(h.trim()))) {
+        const monthRaw = String(lookup(r,["Month"]));
+        const yearValue = Number(lookup(r,["Year"])) || Number(monthRaw.match(/20\d{2}/)?.[0] ?? 0);
+        const monthName = FUEL_MONTH_ORDER.find(m => monthRaw.toLowerCase().startsWith(m.toLowerCase()));
+        const filled = Number(String(lookup(r,["Fuel Quantity Filled","Fuel Filled","Fuel Filled Quantity","Litres","Liters"])).replace(/,/g,""));
+        if (monthName && yearValue && Number.isFinite(filled)) result.push({siteId,grid:gridId,year:yearValue,month:monthName,filled});
+      }
+    });
+    return result;
+  },[payload,gridBySite]);
+  const grids = [...new Set(records.map(r=>r.grid).filter(Boolean))].sort();
+  const years = [...new Set(records.map(r=>r.year))].sort((a,b)=>b-a);
+  const filtered = records.filter(r => (!site.trim() || r.siteId.toLowerCase().includes(site.trim().toLowerCase())) && (grid==="__all" || r.grid===grid) && (year==="__all" || String(r.year)===year) && (month==="__all" || r.month===month));
+  const summary = [...filtered].sort((a,b)=>Number(a.siteId)-Number(b.siteId) || a.year-b.year || FUEL_MONTH_ORDER.indexOf(a.month)-FUEL_MONTH_ORDER.indexOf(b.month));
+  const exported = summary.map(r=>({"Site ID":r.siteId,"Grid":r.grid,"Year":r.year,"Month":r.month,"Fuel Filled (L)":r.filled}));
+  return <div className="space-y-4">
+    <section className="rounded-xl border border-emerald-200 bg-white p-5 shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-xl font-black text-emerald-950">Monthly Fuel Query</h2><p className="text-xs text-slate-600">Source: Monthly Fuel History · site-wise monthly refueling totals (2025 & 2026)</p></div><ExportButtonComponent data={exported} filename="Monthly_Fuel_Query" label="Export Results" format="excel" variant="success"/></div>
+      <div className="mt-4 grid gap-3 sm:grid-cols-4">
+        <input className="rounded-lg border p-2" placeholder="Search Site ID" value={site} onChange={e=>setSite(e.target.value)}/>
+        <select className="rounded-lg border p-2" value={grid} onChange={e=>setGrid(e.target.value)}><option value="__all">All Grids</option>{grids.map(g=><option key={g} value={g}>{g}</option>)}</select>
+        <select className="rounded-lg border p-2" value={year} onChange={e=>setYear(e.target.value)}><option value="__all">All Years</option>{years.map(y=><option key={y} value={y}>{y}</option>)}</select>
+        <select className="rounded-lg border p-2" value={month} onChange={e=>setMonth(e.target.value)}><option value="__all">All Months</option>{FUEL_MONTH_ORDER.map(m=><option key={m} value={m}>{m}</option>)}</select>
+      </div>
+    </section>
+    {!payload ? <div className="rounded-xl border border-amber-300 bg-amber-50 p-5 text-amber-900">Monthly Fuel History is not loaded. Check the Google Sheets connection in App.tsx.</div> : <>
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3">{[["Fueled Sites",new Set(filtered.filter(r=>r.filled>0).map(r=>r.siteId)).size],["Fuel Filled (L)",filtered.reduce((n,r)=>n+r.filled,0).toLocaleString()],["Monthly Records",filtered.length]].map(([label,value])=><div key={String(label)} className="rounded-xl border border-emerald-200 bg-white p-4"><p className="text-xs font-bold text-slate-600">{label}</p><p className="mt-2 text-2xl font-black text-emerald-900">{value}</p></div>)}</div>
+      <div className="max-h-[650px] overflow-auto rounded-xl border border-emerald-200 bg-white"><table className="w-full min-w-[750px] text-sm"><thead className="sticky top-0 bg-[#075B39] text-white"><tr>{["Site ID","Grid","Year","Month","Fuel Filled (L)"].map(h=><th key={h} className="px-3 py-3 text-center">{h}</th>)}</tr></thead><tbody>{summary.map(r=><tr key={`${r.siteId}-${r.year}-${r.month}`} className="border-b even:bg-emerald-50/40"><td className="px-3 py-2 text-center font-bold">{r.siteId}</td><td className="px-3 py-2 text-center">{r.grid||"-"}</td><td className="px-3 py-2 text-center">{r.year}</td><td className="px-3 py-2 text-center">{r.month}</td><td className="px-3 py-2 text-center font-bold">{r.filled.toLocaleString()}</td></tr>)}</tbody></table>{!summary.length&&<p className="p-5 text-sm text-slate-600">No monthly fuel records match the filters. Check that the sheet headers use Jan-25, Feb-25, etc.</p>}</div>
+    </>}
+  </div>;
+}
+
+type FuelSubTab = "summary" | "yoy" | "currentMonth" | "monthlyQuery" | "deviation" | "tprime" | "yesterday";
 type FuelView = "overall" | "C-1" | "C-6";
 
 type FuelRow = {
@@ -971,7 +1055,7 @@ function TPrimePenaltyPage({fuelRows,primeData,deviationData}:{fuelRows:FuelRow[
   return <div className="space-y-5"><div className="rounded-xl border border-blue-200 bg-white p-5"><h2 className="text-xl font-black text-blue-950">T-Prime Fuel Penalty · Vendor Control · Sep–Oct 2026</h2><p className="mt-1 text-xs text-slate-600">Policy: four calendar days from incident start. Consecutive daily T-Prime records are grouped into one incident; a gap starts a new incident. Fuel Filled is read directly from the T_prime sheet. Only entries within the documented incident period are assessed. Confirm closure dates before imposing deductions.</p><div className="mt-3 grid gap-3 sm:grid-cols-2"><select className="rounded-lg border border-blue-200 p-2 text-sm" value={gridFilter} onChange={e=>setGridFilter(e.target.value)}><option value="__all">All Grids</option>{grids.map(g=><option key={g}>{g}</option>)}</select><select className="rounded-lg border border-blue-200 p-2 text-sm" value={ownerFilter} onChange={e=>setOwnerFilter(e.target.value)}><option value="__all">All Cluster Owners</option>{owners.map(o=><option key={o}>{o}</option>)}</select></div></div><div className="grid gap-3 sm:grid-cols-4">{[{label:"T-Prime Sites",value:String(new Set(filtered.map(r=>r.siteId)).size)},{label:"T-Prime Events",value:String(filtered.length)},{label:"Justified Fuel",value:`${fmt(filtered.reduce((s,r)=>s+r.allowed,0))} L`},{label:"Penalty Fuel",value:`${fmt(filtered.reduce((s,r)=>s+r.penalty,0))} L`}].map(c=><div key={c.label} className="rounded-xl border border-blue-200 bg-white p-4"><div className="text-xs font-semibold text-slate-600">{c.label}</div><div className="mt-2 text-2xl font-black text-blue-950">{c.value}</div></div>)}</div><section className="rounded-xl border border-blue-200 bg-white p-4"><div className="mb-3 flex flex-wrap items-center justify-between gap-3"><div><h3 className="text-lg font-black text-blue-950">Worst Sites · T-Prime Fuel Penalty · Sep–Oct 2026</h3><p className="text-xs text-slate-600">Sites with penalty litres only, ranked highest first. Select View to inspect each incident and fueling history.</p></div><div className="flex flex-wrap items-center gap-2"><select aria-label="Worst T-Prime sites count" value={worstLimit} onChange={e=>setWorstLimit(Number(e.target.value))} className="rounded-lg border border-blue-200 bg-white px-3 py-2 text-sm">{[10,20,50,100].map(n=><option key={n} value={n}>Top {n}</option>)}</select><ExportButtonComponent data={worstSites.map((r,i)=>({Rank:i+1,"Site ID":r.siteId,Grid:r.grid,"Cluster Owner":r.owner,Incidents:r.events,"Penalty Incidents":r.penaltyEvents,"Justified Fuel (L)":r.allowed,"Penalty Fuel (L)":r.penalty}))} filename="TPrime_Worst_Penalty_Sites_Sep_Oct_2026" label="Export Worst Sites" format="csv"/></div></div><div className="overflow-x-auto"><table className="w-full min-w-[800px] border-collapse"><thead><tr>{["Rank","Site ID","Grid","Cluster Owner","Incidents","Penalty Incidents","Justified (L)","Penalty (L)","Action"].map(h=><th key={h} className={header}>{h}</th>)}</tr></thead><tbody>{worstSites.slice(0,worstLimit).map((r,i)=><Fragment key={r.siteId}><tr className="even:bg-slate-50"><td className={cell}>{i+1}</td><td className={cell+" font-bold"}>{r.siteId}</td><td className={cell}>{r.grid}</td><td className={cell}>{r.owner}</td><td className={cell}>{r.events}</td><td className={cell}>{r.penaltyEvents}</td><td className={cell}>{fmt(r.allowed)}</td><td className={cell+" font-bold text-red-700"}>{fmt(r.penalty)}</td><td className={cell}><button className="rounded border border-blue-300 px-2 py-1 font-bold text-blue-800" onClick={()=>setExpanded(expanded===`worst-${r.siteId}`?null:`worst-${r.siteId}`)}>{expanded===`worst-${r.siteId}`?"Hide":"View"}</button></td></tr>{expanded===`worst-${r.siteId}`&&<tr><td colSpan={9} className="bg-blue-50 p-3">{renderHistory(r.incidents)}</td></tr>}</Fragment>)}{worstSites.length===0&&<tr><td colSpan={9} className="p-6 text-center text-sm font-semibold text-emerald-800">No penalty sites found for the selected filters.</td></tr>}</tbody></table></div></section>{([ ["Grid-wise Penalty · Worst First",gridSummary],["Cluster Owner-wise Penalty · Worst First",ownerSummary] ] as const).map(([title,items])=><section key={title} className="rounded-xl border border-blue-200 bg-white p-4"><div className="mb-3 flex flex-wrap items-center justify-between gap-2"><h3 className="font-black text-blue-950">{title}</h3><ExportButtonComponent data={items.map(x=>({Name:x.name,Sites:x.sites,Events:x.events,"Penalty Sites":x.affected,"Justified L":x.allowed,"Penalty L":x.penalty}))} filename={title.startsWith("Grid")?"TPrime_Grid":"TPrime_CO"} label="Export Summary" format="csv"/></div><div className="overflow-x-auto"><table className="w-full border-collapse"><thead><tr>{[title.startsWith("Grid")?"Grid":"Cluster Owner","Sites","Events","Penalty Sites","Justified (L)","Penalty (L)","Action"].map(h=><th key={h} className={header}>{h}</th>)}</tr></thead><tbody>{items.map(x=><Fragment key={x.name}><tr><td className={cell+" font-bold"}>{x.name}</td><td className={cell}>{x.sites}</td><td className={cell}>{x.events}</td><td className={cell}>{x.affected}</td><td className={cell}>{fmt(x.allowed)}</td><td className={cell+" font-bold text-red-700"}>{fmt(x.penalty)}</td><td className={cell}><button className="rounded border border-blue-300 px-2 py-1 font-bold text-blue-800" onClick={()=>setExpanded(expanded===`${title}-${x.name}`?null:`${title}-${x.name}`)}>View Sites</button></td></tr>{expanded===`${title}-${x.name}`&&<tr><td colSpan={7} className="bg-blue-50 p-3"><div className="mb-2 flex justify-end"><ExportButtonComponent data={exportData(x.rows)} filename={`TPrime_${x.name}`} label="Export Sites" format="csv"/></div>{renderHistory(x.rows)}</td></tr>}</Fragment>)}</tbody></table></div></section>)}<section className="rounded-xl border border-blue-200 bg-white p-4"><h3 className="text-lg font-black text-blue-950">Site Query · T-Prime Fuel History</h3><p className="mb-3 text-xs text-slate-600">Search all T-Prime sites regardless of grid and CO filters.</p><div className="flex flex-wrap gap-2"><input aria-label="T-Prime site ID" className="min-w-[230px] flex-1 rounded-lg border border-blue-300 px-3 py-2" value={siteQuery} onChange={e=>setSiteQuery(e.target.value)} placeholder="Enter exact Site ID (e.g. 4130)"/><button className="rounded-lg border border-blue-300 px-3 py-2 text-sm font-bold text-blue-800" onClick={()=>setSiteQuery("")}>Clear</button>{queried.length>0&&<ExportButtonComponent data={exportData(queried)} filename={`TPrime_Site_${siteQuery.trim()}`} label="Export Fuel History" format="csv"/>}</div>{siteQuery.trim()&&<div className="mt-4">{queried.length?renderHistory(queried):<p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-800">No T-Prime event found for this Site ID.</p>}</div>}</section></div>;
 }
 
-export default function FuelDashboard({ data, deviationData, tPrimeData, sheet1Data, onBack }: { data: SheetPayload | null; deviationData: SheetPayload | null; tPrimeData: SheetPayload | null; sheet1Data: SheetPayload | null; onBack: () => void }) {
+export default function FuelDashboard({ data, deviationData, tPrimeData, sheet1Data, monthlyFuelData = null, onBack }: { data: SheetPayload | null; deviationData: SheetPayload | null; tPrimeData: SheetPayload | null; sheet1Data: SheetPayload | null; monthlyFuelData?: SheetPayload | null; onBack: () => void }) {
   const [tab, setTab] = useState<FuelSubTab>("summary");
   const [view, setView] = useState<FuelView>("overall");
   const [gridFilter, setGridFilter] = useState("__all");
@@ -985,6 +1069,32 @@ export default function FuelDashboard({ data, deviationData, tPrimeData, sheet1D
   const [categoryDrillGrid, setCategoryDrillGrid] = useState<string | null>(null);
 
   const rows = useMemo(() => parseFuelRows(data), [data]);
+  const exportActiveTab = () => {
+    const container = document.getElementById("fuel-active-tab-content");
+    if (!container) return;
+    const tables = Array.from(container.querySelectorAll("table"));
+    const result: Record<string,string | number>[] = [];
+    tables.forEach((table, tableIndex) => {
+      const section = table.closest("section, div.rounded-xl, div.rounded-2xl");
+      const title = section?.querySelector("h2,h3,h4")?.textContent?.trim() || `Table ${tableIndex + 1}`;
+      const headerRow = table.querySelector("thead tr:last-child");
+      const headers = headerRow ? Array.from(headerRow.querySelectorAll("th")).map(x=>x.textContent?.trim() || "") : [];
+      Array.from(table.querySelectorAll("tbody tr")).forEach(tr => {
+        if (tr.querySelector("table")) return; // Skip expandable nested containers.
+        const cells = Array.from(tr.children).filter(el=>el.tagName === "TD" || el.tagName === "TH");
+        if (!cells.length) return;
+        const row: Record<string,string | number> = { Section: title };
+        cells.forEach((cell,i)=> { row[`Column ${i+1}${headers[i] ? ` - ${headers[i]}` : ""}`] = cell.textContent?.trim() || ""; });
+        result.push(row);
+      });
+    });
+    if (!result.length) { alert("No visible table records available to export in this tab."); return; }
+    // CSV handles heterogeneous table structures (different columns per section).
+    const columns = Array.from(new Set(result.flatMap(r=>Object.keys(r))));
+    const aligned = result.map(r=>Object.fromEntries(columns.map(k=>[k,r[k]??""])));
+    exportToCSV(aligned, `Fuel_${tab}_All_Visible_Tables`);
+  };
+
   const siteRows = useMemo(() => rows.filter(r => !r.siteId.toLowerCase().startsWith("mobile dg")), [rows]);
 
   const years = useMemo(() => Array.from(new Set(rows.map(r => r.year).filter(Boolean))).sort(), [rows]);
@@ -1552,6 +1662,7 @@ export default function FuelDashboard({ data, deviationData, tPrimeData, sheet1D
             ["summary","Overall Summary",LayoutDashboard],
             ["yoy","YoY & Worst Sites",TrendingDown],
             ["currentMonth",`Current Month · ${currentMonthLabel}`,CalendarDays],
+            ["monthlyQuery","Monthly Fuel Query",Search],
             ["deviation","Fuel Deviation",AlertTriangle],
             ["tprime","T-Prime Penalty",AlertTriangle],
             ["yesterday","Yesterday Fuel & Consumption",CalendarDays],
@@ -1565,9 +1676,10 @@ export default function FuelDashboard({ data, deviationData, tPrimeData, sheet1D
           <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-4 sm:px-6">
             <div>
               <div className="flex items-center gap-2 lg:hidden"><button onClick={onBack} className="rounded-lg bg-slate-800 px-3 py-2 text-xs font-bold text-white">← Home</button><Fuel className="h-5 w-5 text-emerald-600"/></div>
-              <h2 className="mt-1 text-xl font-black text-slate-950">{tab==="summary"?"Overall Fuel Summary":tab==="yoy"?"YoY & Worst Sites":tab==="deviation"?"Fuel Deviation":tab==="tprime"?"T-Prime Fuel Penalty":tab==="yesterday"?"Yesterday Fuel & Consumption":`${currentMonthLabel} Fuel Summary`}</h2>
+              <h2 className="mt-1 text-xl font-black text-slate-950">{tab==="summary"?"Overall Fuel Summary":tab==="yoy"?"YoY & Worst Sites":tab==="monthlyQuery"?"Monthly Fuel Query":tab==="deviation"?"Fuel Deviation":tab==="tprime"?"T-Prime Fuel Penalty":tab==="yesterday"?"Yesterday Fuel & Consumption":`${currentMonthLabel} Fuel Summary`}</h2>
               <p className="text-xs text-slate-500">Fuel History · {previousYear} vs {currentYear} · comparable through {comparableMonths[comparableMonths.length-1]}</p>
             </div>
+            <button type="button" onClick={exportActiveTab} className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-black text-white hover:bg-emerald-800 flex items-center gap-2"><FileSpreadsheet className="h-4 w-4"/> Export This Tab</button>
             {tab!=="deviation" && tab!=="tprime" && tab!=="yesterday" && <div className="flex flex-wrap gap-2">
               {(["overall","C-1","C-6"] as FuelView[]).map(v => <button key={v} onClick={()=>setView(v)} className={`rounded-lg px-4 py-2 text-sm font-black ${view===v?"bg-[#006B3C] text-white":"bg-slate-200 text-slate-700"}`}>{v==="overall"?"Overall":v}</button>)}
               <select aria-label="Fuel month" value={fuelMonthFilter} onChange={e=>setFuelMonthFilter(e.target.value)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-bold"><option value="__all">YTD (Jan–{FUEL_MONTH_ORDER[latestMonthIndex]})</option>{FUEL_MONTH_ORDER.slice(0,latestMonthIndex+1).map(m=><option key={m} value={m}>{m} · YoY</option>)}</select>
@@ -1575,11 +1687,12 @@ export default function FuelDashboard({ data, deviationData, tPrimeData, sheet1D
             </div>}
           </div>
           <div className="flex gap-2 overflow-x-auto border-t border-slate-100 px-4 py-2 lg:hidden sm:px-6">
-            {[["summary","Summary"],["yoy","YoY / Worst Sites"],["currentMonth",currentMonthLabel],["deviation","Deviation"],["tprime","T-Prime Penalty"],["yesterday","Yesterday Fuel"]].map(([id,label])=><button key={id} onClick={()=>setTab(id as FuelSubTab)} className={`whitespace-nowrap rounded-lg px-3 py-2 text-xs font-black ${tab===id?"bg-emerald-600 text-white":"bg-slate-100 text-slate-700"}`}>{label}</button>)}
+            {[["summary","Summary"],["yoy","YoY / Worst Sites"],["currentMonth",currentMonthLabel],["monthlyQuery","Monthly Fuel Query"],["deviation","Deviation"],["tprime","T-Prime Penalty"],["yesterday","Yesterday Fuel"]].map(([id,label])=><button key={id} onClick={()=>setTab(id as FuelSubTab)} className={`whitespace-nowrap rounded-lg px-3 py-2 text-xs font-black ${tab===id?"bg-emerald-600 text-white":"bg-slate-100 text-slate-700"}`}>{label}</button>)}
           </div>
         </header>
 
-        <main className="space-y-5 p-4 sm:p-6 fuel-dashboard-main">
+        <main id="fuel-active-tab-content" className="space-y-5 p-4 sm:p-6 fuel-dashboard-main">
+        {tab==="monthlyQuery" && <MonthlyFuelQueryPage payload={monthlyFuelData} ownership={sheet1Data} fuelRows={rows} />}
         {tab==="deviation" && <FuelDeviationPage payload={deviationData} region={view} onRegionChange={setView} />}
         {tab==="yesterday" && <YesterdayFuelPage rows={rows} />}
         {tab==="tprime" && <TPrimePenaltyPage fuelRows={rows} primeData={tPrimeData} deviationData={deviationData} />}
