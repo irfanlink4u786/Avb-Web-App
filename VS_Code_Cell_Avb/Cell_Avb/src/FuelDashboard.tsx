@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, Fragment } from "react";
 import { AlertTriangle, CalendarDays, ChevronDown, ChevronUp, Fuel, LayoutDashboard, Search, TrendingDown, RefreshCw, FileSpreadsheet } from "lucide-react";
-import { ComposedChart, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LabelList } from "recharts";
+import { ComposedChart, BarChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LabelList } from "recharts";
 import type { SheetPayload } from "./types";
 
 // Fuel-only dashboard, extracted from App.tsx. Shared visual theme is loaded by App.tsx.
@@ -1067,6 +1067,7 @@ export default function FuelDashboard({ data, deviationData, tPrimeData, sheet1D
   const [drillGrid, setDrillGrid] = useState<string | null>(null);
   const [monthDrillGrid, setMonthDrillGrid] = useState<string | null>(null);
   const [categoryDrillGrid, setCategoryDrillGrid] = useState<string | null>(null);
+  const [selectedFuelDay, setSelectedFuelDay] = useState<number | null>(null);
 
   const rows = useMemo(() => parseFuelRows(data), [data]);
   const exportActiveTab = () => {
@@ -1425,6 +1426,22 @@ export default function FuelDashboard({ data, deviationData, tPrimeData, sheet1D
     if (v.includes("single")) return "Single";
     return "Other";
   };
+  const fuelDayDetail = useMemo(() => {
+    if (selectedFuelDay === null) return [];
+    const categoryMap = new Map(dgInventory.map(s => [normalizeSiteKey(s.siteId), dgCategory(s.hubType)]));
+    const sites = new Map<string, {siteId:string;grid:string;category:string;fuel:number;fills:number;lastTime:string}>();
+    currentMonthRows.filter(r => r.date?.getDate() === selectedFuelDay && r.filledQty > 0).forEach(r => {
+      const key = normalizeSiteKey(r.siteId);
+      const existing = sites.get(key);
+      if (existing) {
+        existing.fuel += r.filledQty;
+        existing.fills++;
+        if (r.date && r.date.getTime() > (fuelDate(existing.lastTime)?.getTime() ?? 0)) existing.lastTime = r.refuelingTime;
+      } else sites.set(key, {siteId:r.siteId,grid:r.grid,category:categoryMap.get(key) || "Unmatched",fuel:r.filledQty,fills:1,lastTime:r.refuelingTime});
+    });
+    return [...sites.values()].sort((a,b)=>b.fuel-a.fuel);
+  }, [selectedFuelDay,currentMonthRows,dgInventory]);
+  const selectedFuelDayLabel = selectedFuelDay === null ? "" : `${String(selectedFuelDay).padStart(2,"0")}-${currentMonthName}-${String(currentYear).slice(-2)}`;
   const currentMonthDgGridSummary = useMemo(() => {
     const byGrid = new Map<string, {grid:string; ids:Set<string>; ptn:number; critical:number; single:number; minor:number; major:number; other:number}>();
     dgInventory.forEach(site => {
@@ -1710,7 +1727,7 @@ export default function FuelDashboard({ data, deviationData, tPrimeData, sheet1D
           {currentMonthUnknownDateRows.length > 0 && <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">{currentMonthUnknownDateRows.length} fuel fill records have unrecognized refueling timestamps. Their liters remain included in grid totals and the matrix under Date N/A; dated daily figures exclude these records. Check the Refueling Time column format.</div>}
 
           <div className="grid gap-5 xl:grid-cols-2">
-            <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><div className="mb-4 flex items-center justify-between"><div><h3 className="font-black">Monthly YoY Fuel</h3><p className="text-xs text-slate-500">Comparable months only</p></div><ExportButtonComponent data={monthData} filename="Fuel_Monthly_YoY" label="Export" format="excel" variant="success"/></div><div className="h-[330px]"><ResponsiveContainer width="100%" height="100%"><ComposedChart data={monthData} margin={{top:20,right:20,left:10,bottom:5}}><CartesianGrid strokeDasharray="3 3"/><XAxis dataKey="month"/><YAxis/><Tooltip formatter={(v:any)=>`${Number(v).toLocaleString()} L`}/><Legend/><Bar dataKey="previous" name={`${previousYear}`} fill="#94a3b8"><LabelList dataKey="previous" position="top" formatter={(v:any)=>Math.round(Number(v)/1000)+"K"}/></Bar><Bar dataKey="current" name={`${currentYear}`} fill="#059669"><LabelList dataKey="current" position="top" formatter={(v:any)=>Math.round(Number(v)/1000)+"K"}/></Bar></ComposedChart></ResponsiveContainer></div></div>
+            <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><div className="mb-4 flex items-center justify-between"><div><h3 className="font-black">Monthly YoY Fuel</h3><p className="text-xs text-slate-500">Comparable months only</p></div><ExportButtonComponent data={monthData} filename="Fuel_Monthly_YoY" label="Export" format="excel" variant="success"/></div><div className="h-[330px]"><ResponsiveContainer width="100%" height="100%"><ComposedChart data={monthData} margin={{top:35,right:20,left:10,bottom:20}}><CartesianGrid strokeDasharray="3 3"/><XAxis dataKey="month"/><YAxis/><Tooltip formatter={(v:any)=>`${Number(v).toLocaleString()} L`}/><Legend/><Line type="monotone" dataKey="previous" name={`${previousYear}`} stroke="#64748b" strokeWidth={3} dot={{r:5,fill:"#94a3b8",stroke:"#475569",strokeWidth:2}} activeDot={{r:7}}><LabelList dataKey="previous" position="top" offset={15} formatter={(v:any)=>Math.round(Number(v)/1000)+"K"} style={{fontSize:13,fontWeight:800,fill:"#475569"}}/></Line><Line type="monotone" dataKey="current" name={`${currentYear}`} stroke="#059669" strokeWidth={3} dot={{r:5,fill:"#10b981",stroke:"#047857",strokeWidth:2}} activeDot={{r:7}}><LabelList dataKey="current" position="bottom" offset={13} formatter={(v:any)=>Math.round(Number(v)/1000)+"K"} style={{fontSize:13,fontWeight:800,fill:"#047857"}}/></Line></ComposedChart></ResponsiveContainer></div></div>
             <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><h3 className="font-black">Sub-Region Control · Apple-to-Apple YoY</h3><p className="text-xs text-slate-500">Same comparison period as top saving cards · through {sameDay} {currentMonthKey}</p><div className="mt-4 overflow-x-auto"><table className={tableClass}><thead className="bg-emerald-900 text-white"><tr>{["Sub-Region",previousYear,currentYear,"Saving L","Saving %"].map(h=><th key={String(h)} className={th}>{h}</th>)}</tr></thead><tbody>{regionSummary.map(x=><tr key={x.key} className="border-b border-slate-200"><td className={td+" font-black"}>{x.key}</td><td className={td}>{Math.round(x.previous).toLocaleString()}</td><td className={td}>{Math.round(x.current).toLocaleString()}</td><td className={`${td} font-black ${x.saving>=0?"text-emerald-700":"text-red-600"}`}>{Math.round(x.saving).toLocaleString()}</td><td className={`${td} font-black ${x.savingPct>=0?"text-emerald-700":"text-red-600"}`}>{x.savingPct.toFixed(2)}%</td></tr>)}</tbody></table></div></div>
           </div>
           <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden"><div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 p-4"><div><h3 className="font-black">Grid-wise Fuel Control</h3><p className="text-xs text-slate-500">Positive saving = lower fuel than last year</p></div><div className="flex flex-wrap items-center gap-2"><div className="flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-100 p-1"><span className="px-2 text-[11px] font-black uppercase text-slate-500">View</span>{(["all","saving","increase"] as const).map(v => <button key={v} onClick={()=>setGridTableView(v)} className={`rounded-md px-3 py-1.5 text-xs font-black transition ${gridTableView===v ? (v==="increase"?"bg-red-600 text-white":v==="saving"?"bg-emerald-600 text-white":"bg-slate-800 text-white") : "bg-white text-slate-600 hover:bg-slate-200"}`}>{v==="all"?"All":v==="saving"?"Saving":"Increase"}</button>)}</div><ExportButtonComponent data={exportSummary} filename={`Fuel_Grid_Summary_${view}_${gridTableView}`} label="Export Grid View" format="excel" variant="success"/></div></div><div className="overflow-x-auto"><table className={tableClass}><thead className="bg-emerald-900 text-white"><tr>{["Grid",`${previousYear} L`,`${currentYear} L`,"Saving / (Increase)","Saving %","Status"].map(h=><th key={h} className={th}>{h}</th>)}</tr></thead><tbody>{visibleGridSummary.map(x=><tr key={x.key} className="border-b border-slate-200 even:bg-slate-50"><td className={td+" font-black"}>{x.key}</td><td className={td}>{Math.round(x.previous).toLocaleString()}</td><td className={td}>{Math.round(x.current).toLocaleString()}</td><td className={`${td} font-black ${x.saving>=0?"text-emerald-700":"text-red-600"}`}>{x.saving>=0?"+":""}{Math.round(x.saving).toLocaleString()}</td><td className={`${td} font-black ${x.savingPct>=0?"text-emerald-700":"text-red-600"}`}>{x.savingPct.toFixed(2)}%</td><td className={td}>{x.saving>0?"Saving":x.saving<0?"Increase":"Flat"}</td></tr>)}</tbody></table></div></div>
@@ -1810,20 +1827,37 @@ export default function FuelDashboard({ data, deviationData, tPrimeData, sheet1D
           </div>
           <p className="mt-2 text-xs text-slate-600">{!sheet1Data?.rows?.length ? "⚠ Sheet1 ownership unavailable — check Google Sheet loading. " : `Ownership matched: ${new Set(monthOwnerRows.filter(x=>x.o.co!=="Unassigned").map(x=>normalizeSiteKey(x.r.siteId))).size} of ${new Set(monthOwnerRows.map(x=>normalizeSiteKey(x.r.siteId))).size} fueled sites. `}{new Set(currentMonthRows.filter(r=>r.filledQty>0).map(r=>r.siteId.trim().toLowerCase())).size} fueled sites · {Math.round(currentMonthRows.reduce((n,r)=>n+r.filledQty,0)).toLocaleString()} L filled in selected ownership</p>
         </section>}
-        {tab==="currentMonth" && currentMonthName === "Oct" && (
-            <section className="rounded-xl border border-emerald-200 bg-white p-4 shadow-sm">
-              <div className="mb-3 flex flex-wrap items-center justify-between gap-2"><div><h3 className="text-base font-black text-[#075B39]">October Fuel Budget & DG Control</h3><p className="text-xs text-slate-500">28,000 L monthly budget · 190 L per unique fueled DG benchmark</p></div><span className="rounded-lg bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-800">{view === "overall" && gridFilter === "__all" ? "Overall budget" : "Filtered consumption · overall budget unchanged"}</span></div>
-              <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-                {[
-                  ["October Budget", `${octoberFuelBudget.toLocaleString()} L`, "Approved overall target"],
-                  ["Fuel Filled MTD", `${Math.round(currentMonthTotal).toLocaleString()} L`, "Selected region/grid"],
-                  ["Budget Balance", `${Math.round(octoberBudgetRemaining).toLocaleString()} L`, "Budget less displayed MTD fuel"],
-                  ["DG Benchmark", `${perDgMonthlyTarget} L / DG`, `${new Set(currentMonthSiteRows.filter(r=>r.filledQty>0 && !r.siteId.toLowerCase().startsWith("mobile dg")).map(r=>`${r.grid}:${r.siteId.toLowerCase()}`)).size} unique fueled DG sites`],
-                ].map(([label,value,sub],i)=><div key={label} className="rounded-lg border border-slate-200 bg-slate-50 p-3"><div className="text-[11px] font-bold uppercase text-slate-600">{label}</div><div className={`mt-1 text-2xl font-black ${i===2&&octoberBudgetRemaining<0?"text-red-700":"text-[#075B39]"}`}>{value}</div><div className="mt-1 text-[11px] text-slate-500">{sub}</div></div>)}
+        {tab==="currentMonth" && <section className="space-y-4">
+          <div className="rounded-xl border border-emerald-200 bg-white p-4 shadow-sm">
+            <div className="mb-3"><h3 className="text-lg font-black text-[#075B39]">{currentMonthLabel} · Fuel Performance KPIs</h3><p className="text-xs text-slate-500">Live summary based on selected region, grid and ownership filters</p></div>
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">
+              {([
+                ["Fuel Filled MTD", `${Math.round(currentMonthTotal).toLocaleString()} L`, "Actual refueling", "text-emerald-800"],
+                ["DG Fueled Sites", currentMonthSites.toLocaleString(), "Unique fueled sites", "text-blue-800"],
+                ["Fill Events", currentMonthFills.toLocaleString(), "Fueling tickets", "text-amber-800"],
+                ["Avg / Active Day", `${Math.round(currentMonthAvgDay).toLocaleString()} L`, "Days with dated entries", "text-violet-800"],
+                ...(currentMonthName === "Oct" ? [
+                  ["Monthly Budget", `${octoberFuelBudget.toLocaleString()} L`, "Overall target, not regional", "text-slate-900"],
+                  ["Budget Balance", `${Math.round(octoberBudgetRemaining).toLocaleString()} L`, "Overall budget less displayed fuel*", octoberBudgetRemaining<0?"text-red-700":"text-emerald-800"],
+                  ["DG Benchmark", `${perDgMonthlyTarget} L / DG`, "Full-month benchmark", "text-blue-800"],
+                  ["Budget Used", `${(octoberFuelBudget>0?currentMonthTotal/octoberFuelBudget*100:0).toFixed(1)}%`, "Filtered fuel / overall budget*", "text-amber-800"]
+                ] : [])
+              ] as string[][]).map(([label,value,sub,color])=><div key={label} className="rounded-xl border border-slate-200 bg-slate-50 p-3"><div className="text-[11px] font-extrabold uppercase text-slate-600">{label}</div><div className={`mt-1 text-2xl font-black ${color}`}>{value}</div><div className="mt-1 text-[11px] text-slate-500">{sub}</div></div>)}
+            </div>
+            {currentMonthName==="Oct" && <p className="mt-3 text-xs text-slate-500">*The 28,000 L allocation applies to the entire region. When a grid, region or owner is filtered, budget balance and utilization compare filtered fuel against that unchanged overall allocation; they are not a local budget balance. Budget balance is not physical tank stock.</p>}
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-3"><div><h3 className="text-lg font-black text-[#075B39]">{currentMonthLabel} · Daily Fuel Trend</h3><p className="text-xs text-slate-500">Latest date first · gold gradient bars: fuel litres · amber line: unique fueled sites · values always visible</p></div><ExportButtonComponent data={[...currentMonthDaySummary].sort((a,b)=>b.day-a.day).map(x=>({Date:x.date,"Fuel (L)":Math.round(x.fuel),"Fill Events":x.fills,Sites:x.sites}))} filename={`Fuel_${currentMonthLabel}_Daywise`} label="Export Day-wise" format="excel" variant="success"/></div>
+            <p className="mb-2 text-xs font-bold text-amber-800">Click any golden fuel bar to view its site-wise refueling details and hub severity.</p>
+            {selectedFuelDay !== null && <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/65 p-3" onMouseDown={e=>{if(e.target===e.currentTarget)setSelectedFuelDay(null)}}>
+              <div role="dialog" aria-modal="true" aria-label="Daily fuel site details" className="flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b bg-amber-50 p-5"><div><h3 className="text-xl font-black text-amber-950">Fuel Filled Sites · {selectedFuelDayLabel}</h3><p className="text-sm text-slate-600">{fuelDayDetail.length} sites · {fuelDayDetail.reduce((n,r)=>n+r.fills,0)} tickets · {fuelDayDetail.reduce((n,r)=>n+r.fuel,0).toLocaleString()} L · Hub category from Deviation Fuel inventory</p></div><div className="flex items-center gap-2"><ExportButtonComponent data={fuelDayDetail.map(r=>({"Site ID":r.siteId,Grid:r.grid,"Hub Severity":r.category,"Fuel Filled (L)":r.fuel,"Fill Events":r.fills,"Last Refueling Time":r.lastTime}))} filename={`Daily_Fuel_Sites_${selectedFuelDayLabel}`} label="Export Sites" format="excel" variant="success"/><button type="button" onClick={()=>setSelectedFuelDay(null)} className="rounded-lg bg-slate-800 px-4 py-2 font-bold text-white">Close ×</button></div></div>
+                <div className="overflow-auto p-4"><table className="w-full min-w-[700px] border-collapse text-sm"><thead className="sticky top-0 bg-[#075B39] text-white"><tr>{["Site ID","Grid","Hub Severity / Type","Fuel Filled (L)","Fill Events","Last Fuel Time"].map(h=><th key={h} className="px-3 py-3 text-left">{h}</th>)}</tr></thead><tbody>{fuelDayDetail.map(r=><tr key={r.siteId} className="border-b even:bg-amber-50/50"><td className="px-3 py-3 font-extrabold">{r.siteId}</td><td className="px-3 py-3">{r.grid}</td><td className="px-3 py-3"><span className={`rounded-md px-2 py-1 font-bold ${r.category==="PTN Node"?"bg-red-100 text-red-800":r.category==="Critical Hub"?"bg-orange-100 text-orange-800":r.category==="Unmatched"?"bg-slate-100 text-slate-600":"bg-emerald-100 text-emerald-900"}`}>{r.category}</span></td><td className="px-3 py-3 font-black">{r.fuel.toLocaleString()}</td><td className="px-3 py-3">{r.fills}</td><td className="px-3 py-3">{r.lastTime || "—"}</td></tr>)}</tbody></table>{!fuelDayDetail.length&&<p className="p-5">No positive fuel tickets on this date.</p>}<p className="mt-3 text-xs text-slate-500">Unmatched means no corresponding hub classification was found in the loaded Deviation Fuel inventory. It does not imply Single.</p></div>
               </div>
-              <p className="mt-3 text-xs text-slate-600">Budget balance is the remaining <b>fuel allocation</b>, not physical diesel stock in tanks. When C-1, C-6 or a grid is selected, displayed fuel is filtered but the 28,000 L budget remains the overall target (no unapproved regional split assumed). The 190 L/DG benchmark is separate from the 28,000 L budget.</p>
-            </section>
-        )}
+            </div>}
+            {currentMonthDaySummary.length ? <div className="h-[340px] w-full"><ResponsiveContainer width="100%" height="100%"><ComposedChart data={[...currentMonthDaySummary].sort((a,b)=>b.day-a.day)} margin={{top:45,right:30,left:8,bottom:15}}><defs><linearGradient id="fuelGoldGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#FFD76A"/><stop offset="100%" stopColor="#B87908"/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0"/><XAxis dataKey="date" angle={-35} textAnchor="end" height={65} tick={{fontSize:11}}/><YAxis yAxisId="litres" tick={{fontSize:11}}/><YAxis yAxisId="sites" orientation="right" tick={{fontSize:11}} allowDecimals={false}/><Tooltip formatter={(value:any,name:any)=>[Number(value).toLocaleString(),name]}/><Legend/><Bar yAxisId="litres" dataKey="fuel" name="Fuel (L)" onClick={(point:any) => { const day = Number(point?.payload?.day ?? point?.day); if (Number.isFinite(day) && day > 0) setSelectedFuelDay(day); }} cursor="pointer" fill="url(#fuelGoldGradient)" radius={[4,4,0,0]} maxBarSize={44}><LabelList dataKey="fuel" position="insideTop" offset={7} formatter={(v:any)=>Number(v).toLocaleString()} fill="#4A2B00" fontSize={14} fontWeight={900} stroke="#FFE9A0" strokeWidth={2} paintOrder="stroke"/></Bar><Line yAxisId="sites" type="monotone" dataKey="sites" name="Unique Sites" stroke="#B7791F" strokeWidth={3} dot={{r:4,fill:"#F6C453",stroke:"#996515",strokeWidth:2}} activeDot={{r:6}}><LabelList dataKey="sites" position="top" offset={18} fill="#8B4513" fontSize={15} fontWeight={900} stroke="#FFFFFF" strokeWidth={4} paintOrder="stroke"/></Line></ComposedChart></ResponsiveContainer></div> : <p className="rounded-lg bg-amber-50 p-4 text-sm text-amber-900">No dated fuel entries found. {currentMonthUnknownDateRows.length} records have unrecognized timestamps.</p>}
+          </div>
+        </section>}
         {tab==="currentMonth" && <section className="mb-5 rounded-xl border border-emerald-200 bg-white p-5 shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div><h3 className="text-lg font-extrabold text-emerald-950">Site Query · Complete Fueling History</h3>
@@ -1871,32 +1905,6 @@ export default function FuelDashboard({ data, deviationData, tPrimeData, sheet1D
               <p className="border-t border-slate-100 px-4 py-2 text-xs text-slate-500">Fuel / DG = total grid fuel poured ÷ unique DG sites actually fueled during the selected month. Values above 190 L/DG are highlighted red. Inventory DG counts come from Deviation Fuel; unique fueled DG counts and actual fill liters come from Fuel History. Unmatched fuel remains separate to preserve reconciliation. The 190 L target is a monthly benchmark; an in-progress month is not a full-month comparison.</p>
             </section>
           </>}
-
-          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-            <div className="rounded-2xl border border-emerald-200 bg-gradient-to-br from-white to-emerald-50 p-5 shadow-md"><div className="text-[11px] font-black uppercase tracking-wider text-emerald-700">{currentMonthLabel} Fuel</div><div className="mt-2 text-3xl font-black tracking-tight text-[#006B3C]">{Math.round(currentMonthTotal).toLocaleString()} <span className="text-lg">L</span></div></div>
-            <div className="rounded-2xl border border-blue-100 bg-gradient-to-br from-white to-blue-50 p-5 shadow-md"><div className="text-[11px] font-black uppercase tracking-wider text-blue-700">Sites Fueled</div><div className="mt-2 text-3xl font-black tracking-tight text-slate-950">{currentMonthSites}</div></div>
-            <div className="rounded-2xl border border-amber-100 bg-gradient-to-br from-white to-amber-50 p-5 shadow-md"><div className="text-[11px] font-black uppercase tracking-wider text-amber-700">Fuel Fill Events</div><div className="mt-2 text-3xl font-black tracking-tight text-slate-950">{currentMonthFills}</div></div>
-            <div className="rounded-2xl border border-violet-100 bg-gradient-to-br from-white to-violet-50 p-5 shadow-md"><div className="text-[11px] font-black uppercase tracking-wider text-violet-700">Average / Active Day</div><div className="mt-2 text-3xl font-black tracking-tight text-slate-950">{Math.round(currentMonthAvgDay).toLocaleString()} <span className="text-lg">L</span></div></div>
-          </div>
-
-          <div className="grid gap-5 xl:grid-cols-2">
-            <div className="rounded-2xl border border-slate-200 bg-white shadow-md overflow-hidden">
-              <div className="border-b border-emerald-100 bg-gradient-to-r from-emerald-50 to-white p-5"><h3 className="text-base font-black text-slate-950">{currentMonthLabel} · Grid-wise Summary</h3><p className="text-xs text-slate-500">Total fuel filled by grid during current month</p></div>
-              <div className="max-h-[390px] overflow-auto">
-                <table className={tableClass}><thead className="sticky top-0 bg-[#006B3C]"><tr><th className={th}>Grid</th><th className={th}>Fuel (L)</th><th className={th}>Share</th></tr></thead>
-                  <tbody>{[...currentMonthGridMatrix].sort((a,b)=>b.total-a.total).map(x=><tr key={x.grid} className="border-b border-slate-200 even:bg-slate-50"><td className={td+" font-black text-[#006B3C]"}>{x.grid}</td><td className={td+" font-black"}>{Math.round(x.total).toLocaleString()}</td><td className={td}>{currentMonthTotal?((x.total/currentMonthTotal)*100).toFixed(1):"0.0"}%</td></tr>)}</tbody>
-                </table>
-              </div>
-            </div>
-            <div className="rounded-2xl border border-slate-200 bg-white shadow-md overflow-hidden">
-              <div className="border-b border-blue-100 bg-gradient-to-r from-blue-50 to-white p-5"><h3 className="text-base font-black text-slate-950">{currentMonthLabel} · Day-wise Summary</h3><p className="text-xs text-slate-500">Daily fuel, fill events and unique sites</p></div>
-              <div className="max-h-[390px] overflow-auto">
-                <table className={tableClass}><thead className="sticky top-0 bg-[#006B3C]"><tr>{["Date","Fuel L","Fill Events","Sites"].map(h=><th key={h} className={th}>{h}</th>)}</tr></thead>
-                  <tbody>{currentMonthDaySummary.length === 0 && <tr><td colSpan={4} className="border border-amber-200 bg-amber-50 px-4 py-8 text-center font-semibold text-amber-900">No valid dated fuel entries for {currentMonthLabel}. {currentMonthUnknownDateRows.length} records have unrecognized timestamps. Please verify the Refueling Time format in Fuel History.</td></tr>}{currentMonthDaySummary.map(x=><tr key={x.day} className="border-b border-slate-200 even:bg-slate-50"><td className={td+" font-black"}>{x.date}</td><td className={td+" font-black"}>{Math.round(x.fuel).toLocaleString()}</td><td className={td}>{x.fills}</td><td className={td}>{x.sites}</td></tr>)}</tbody>
-                </table>
-              </div>
-            </div>
-          </div>
 
           <div className="rounded-2xl border border-emerald-200 bg-white shadow-lg overflow-hidden">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-emerald-100 bg-gradient-to-r from-[#ecfdf5] via-white to-[#f0fdfa] p-5">
