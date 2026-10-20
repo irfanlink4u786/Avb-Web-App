@@ -174,7 +174,8 @@ function ExportButtonComponent({
 //  FUEL HISTORY — YEAR-ON-YEAR / WORST SITES / DAILY MONITORING
 // ============================================================
 
-function YesterdayFuelPage({rows}:{rows:FuelRow[]}) {
+function YesterdayFuelPage({rows, deviationData}:{rows:FuelRow[]; deviationData:SheetPayload|null}) {
+  const deviationBySite = useMemo(() => new Map(parseDeviationSites(deviationData).map(s => [s.siteId.trim().toUpperCase(),s])),[deviationData]);
   const [gridFilter,setGridFilter]=useState("__all");
   const [search,setSearch]=useState("");
   const [selectedDate,setSelectedDate]=useState(()=>{
@@ -207,7 +208,18 @@ function YesterdayFuelPage({rows}:{rows:FuelRow[]}) {
   const total=filtered.reduce((n,r)=>n+r.filled,0);
   const known=filtered.filter(r=>r.dailyConsumption!==null);
   const fmt=(n:number|null)=>n===null?"—":n.toLocaleString(undefined,{maximumFractionDigits:2});
-  const exportData=filtered.map(r=>({"Site ID":r.siteId,Grid:r.grid,"Fill Events":r.events,"Fuel Filled L":r.filled,"Before First Fill L":r.before,"Latest After Fill L":r.after,"Previous Ticket Date":r.previousDate,"Previous Total L":r.previousTotal??"","Consumption Since Previous Ticket L":r.consumption??"","Elapsed Days":r.days??"","Consumed Per Day L":r.dailyConsumption??""}));
+  const reconFor = (siteId:string) => {
+    const site=deviationBySite.get(siteId.trim().toUpperCase());
+    if(!site) return {site:null, ticket:null, status:"Pending Recon", count:0};
+    const end=new Date(`${selectedDate}T23:59:59`);
+    const dated=site.tickets.map(t=>({ticket:t,date:fuelDate(t.reconDate)}))
+      .filter(x=>x.date && x.date.getTime()<=end.getTime())
+      .sort((a,b)=>b.date!.getTime()-a.date!.getTime());
+    const ticket=dated[0]?.ticket ?? null;
+    const isSameDay=dated[0]?.date?.getFullYear()===end.getFullYear() && dated[0]?.date?.getMonth()===end.getMonth() && dated[0]?.date?.getDate()===end.getDate();
+    return {site,ticket,status:ticket ? (isSameDay ? ticket.status : `Previous: ${ticket.status}`) : "Pending Recon",count:site.tickets.filter(t=>t.status==="Positive"||t.status==="Negative").length};
+  };
+  const exportData=filtered.map(r=>({...(() => {const x=reconFor(r.siteId);return {"Recon Date":x.ticket?.reconDate??"","Latest Deviation (L)":x.ticket?.deviation??"","Deviation Status":x.status,"Abnormal Tickets (4)":x.count,"BM (L/hr)":x.site?.benchmark??"",...Object.fromEntries((x.site?.tickets??[]).map((t,i)=>[`Ticket ${i+1} Deviation (L)`,t.deviation??""]))};})(),"Site ID":r.siteId,Grid:r.grid,"Fill Events":r.events,"Fuel Filled L":r.filled,"Before First Fill L":r.before,"Latest After Fill L":r.after,"Previous Ticket Date":r.previousDate,"Previous Total L":r.previousTotal??"","Consumption Since Previous Ticket L":r.consumption??"","Elapsed Days":r.days??"","Consumed Per Day L":r.dailyConsumption??""}));
   return <div className="space-y-4">
     <section className="rounded-xl border border-emerald-200 bg-white p-5 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-xl font-black text-emerald-950">Yesterday Fuel Filled & Consumption Story</h2><p className="mt-1 text-xs text-slate-600">Default: yesterday (local date) · positive fuel tickets only · one row per site · consumption estimated from previous ticket</p></div>
@@ -223,7 +235,8 @@ function YesterdayFuelPage({rows}:{rows:FuelRow[]}) {
       ["Consumption Available",`${known.length} / ${filtered.length}`,"Sites with prior dated ticket"]
     ].map(([label,value,detail])=><div key={label} className="rounded-xl border border-emerald-200 bg-white p-4"><p className="text-xs font-semibold text-slate-600">{label}</p><p className="mt-2 text-2xl font-black text-emerald-900">{value}</p><p className="text-xs text-slate-500">{detail}</p></div>)}</div>
     <section className="rounded-xl border border-emerald-200 bg-white p-4 shadow-sm"><h3 className="mb-3 font-black text-emerald-950">Site-wise Fueling & Consumption · {selectedDate}</h3>
-      <div className="max-h-[650px] overflow-auto"><table className="w-full min-w-[1400px] border-collapse text-sm"><thead className="sticky top-0 bg-[#075B39] text-white"><tr>{["Site ID","Grid","Fill Events","Fuel Filled (L)","Before First Fill (L)","Latest After Fill (L)","Previous Ticket","Previous Total (L)","Consumption (L)","Elapsed Days","Consumed / Day (L)"].map(h=><th key={h} className="whitespace-nowrap px-3 py-3 text-right">{h}</th>)}</tr></thead><tbody>{filtered.map(r=><tr key={r.siteId} className="border-b border-slate-200 even:bg-emerald-50/50"><td className="px-3 py-2 text-right font-black text-emerald-900">{r.siteId}</td><td className="px-3 py-2 text-right">{r.grid}</td><td className="px-3 py-2 text-right">{r.events}</td><td className="px-3 py-2 text-right font-bold">{fmt(r.filled)}</td><td className="px-3 py-2 text-right">{fmt(r.before)}</td><td className="px-3 py-2 text-right">{fmt(r.after)}</td><td className="px-3 py-2 text-right">{r.previousDate}</td><td className="px-3 py-2 text-right">{fmt(r.previousTotal)}</td><td className="px-3 py-2 text-right">{fmt(r.consumption)}</td><td className="px-3 py-2 text-right">{fmt(r.days)}</td><td className="px-3 py-2 text-right font-black text-emerald-800">{fmt(r.dailyConsumption)}</td></tr>)}</tbody></table>{!filtered.length&&<p className="p-5 text-sm text-amber-800">No positive refueling tickets for the selected date and filters.</p>}</div>
+      <div className="max-h-[650px] overflow-auto"><table className="w-full min-w-[1800px] border-collapse text-sm"><thead className="sticky top-0 bg-[#075B39] text-white"><tr>{["Site ID","Grid","Fill Events","Fuel Filled (L)","Before First Fill (L)","Latest After Fill (L)","Previous Ticket","Previous Total (L)","Consumption (L)","Elapsed Days","Consumed / Day (L)","Recon Date","Latest Deviation (L)","Deviation Status","Abnormal / 4","BM (L/hr)","Ticket 1 (L)","Ticket 2 (L)","Ticket 3 (L)","Ticket 4 (L)"].map(h=><th key={h} className="whitespace-nowrap px-3 py-3 text-right">{h}</th>)}</tr></thead><tbody>{filtered.map(r=>{const x=reconFor(r.siteId);return <tr key={r.siteId} className="border-b border-slate-200 even:bg-emerald-50/50">{[r.siteId,r.grid,r.events,fmt(r.filled),fmt(r.before),fmt(r.after),r.previousDate,fmt(r.previousTotal),fmt(r.consumption),fmt(r.days),fmt(r.dailyConsumption),x.ticket?.reconDate??"—",x.ticket?.deviation==null?"—":fmt(x.ticket.deviation),x.status,x.count,x.site?.benchmark==null?"—":fmt(x.site.benchmark),...[0,1,2,3].map(i=>x.site?.tickets[i]?.deviation==null?"—":fmt(x.site!.tickets[i].deviation!))].map((v,i)=><td key={i} className={`whitespace-nowrap px-3 py-2 text-right ${i===0?"font-black text-emerald-900":""} ${i===12 && x.ticket?.status==="Positive"?"font-bold text-red-700":""} ${i===12 && x.ticket?.status==="Negative"?"font-bold text-amber-700":""}`}>{v}</td>)}</tr>})}</tbody></table>{!filtered.length&&<p className="p-5 text-sm text-amber-800">No positive refueling tickets for the selected date and filters.</p>}</div>
+      <p className="text-xs text-slate-600">Reconciliation is matched by Site ID. A previous reconciliation is labeled Previous; Pending Recon means no dated reconciliation on or before the selected day. Historical ticket values are provided for reference, not attributed to the selected day's refill.</p>
       <p className="mt-3 text-xs text-slate-500">Consumption = previous ticket's post-fill total − current day's first before-fill quantity; daily rate = consumption ÷ elapsed days. A negative value indicates an inventory discrepancy or unrecorded addition, not negative physical consumption. Multiple fills on the selected date are summed. This is a ticket-based estimate, not EASS-measured DG consumption.</p>
     </section>
   </div>;
@@ -521,24 +534,40 @@ function FuelDeviationPage({ payload, region, onRegionChange }: { payload: Sheet
   const [expandedGrid, setExpandedGrid] = useState<string | null>(null);
   const [expandedOwner, setExpandedOwner] = useState<string | null>(null);
   const [ticketView, setTicketView] = useState<"all" | "latest">("all");
+  const [fuelMonthFilter, setFuelMonthFilter] = useState<"oct26" | "all">("oct26");
+  const isOct26 = (raw: string) => {
+    const d = fuelDate(raw);
+    return !!d && d.getFullYear() === 2026 && d.getMonth() === 9;
+  };
   const fmt = (n: number) => n.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
   const scoped = useMemo(() => sites.filter(s => region === "overall" || fuelRegion(s.grid) === region),[sites,region]);
   const gridList = useMemo(() => [...new Set(scoped.map(s => s.grid))].sort(), [scoped]);
   const categories = useMemo(() => [...new Set(scoped.map(s => s.revenue))].filter(Boolean).sort(),[scoped]);
   const owners = useMemo(() => [...new Set(scoped.map(s => s.owner))].filter(Boolean).sort(),[scoped]);
-  const base = useMemo(() => scoped.filter(s => (grid === "__all" || s.grid === grid) && (category === "__all" || s.revenue === category) && (owner === "__all" || s.owner === owner) && (!query || [s.siteId,s.grid,s.owner,s.gtl,s.lead].some(v=>v.toLowerCase().includes(query.toLowerCase())))),[scoped,grid,category,owner,query]);
-  const positiveOf = (s: FuelDeviationSite) => ticketView === "latest" ? (s.tickets[0].status === "Positive" ? s.tickets[0].deviation ?? 0 : 0) : s.positiveLitres;
-  const grossPositive = base.reduce((sum,s)=>sum+s.positiveLitres,0);
-  const latestPositive = base.reduce((sum,s) => sum + (s.tickets[0].status === "Positive" ? s.tickets[0].deviation ?? 0 : 0),0);
-  const latestPositiveSites = base.filter(s => s.latestStatus === "Positive").length;
-  const historicalPositiveSites = base.filter(s => s.positiveCount > 0).length;
-  const recurring = base.filter(s => s.positiveCount >= 2).length;
-  const worst = [...base].filter(s=>s.positiveLitres>0).sort((a,b)=>b.positiveLitres-a.positiveLitres).slice(0,worstLimit);
+  const base = useMemo(() => scoped.filter(s => (fuelMonthFilter === "all" || s.tickets.some(t => isOct26(t.lfd))) && (grid === "__all" || s.grid === grid) && (category === "__all" || s.revenue === category) && (owner === "__all" || s.owner === owner) && (!query || [s.siteId,s.grid,s.owner,s.gtl,s.lead].some(v=>v.toLowerCase().includes(query.toLowerCase())))),[scoped,grid,category,owner,query,fuelMonthFilter]);
+  // One selected ticket window drives every summary, ranking, table and export.
+  const selectedTickets = (s: FuelDeviationSite) => {
+    const eligible = fuelMonthFilter === "oct26"
+      ? s.tickets.filter(t => isOct26(t.lfd) && isOct26(t.reconDate))
+      : s.tickets;
+    return ticketView === "latest" ? eligible.slice(0, 1) : eligible;
+  };
+  const posCount = (s: FuelDeviationSite) => selectedTickets(s).filter(t => t.status === "Positive").length;
+  const negCount = (s: FuelDeviationSite) => selectedTickets(s).filter(t => t.status === "Negative").length;
+  const posLitres = (s: FuelDeviationSite) => selectedTickets(s).reduce((n,t)=>n+(t.status === "Positive" ? t.deviation ?? 0 : 0),0);
+  const negLitres = (s: FuelDeviationSite) => selectedTickets(s).reduce((n,t)=>n+(t.status === "Negative" ? Math.abs(t.deviation ?? 0) : 0),0);
+  const positiveOf = posLitres;
+  const grossPositive = base.reduce((sum,s)=>sum+posLitres(s),0);
+  const latestPositive = base.reduce((sum,s) => sum + (selectedTickets(s)[0]?.status === "Positive" ? selectedTickets(s)[0]?.deviation ?? 0 : 0),0);
+  const latestPositiveSites = base.filter(s => selectedTickets(s)[0]?.status === "Positive").length;
+  const historicalPositiveSites = base.filter(s => posCount(s)>0).length;
+  const recurring = base.filter(s => posCount(s)>=2).length;
+  const worst = [...base].filter(s=>posLitres(s)>0).sort((a,b)=>posLitres(b)-posLitres(a)).slice(0,worstLimit);
   const grids = gridList.map(g => {
     const rows = base.filter(s=>s.grid===g);
-    return {grid:g, sites:rows.length, positiveSites:rows.filter(s=>s.positiveCount>0).length,
+    return {grid:g, sites:rows.length, positiveSites:rows.filter(s=>posCount(s)>0).length,
       latestSites:rows.filter(s=>s.latestStatus==="Positive").length,
-      positiveLitres:rows.reduce((sum,s)=>sum+s.positiveLitres,0),
+      positiveLitres:rows.reduce((sum,s)=>sum+posLitres(s),0),
       chartLitres:rows.reduce((sum,s)=>sum+positiveOf(s),0),
       latestLitres:rows.reduce((sum,s)=>sum+(s.latestStatus==="Positive" ? s.tickets[0].deviation ?? 0:0),0)};
   }).filter(g=>g.sites).sort((a,b)=>b.positiveLitres-a.positiveLitres);
@@ -562,12 +591,12 @@ function FuelDeviationPage({ payload, region, onRegionChange }: { payload: Sheet
     const latest = s.tickets[0];
     const priorPositive = s.tickets.slice(1).filter(t => t.status === "Positive").length;
     const latestPositive = latest.status === "Positive";
-    const recurringPositive = s.positiveCount >= 2;
+    const recurringPositive = posCount(s) >= 2;
     const elevated = latestPositive && recurringPositive;
     const historical = !latestPositive && priorPositive >= 2;
     const priority = elevated ? 0 : latestPositive ? 1 : historical ? 2 : 3;
     const recommendation = elevated ? "Verify before next routine refill" : latestPositive ? "Check latest ticket before refill" : historical ? "Monitor; review earlier tickets" : "Routine refueling policy";
-    const reason = elevated ? `Latest +ive ticket; ${s.positiveCount}/4 tickets positive` : latestPositive ? "Latest ticket exceeds +10 L" : historical ? `${priorPositive} earlier positive tickets; latest not positive` : "No current positive-deviation trigger";
+    const reason = elevated ? `Latest +ive ticket; ${posCount(s)}/4 tickets positive` : latestPositive ? "Latest ticket exceeds +10 L" : historical ? `${priorPositive} earlier positive tickets; latest not positive` : "No current positive-deviation trigger";
     return {site:s, validCount:valid.length, priority, recommendation, reason};
   }).sort((a,b)=>a.priority-b.priority || b.site.positiveLitres-a.site.positiveLitres),[base]);
   const hubCategories = ["PTN Node", "Critical Hub (10 ++)", "Major Hub(5~10)", "Minor Hub (1~4)", "Single"];
@@ -582,10 +611,10 @@ function FuelDeviationPage({ payload, region, onRegionChange }: { payload: Sheet
   };
   const hubSummary = [...hubCategories, "Unclassified"].map(hub => {
     const rows = base.filter(s => normalizeHub(s.hubType) === hub);
-    return {hub, sites:rows.length, affected:rows.filter(s=>s.positiveCount>0).length,
+    return {hub, sites:rows.length, affected:rows.filter(s=>posCount(s)>0).length,
       latestSites:rows.filter(s=>s.latestStatus==="Positive").length,
-      recurring:rows.filter(s=>s.positiveCount>=2).length,
-      gross:rows.reduce((sum,s)=>sum+s.positiveLitres,0),
+      recurring:rows.filter(s=>posCount(s)>=2).length,
+      gross:rows.reduce((sum,s)=>sum+posLitres(s),0),
       latest:rows.reduce((sum,s)=>sum+(s.latestStatus==="Positive"?(s.tickets[0].deviation??0):0),0),
       lowPriority: hub !== "PTN Node" && hub !== "Critical Hub (10 ++)",
     };
@@ -597,7 +626,7 @@ function FuelDeviationPage({ payload, region, onRegionChange }: { payload: Sheet
   const [auditShowAll,setAuditShowAll] = useState(false);
   const exportRows = base.map(s=>({"Site ID":s.siteId,Grid:s.grid,"Revenue Category":s.revenue,"Cluster Owner":s.owner,"MS GTL":s.gtl,"Zone Lead":s.lead,"DG Rating":s.rating,"HUB/Single":s.hubType,"BM":s.benchmark,
     ...Object.fromEntries(s.tickets.flatMap((t,i)=>[[`Ticket ${i+1} LFD`,t.lfd],[`Ticket ${i+1} Recon Date`,t.reconDate],[`Ticket ${i+1} Fueler L`,t.fueler],[`Ticket ${i+1} EASS L`,t.eass],[`Ticket ${i+1} Deviation L`,t.deviation],[`Ticket ${i+1} Status`,t.status]])),
-    "Gross Positive L":s.positiveLitres,"Gross Negative L":s.negativeLitres,"Net Deviation L":s.netDeviation,"Positive Ticket Count":s.positiveCount,"Latest Status":s.latestStatus}));
+    "Gross Positive L":posLitres(s),"Gross Negative L":s.negativeLitres,"Net Deviation L":s.netDeviation,"Positive Ticket Count":posCount(s),"Latest Status":s.latestStatus}));
   // Site query always searches the full live Deviation Fuel payload, regardless of page filters.
   const siteQueryMatches = useMemo(() => {
     const id = siteQuery.trim().toLowerCase();
@@ -624,8 +653,8 @@ function FuelDeviationPage({ payload, region, onRegionChange }: { payload: Sheet
   </tr></thead><tbody>{rows.map(s=><tr key={`${s.grid}-${s.siteId}`} className="border-b border-slate-100 even:bg-[#f8faf9] hover:bg-emerald-50/80 transition-colors">
     <td className={cellClass+" font-bold text-slate-900"}>{s.siteId}</td>{showGrid&&<td className={cellClass}>{s.grid}</td>}<td className={cellClass}>{s.revenue||"—"}</td><td className={cellClass}>{s.owner||"—"}</td>
     <td className={cellClass+" font-medium"}>{s.tickets[0].reconDate && s.tickets[0].reconDate!=="-" ? s.tickets[0].reconDate : "—"}</td>
-    {s.tickets.map((t,i)=><td key={i} className={`${numClass} ${t.status==="Positive"?"font-bold text-red-700":""}`}><div>{t.deviation===null?"—":fmt(t.deviation)}</div><div className="mt-0.5 text-[11px] font-normal text-slate-500" title={`Fuel reconciliation date · LFD: ${t.lfd}`}>{t.reconDate && t.reconDate!=="-" ? t.reconDate : "No date"}</div></td>)}
-    <td className={numClass+" font-bold text-red-700"}>{fmt(s.positiveLitres)}</td><td className={numClass+" font-semibold"}>{s.positiveCount}</td><td className={cellClass}>{statusBadge(s.latestStatus)}</td>
+    {s.tickets.map((t,i)=><td key={i} className={`${numClass} ${t.status==="Positive"?"font-bold text-red-700":""}`}><div>{(ticketView==="latest" && i>0)||t.deviation===null?"—":fmt(t.deviation)}</div><div className="mt-0.5 text-[11px] font-normal text-slate-500" title={`Fuel reconciliation date · LFD: ${t.lfd}`}>{t.reconDate && t.reconDate!=="-" ? t.reconDate : "No date"}</div></td>)}
+    <td className={numClass+" font-bold text-red-700"}>{fmt(posLitres(s))}</td><td className={numClass+" font-semibold"}>{posCount(s)}</td><td className={cellClass}>{statusBadge(s.latestStatus)}</td>
   </tr>)}</tbody></table>{!rows.length&&<div className="p-4 text-sm text-slate-500">No sites match the selected filters.</div>}</div>;
   if (!payload) return <div className="rounded-lg border border-amber-200 bg-amber-50 p-5 text-amber-900">Deviation Fuel tab could not be loaded. Confirm the tab is named <b>Deviation Fuel</b> in the October Google Sheet.</div>;
   if (!sites.length) return <div className="rounded-lg border border-amber-200 bg-amber-50 p-5 text-amber-900">No valid site records found in Deviation Fuel. Verify SITE ID, Grid and ticket columns.</div>;
@@ -634,32 +663,32 @@ function FuelDeviationPage({ payload, region, onRegionChange }: { payload: Sheet
   const negativeMagnitude = (s: FuelDeviationSite) => Math.abs(s.negativeLitres);
   const latestNegative = (s: FuelDeviationSite) => s.tickets[0]?.status === "Negative" ? Math.abs(s.tickets[0].deviation ?? 0) : 0;
   const negativeCount = (s: FuelDeviationSite) => s.tickets.filter(t => t.status === "Negative").length;
-  const negativeGross = base.reduce((n,s) => n + negativeMagnitude(s), 0);
+  const negativeGross = base.reduce((n,s) => n + negLitres(s), 0);
   const negativeLatestGross = base.reduce((n,s) => n + latestNegative(s), 0);
-  const negativeAffected = base.filter(s => negativeCount(s)>0).length;
-  const negativeRecurring = base.filter(s => negativeCount(s)>=2).length;
+  const negativeAffected = base.filter(s => negCount(s)>0).length;
+  const negativeRecurring = base.filter(s => negCount(s)>=2).length;
   const negativeGrids = gridList.map(g => {
     const group = base.filter(s=>s.grid===g);
-    return {grid:g,sites:group.length,affected:group.filter(s=>negativeCount(s)>0).length,
+    return {grid:g,sites:group.length,affected:group.filter(s=>negCount(s)>0).length,
       latestSites:group.filter(s=>s.latestStatus==="Negative").length,
-      gross:group.reduce((n,s)=>n+negativeMagnitude(s),0),
+      gross:group.reduce((n,s)=>n+negLitres(s),0),
       latest:group.reduce((n,s)=>n+latestNegative(s),0),
-      chartLitres:group.reduce((n,s)=>n+(ticketView==="latest"?latestNegative(s):negativeMagnitude(s)),0)};
+      chartLitres:group.reduce((n,s)=>n+(ticketView==="latest"?latestNegative(s):negLitres(s)),0)};
   }).filter(g=>g.sites).sort((a,b)=>b.gross-a.gross);
-  const negativeWorst = [...base].filter(s=>negativeMagnitude(s)>0).sort((a,b)=>negativeMagnitude(b)-negativeMagnitude(a)).slice(0,worstLimit);
+  const negativeWorst = [...base].filter(s=>negLitres(s)>0).sort((a,b)=>negativeMagnitude(b)-negativeMagnitude(a)).slice(0,worstLimit);
   // Recurring-site exports use the same >+10 L / <-20 L exception rules as the KPI cards.
   // Include only sites with at least two qualifying tickets, independent of latest status.
   const recurringSiteExport = (mode: "positive" | "negative") => {
     const isNegative = mode === "negative";
-    return base.filter(s => isNegative ? negativeCount(s) >= 2 : s.positiveCount >= 2)
+    return base.filter(s => isNegative ? negCount(s) >= 2 : posCount(s) >= 2)
       .sort((a,b) => isNegative ? negativeMagnitude(b)-negativeMagnitude(a) : b.positiveLitres-a.positiveLitres)
       .map(s => ({
         "Site ID":s.siteId,"Grid":s.grid,"Sub-Region":s.region,"Revenue Category":s.revenue,
         "Cluster Owner":s.owner,"MS GTL":s.gtl,"Zone Lead":s.lead,
         "DG Rating":s.rating,"Hub Category":s.hubType,"BM":s.benchmark,
-        "Recurring Tickets":isNegative ? negativeCount(s) : s.positiveCount,
-        "Gross Positive (L)":s.positiveLitres,
-        "Gross Negative Magnitude (L)":negativeMagnitude(s),
+        "Recurring Tickets":isNegative ? negCount(s) : posCount(s),
+        "Gross Positive (L)":posLitres(s),
+        "Gross Negative Magnitude (L)":negLitres(s),
         "Net Deviation (L)":s.netDeviation,"Latest Ticket Status":s.latestStatus,
         ...Object.fromEntries(s.tickets.flatMap((t,i) => [
           [`Ticket ${i+1} Recon Date`,t.reconDate],[`Ticket ${i+1} LFD`,t.lfd],
@@ -671,7 +700,7 @@ function FuelDeviationPage({ payload, region, onRegionChange }: { payload: Sheet
   };
   const negativeExport = base.map(s=>({"Site ID":s.siteId,Grid:s.grid,"Revenue Category":s.revenue,"Cluster Owner":s.owner,"MS GTL":s.gtl,"Zone Lead":s.lead,
     "Latest Ticket Deviation L":s.tickets[0]?.deviation ?? "", "Latest Ticket Status":s.latestStatus,
-    "Negative Tickets":negativeCount(s),"Gross Negative L (signed)":s.negativeLitres,"Gross Negative Magnitude L":negativeMagnitude(s),
+    "Negative Tickets":negCount(s),"Gross Negative L (signed)":s.negativeLitres,"Gross Negative Magnitude L":negLitres(s),
     ...Object.fromEntries(s.tickets.flatMap((t,i)=>[[`Ticket ${i+1} Date`,t.reconDate],[`Ticket ${i+1} Deviation L`,t.deviation ?? ""],[`Ticket ${i+1} Status`,t.status]]))}));
   const modeSwitcher = <div className="flex flex-wrap gap-2 rounded-xl border border-blue-200 bg-blue-50 p-2">
     <button type="button" onClick={()=>{setDeviationMode("positive");setExpandedGrid(null);}} className={`rounded-lg px-5 py-2.5 text-sm font-extrabold ${deviationMode==="positive"?"bg-blue-800 text-white shadow":"bg-white text-blue-900"}`}>Positive Variance</button>
@@ -681,21 +710,21 @@ function FuelDeviationPage({ payload, region, onRegionChange }: { payload: Sheet
     {(["Site ID",...(showGrid?["Grid"]:[]),"Revenue","CO","Latest Date","Latest (L)","2nd (L)","3rd (L)","4th (L)","Gross Negative (L)","Negative Tickets","Latest Status"] as string[]).map(h=><th key={h} className="border border-blue-700 bg-blue-900 px-3 py-3 text-center align-middle font-bold text-white">{h}</th>)}
     </tr></thead><tbody>{list.map(s=><tr key={`${s.grid}-${s.siteId}`} className="border-b border-slate-100 even:bg-blue-50/40">
       <td className="border border-slate-300 px-3 py-3 text-center align-middle font-bold text-blue-900">{s.siteId}</td>{showGrid&&<td className="border border-slate-300 px-3 py-3 text-center align-middle">{s.grid}</td>}<td className="border border-slate-300 px-3 py-3 text-center align-middle">{s.revenue||"—"}</td><td className="border border-slate-300 px-3 py-3 text-center align-middle">{s.owner||"—"}</td>
-      <td className="border border-slate-300 px-3 py-3 text-center align-middle">{s.tickets[0]?.reconDate||"—"}</td>{s.tickets.map((t,i)=><td key={i} className={`border border-slate-300 px-3 py-3 text-center align-middle font-semibold tabular-nums ${t.status==="Negative"?"text-amber-800":"text-slate-700"}`}>{t.deviation===null?"—":fmt(t.deviation)}</td>)}
-      <td className="border border-slate-300 px-3 py-3 text-center align-middle text-center font-extrabold text-amber-800">{fmt(negativeMagnitude(s))}</td><td className="border border-slate-300 px-3 py-3 text-center align-middle text-center font-bold">{negativeCount(s)}</td><td className="border border-slate-300 px-3 py-3 text-center align-middle">{statusBadge(s.latestStatus)}</td>
+      <td className="border border-slate-300 px-3 py-3 text-center align-middle">{s.tickets[0]?.reconDate||"—"}</td>{s.tickets.map((t,i)=><td key={i} className={`border border-slate-300 px-3 py-3 text-center align-middle font-semibold tabular-nums ${t.status==="Negative"?"text-amber-800":"text-slate-700"}`}>{(ticketView==="latest" && i>0)||t.deviation===null?"—":fmt(t.deviation)}</td>)}
+      <td className="border border-slate-300 px-3 py-3 text-center align-middle text-center font-extrabold text-amber-800">{fmt(negLitres(s))}</td><td className="border border-slate-300 px-3 py-3 text-center align-middle text-center font-bold">{negCount(s)}</td><td className="border border-slate-300 px-3 py-3 text-center align-middle">{statusBadge(s.latestStatus)}</td>
     </tr>)}</tbody></table>{!list.length&&<p className="p-4 text-sm text-slate-500">No negative-deviation sites found.</p>}</div>;
   // CO accountability: calculate exceptions from all four tickets without netting opposite signs.
   // The table is shared by Positive and Negative Variance views.
   const coGroups = [...new Set(base.map(s => s.owner.trim() || "Unassigned"))].map(name => {
     const group = base.filter(s => (s.owner.trim() || "Unassigned") === name);
     const negative = deviationMode === "negative";
-    const amount = (s: FuelDeviationSite) => negative ? negativeMagnitude(s) : s.positiveLitres;
-    const latest = (s: FuelDeviationSite) => negative ? latestNegative(s) : (s.latestStatus === "Positive" ? (s.tickets[0]?.deviation ?? 0) : 0);
-    const count = (s: FuelDeviationSite) => negative ? negativeCount(s) : s.positiveCount;
+    const amount = (s: FuelDeviationSite) => negative ? negLitres(s) : posLitres(s);
+    const latest = (s: FuelDeviationSite) => negative ? latestNegative(s) : (selectedTickets(s)[0]?.status === "Positive" ? (s.tickets[0]?.deviation ?? 0) : 0);
+    const count = (s: FuelDeviationSite) => negative ? negCount(s) : posCount(s);
     return {name, group, sites:group.length, affected:group.filter(s=>count(s)>0).length,
       latestSites:group.filter(s=>latest(s)>0).length, recurring:group.filter(s=>count(s)>=2).length,
       gross:group.reduce((n,s)=>n+amount(s),0), latest:group.reduce((n,s)=>n+latest(s),0)};
-  }).filter(c=>c.affected>0).sort((a,b)=>b.gross-a.gross);
+  }).filter(c=>c.affected>0).sort((a,b)=>b.latest-a.latest || b.gross-a.gross);
   const coExport = coGroups.map(c=>({"Cluster Owner":c.name,"Total Sites":c.sites,"Affected Sites":c.affected,
     "Gross Deviation (L)":c.gross,"Latest Deviation (L)":c.latest,"Latest Affected Sites":c.latestSites,"Recurring Sites":c.recurring}));
   const coSummaryView = <section className="min-w-0 overflow-hidden rounded-xl border border-blue-200 bg-white shadow-sm">
@@ -720,9 +749,9 @@ function FuelDeviationPage({ payload, region, onRegionChange }: { payload: Sheet
         </tr>
         {expandedOwner===c.name&&<tr><td colSpan={9} className="border border-slate-300 bg-blue-50 p-3">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2"><strong className="text-sm text-blue-950">{c.name} · {c.affected} affected sites · Worst first</strong>
-            <ExportButtonComponent data={c.group.map(s=>({"Site ID":s.siteId,"Grid":s.grid,"CO":s.owner,"Latest Deviation (L)":s.tickets[0]?.deviation??"","Gross Positive (L)":s.positiveLitres,"Gross Negative Magnitude (L)":negativeMagnitude(s),"Positive Tickets":s.positiveCount,"Negative Tickets":negativeCount(s)}))} filename={`Fuel_${deviationMode}_CO_${c.name.replace(/[^a-z0-9]/gi,"_")}`} label="Export Sites" format="excel" variant="success"/></div>
-          {deviationMode==="negative" ? negativeTable(c.group.filter(s=>negativeMagnitude(s)>0).sort((a,b)=>negativeMagnitude(b)-negativeMagnitude(a)),true)
-            : renderSiteTable(c.group.filter(s=>s.positiveLitres>0).sort((a,b)=>b.positiveLitres-a.positiveLitres),true)}
+            <ExportButtonComponent data={c.group.map(s=>({"Site ID":s.siteId,"Grid":s.grid,"CO":s.owner,"Latest Deviation (L)":s.tickets[0]?.deviation??"","Gross Positive (L)":posLitres(s),"Gross Negative Magnitude (L)":negLitres(s),"Positive Tickets":posCount(s),"Negative Tickets":negCount(s)}))} filename={`Fuel_${deviationMode}_CO_${c.name.replace(/[^a-z0-9]/gi,"_")}`} label="Export Sites" format="excel" variant="success"/></div>
+          {deviationMode==="negative" ? negativeTable(c.group.filter(s=>negLitres(s)>0).sort((a,b)=>negativeMagnitude(b)-negativeMagnitude(a)),true)
+            : renderSiteTable(c.group.filter(s=>posLitres(s)>0).sort((a,b)=>b.positiveLitres-a.positiveLitres),true)}
         </td></tr>}
       </React.Fragment>)}</tbody>
     </table>{!coGroups.length&&<p className="p-4 text-sm text-slate-500">No cluster owners with deviations under the selected filters.</p>}</div>
@@ -733,6 +762,7 @@ function FuelDeviationPage({ payload, region, onRegionChange }: { payload: Sheet
       <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-2xl font-extrabold text-blue-950">Negative Fuel Variance <span className="text-sm font-medium text-slate-500">· Fueler vs EASS</span></h2><p className="mt-1 text-xs text-slate-600">Negative exception: deviation below −20 L · Worst ranked by absolute negative litres, without offsetting positives</p></div>
         <div className="flex gap-1 rounded-lg border border-blue-200 bg-blue-50 p-1">{(["overall","C-1","C-6"] as FuelView[]).map(v=><button key={v} onClick={()=>{onRegionChange(v);setGrid("__all");setExpandedGrid(null);}} className={`rounded-md px-3 py-2 text-sm font-bold ${region===v?"bg-blue-800 text-white":"text-blue-900"}`}>{v==="overall"?"Overall":v}</button>)}</div></div>
       <div className="mt-4 grid grid-cols-2 gap-2 border-t border-slate-100 pt-4 lg:grid-cols-5">
+        <select aria-label="Fuel month" value={fuelMonthFilter} onChange={e=>{setFuelMonthFilter(e.target.value as "oct26"|"all");setExpandedGrid(null);}} className={selectClass}><option value="oct26">Oct-26 Fueled Sites</option><option value="all">All Fuel Months</option></select>
         <select aria-label="Ticket period" value={ticketView} onChange={e=>setTicketView(e.target.value as "all"|"latest")} className={selectClass}><option value="all">Last 4 Tickets</option><option value="latest">Latest Ticket</option></select>
         <select aria-label="Grid" value={gridList.includes(grid)?grid:"__all"} onChange={e=>{setGrid(e.target.value);setExpandedGrid(null);}} className={selectClass}><option value="__all">All Grids</option>{gridList.map(g=><option key={g}>{g}</option>)}</select>
         <select aria-label="Revenue" value={category} onChange={e=>setCategory(e.target.value)} className={selectClass}><option value="__all">All Revenue Categories</option>{categories.map(c=><option key={c}>{c}</option>)}</select>
@@ -741,10 +771,10 @@ function FuelDeviationPage({ payload, region, onRegionChange }: { payload: Sheet
       </div>
     </section>
     <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">{[
-      ["Gross Negative Deviation",`${fmt(negativeGross)} L`,"Absolute magnitude · 4 tickets"],
+      ["Gross Negative Deviation",`${fmt(negativeGross)} L`,ticketView==="latest"?"Latest ticket · negative only":"Last 4 tickets · negative only"],
       ["Latest Ticket Negative",`${fmt(negativeLatestGross)} L`,"Latest negative exceptions"],
       ["Affected Sites",String(negativeAffected),`Of ${base.length} selected sites`],
-      ["Recurring Sites",String(negativeRecurring),"Negative in 2+ tickets"]
+      ["Recurring Sites",String(negativeRecurring),ticketView==="latest"?"Not applicable to one ticket":"Negative in 2+ tickets"]
     ].map(([label,value,sub])=><div key={label} className="rounded-xl border border-blue-200 border-l-4 border-l-amber-500 bg-white p-4 shadow-sm"><p className="text-xs font-semibold text-slate-600">{label}</p><p className="mt-2 text-2xl font-black tabular-nums text-amber-800">{value}</p><p className="mt-1 text-xs text-slate-500">{sub}</p>{label==="Recurring Sites"&&<div className="mt-3"><ExportButtonComponent data={recurringSiteExport("negative")} filename="Fuel_Negative_Recurring_Sites" label="Export Recurring Sites" format="excel" variant="success"/></div>}</div>)}</section>
     {region==="overall"&&<section className="grid grid-cols-1 gap-3 md:grid-cols-2">{(["C-1","C-6"] as const).map(r=>{const x=negativeGrids.filter(g=>fuelRegion(g.grid)===r);return <div key={r} className="rounded-xl border border-blue-200 bg-white p-4"><div className="flex items-center justify-between"><h3 className="font-extrabold text-blue-900">Central-{r.slice(-1)}</h3><button className="text-sm font-bold text-blue-800 underline" onClick={()=>onRegionChange(r)}>View {r}</button></div><p className="mt-2 text-xl font-extrabold text-amber-800">{fmt(x.reduce((n,g)=>n+g.gross,0))} L</p><p className="text-sm text-slate-600">Worst grid: {x[0]?.grid??"—"} · {x.reduce((n,g)=>n+g.affected,0)} affected sites</p></div>})}</section>}
     {coSummaryView}
@@ -763,6 +793,7 @@ function FuelDeviationPage({ payload, region, onRegionChange }: { payload: Sheet
         <div className="inline-flex shrink-0 rounded-md border border-emerald-200 bg-emerald-50 p-0.5">{(["overall","C-1","C-6"] as FuelView[]).map(v=><button key={v} onClick={()=>{onRegionChange(v);setGrid("__all");setExpandedGrid(null);}} className={`rounded px-3 py-1.5 text-[13px] font-semibold transition ${region===v?"bg-[#075B39] text-white shadow-sm":"text-emerald-900 hover:bg-white"}`}>{v==="overall"?"Overall":v}</button>)}</div>
       </div>
       <div className="mt-4 grid grid-cols-2 items-center gap-2 border-t border-slate-100 pt-3 md:grid-cols-3 xl:grid-cols-[1fr_1fr_1.25fr_1.5fr_1.25fr_auto]">
+        <select aria-label="Fuel month" value={fuelMonthFilter} onChange={e=>{setFuelMonthFilter(e.target.value as "oct26"|"all");setExpandedGrid(null);}} className={selectClass}><option value="oct26">Oct-26 Fueled Sites</option><option value="all">All Fuel Months</option></select>
         <label className="sr-only" htmlFor="fuel-dev-period">Period</label><select id="fuel-dev-period" aria-label="Ticket period" value={ticketView} onChange={e=>setTicketView(e.target.value as "all"|"latest")} className={selectClass}><option value="all">Last 4 Tickets</option><option value="latest">Latest Ticket</option></select>
         <select aria-label="Grid" value={gridList.includes(grid)?grid:"__all"} onChange={e=>{setGrid(e.target.value);setExpandedGrid(null);}} className={selectClass}><option value="__all">All Grids</option>{gridList.map(g=><option key={g} value={g}>{g}</option>)}</select>
         <select aria-label="Revenue category" value={category} onChange={e=>setCategory(e.target.value)} className={selectClass}><option value="__all">All Revenue Categories</option>{categories.map(x=><option key={x} value={x}>{x}</option>)}</select>
@@ -773,10 +804,10 @@ function FuelDeviationPage({ payload, region, onRegionChange }: { payload: Sheet
     </section>
     <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
       {[
-        {label:"Gross Positive Deviation",value:`${fmt(grossPositive)} L`,sub:"Last 4 tickets · positive only",risk:true},
+        {label:"Gross Positive Deviation",value:`${fmt(grossPositive)} L`,sub:ticketView==="latest"?"Latest ticket · positive only":"Last 4 tickets · positive only",risk:true},
         {label:"Latest Ticket Positive",value:`${fmt(latestPositive)} L`,sub:`${latestPositiveSites} sites on latest ticket`,risk:true},
         {label:"Affected Sites",value:String(historicalPositiveSites),sub:`Of ${base.length} selected sites`,risk:false},
-        {label:"Recurring Sites",value:String(recurring),sub:"Positive in 2+ tickets",risk:false},
+        {label:"Recurring Sites",value:String(recurring),sub:ticketView==="latest"?"Not applicable to one ticket":"Positive in 2+ tickets",risk:false},
       ].map(k=><div key={k.label} className={`flex min-h-[114px] flex-col justify-between rounded-xl border border-slate-200 border-l-4 bg-white px-4 py-3 shadow-[0_1px_2px_rgba(15,23,42,0.04)] ${k.risk?"border-l-red-500":"border-l-[#07804d]"}`}><div className="text-[13px] font-semibold text-slate-600">{k.label}</div><div className={`mt-1 text-[clamp(23px,2.3vw,32px)] font-extrabold leading-tight tracking-tight tabular-nums ${k.risk?"text-red-700":"text-slate-900"}`}>{k.value}</div><div className="mt-1 text-[11px] text-slate-500">{k.sub}</div>{k.label==="Recurring Sites"&&<div className="mt-3"><ExportButtonComponent data={recurringSiteExport("positive")} filename="Fuel_Positive_Recurring_Sites" label="Export Recurring Sites" format="excel" variant="success"/></div>}</div>)}
     </section>
     {region === "overall" && <section className="grid grid-cols-1 gap-3 lg:grid-cols-2" aria-label="C-1 and C-6 regional fuel deviation summary">
@@ -835,7 +866,7 @@ function FuelDeviationPage({ payload, region, onRegionChange }: { payload: Sheet
             <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
               {[["Gross Positive",`${fmt(s.positiveLitres)} L`,"text-red-700"],["Gross Negative",`${fmt(s.negativeLitres)} L`,"text-amber-700"],["Net Deviation",`${fmt(s.netDeviation)} L`,"text-slate-900"],["Positive / Negative",`${s.positiveCount} / ${negativeTickets}`,"text-slate-900"],["Latest Ticket",s.latestStatus,"text-blue-900"]].map(([label,value,color])=><div key={label} className="rounded-lg border border-slate-200 bg-white p-3"><div className="text-xs font-semibold text-slate-500">{label}</div><div className={`mt-1 text-xl font-extrabold tabular-nums ${color}`}>{value}</div></div>)}
             </div>
-            <div className="overflow-x-auto rounded-lg border border-slate-200"><table className="w-full min-w-[1260px] border-collapse text-sm"><thead><tr>{["Ticket","Recon Date","Last Fueling Date","Fuel to Recon (L)","Before Fuel (L)","Fueler Consumption (L)","EASS DG Hours","EASS Consumption (L)","Deviation (L)","Status"].map(h=><th key={h} className={headClass}>{h}</th>)}</tr></thead><tbody>{s.tickets.map((t,i)=><tr key={i} className="border-t border-slate-100 even:bg-slate-50"><td className={cellClass+" font-bold"}>{i===0?"Latest":`Ticket ${i+1}`}</td><td className={cellClass}>{t.reconDate||"—"}</td><td className={cellClass}>{t.lfd||"—"}</td>{[t.fuelToRecon,t.beforeFuel,t.fueler,t.hours,t.eass].map((v,j)=><td key={j} className={numClass}>{v===null?"—":fmt(v)}</td>)}<td className={`${numClass} font-extrabold ${t.status==="Positive"?"text-red-700":t.status==="Negative"?"text-amber-700":t.status==="Normal"?"text-emerald-700":"text-slate-500"}`}>{t.deviation===null?"—":fmt(t.deviation)}</td><td className={cellClass}>{statusBadge(t.status)}</td></tr>)}</tbody></table></div>
+            <div className="overflow-x-auto rounded-lg border border-slate-200"><table className="w-full min-w-[1260px] border-collapse text-sm"><thead><tr>{["Ticket","Recon Date","Last Fueling Date","Fuel to Recon (L)","Before Fuel (L)","Fueler Consumption (L)","EASS DG Hours","EASS Consumption (L)","Deviation (L)","Status"].map(h=><th key={h} className={headClass}>{h}</th>)}</tr></thead><tbody>{s.tickets.map((t,i)=><tr key={i} className="border-t border-slate-100 even:bg-slate-50"><td className={cellClass+" font-bold"}>{i===0?"Latest":`Ticket ${i+1}`}</td><td className={cellClass}>{t.reconDate||"—"}</td><td className={cellClass}>{t.lfd||"—"}</td>{[t.fuelToRecon,t.beforeFuel,t.fueler,t.hours,t.eass].map((v,j)=><td key={j} className={numClass}>{v===null?"—":fmt(v)}</td>)}<td className={`${numClass} font-extrabold ${t.status==="Positive"?"text-red-700":t.status==="Negative"?"text-amber-700":t.status==="Normal"?"text-emerald-700":"text-slate-500"}`}>{(ticketView==="latest" && i>0)||t.deviation===null?"—":fmt(t.deviation)}</td><td className={cellClass}>{statusBadge(t.status)}</td></tr>)}</tbody></table></div>
             <p className="text-xs text-slate-500">{validTickets} of 4 tickets contain deviation values. Positive &gt; +10 L · Negative &lt; −20 L · Normal otherwise. Missing data is shown as —.</p>
           </div>;
         })}
@@ -1711,7 +1742,7 @@ export default function FuelDashboard({ data, deviationData, tPrimeData, sheet1D
         <main id="fuel-active-tab-content" className="space-y-5 p-4 sm:p-6 fuel-dashboard-main">
         {tab==="monthlyQuery" && <MonthlyFuelQueryPage payload={monthlyFuelData} ownership={sheet1Data} fuelRows={rows} />}
         {tab==="deviation" && <FuelDeviationPage payload={deviationData} region={view} onRegionChange={setView} />}
-        {tab==="yesterday" && <YesterdayFuelPage rows={rows} />}
+        {tab==="yesterday" && <YesterdayFuelPage rows={rows} deviationData={deviationData} />}
         {tab==="tprime" && <TPrimePenaltyPage fuelRows={rows} primeData={tPrimeData} deviationData={deviationData} />}
         {tab==="summary" && <>
           <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
@@ -2006,6 +2037,3 @@ export default function FuelDashboard({ data, deviationData, tPrimeData, sheet1D
     </div>
   );
 }
-
-
-
