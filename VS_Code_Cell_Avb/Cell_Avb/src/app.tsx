@@ -4600,6 +4600,22 @@ function normalizeKey(value: unknown): string {
   return normalizeText(value).toLowerCase().replace(/\s+/g, " ");
 }
 
+// Canonical scorecard group: preserve source Group when valid, and recover
+// Platinum+ from Revenue Category when the Group cell/header is missing.
+function canonicalGridGroup(group: unknown, revenue: unknown): string {
+  const compact = (v: unknown) => String(v ?? "").toLowerCase()
+    .replace(/\u00a0/g, " ").replace(/\s+/g, "").replace(/[^a-z0-9+]/g, "");
+  const g = compact(group);
+  const r = compact(revenue);
+  if (g === "platinum+" || g === "platinumplus" || g === "plat+") return "Platinum+";
+  if (g === "pgs") return "PGS";
+  if (g === "sb") return "SB";
+  if (r === "platinum+" || r === "platinumplus" || r === "plat+") return "Platinum+";
+  if (["platinum", "gold", "strategic"].includes(r)) return "PGS";
+  if (["silver", "bronze"].includes(r)) return "SB";
+  return String(group ?? "").trim();
+}
+
 function parseGridCa(value: unknown): number {
   if (value === null || value === undefined) return 0;
   const cleaned = String(value).replace(/%/g, "").replace(/,/g, "").trim();
@@ -4759,7 +4775,10 @@ function GridPerformanceScorecard({
           siteId: normalizeText(getRawValue(row, "Site ID", "SiteID", "Site Id")),
           grid,
           zoneLead: normalizeText(getRawValue(row, "Zone Lead", "Zong Lead", "CMPAK GTL")),
-          group: normalizeText(getRawValue(row, "Group")),
+          group: canonicalGridGroup(
+            getRawValue(row, "Group"),
+            getRawValue(row, "Revenue Category", "Category")
+          ),
           revenueCategory: normalizeText(getRawValue(row, "Revenue Category", "Category")),
           dgStatus: normalizeText(getRawValue(row, "DG Status", "DG Installed")),
           currentMonth,
@@ -4796,7 +4815,7 @@ function GridPerformanceScorecard({
     const selectedSites = sites.filter((site) => {
       if (site.currentMonth <= 0) return false;
       if (config.key === "dg") return normalizeKey(site.dgStatus) === "operational";
-      return normalizeKey(site.group) === normalizeKey(config.group || "");
+      return canonicalGridGroup(site.group, site.revenueCategory) === config.group;
     });
 
     const avg = averageCa(selectedSites);
