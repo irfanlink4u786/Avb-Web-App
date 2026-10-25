@@ -4584,7 +4584,7 @@ type GridPerformanceRow = {
 };
 
 const GRID_KPI_CONFIG: GridKpiConfig[] = [
-  { key: "platinum", label: "Platinum+", group: "Platinum +", weightage: 10, base: 97.75, target: 98.3, stretch: 98.7, maxScore: 12 },
+  { key: "platinum", label: "Platinum+", group: "Platinum+", weightage: 10, base: 97.75, target: 98.3, stretch: 98.7, maxScore: 12 },
   { key: "pgs", label: "PGS", group: "PGS", weightage: 10, base: 97.5, target: 98.1, stretch: 98.4, maxScore: 12 },
   { key: "sb", label: "SB", group: "SB", weightage: 5, base: 94.75, target: 95, stretch: 96.5, maxScore: 7 },
   { key: "dg", label: "DG", weightage: 10, base: 98, target: 98.5, stretch: 99.2, maxScore: 12 },
