@@ -314,6 +314,26 @@ function EmployeePerformance({
       .sort((a, b) => a.avg - b.avg);
   }, [activeSites, level]);
 
+  const employeeSummaryExport = employeeRows.map(row => ({
+    Employee: row.name, "Total Sites": row.sites.length,
+    "Current CA (%)": Number(row.avg.toFixed(2)), "Employee Level": level,
+  }));
+  const employeeSiteExport = (employeeSites: SiteData[], employeeName: string) =>
+    employeeSites.map(site => {
+      const result: Record<string, string | number> = {
+        Employee: employeeName, "Site ID": site.siteName,
+        "Revenue Category": site.revenueCategory || "-",
+        "Current Month CA (%)": Number(site.currentAvb || 0),
+        "Sub-Region": site.subRegion || "-", Grid: site.grid || "-",
+        DG: site.dgStatus || site.dgInstalled || "-",
+        "Li-ion": site.liIonInstalled || "-", "BB Status": site.bbStatus || "-",
+      };
+      latest3Dates.forEach(date => {
+        result[`${empFormatDailyDateHeader(date)} Cell AVB (%)`] = empGetDailyAvb(site, date);
+      });
+      return result;
+    });
+
   const levelButtons: { id: EmployeePerformanceLevel; label: string }[] = [
     { id: "zongLead", label: "CMPAK GTL" },
     { id: "msGtl", label: "MPL GTL" },
@@ -333,6 +353,10 @@ function EmployeePerformance({
           </p>
         </div>
 
+        <div className="flex flex-wrap items-center gap-2">
+          <ExportButtonComponent data={employeeSummaryExport} filename={`employees_${level}_summary`} label="Export Summary" format="excel" variant="primary" />
+          <ExportButtonComponent data={employeeRows.flatMap(row => employeeSiteExport(row.sites, row.name))} filename={`employees_${level}_all_sites`} label="Export All Sites" format="excel" variant="success" />
+        </div>
         <div className="flex gap-1 rounded-lg bg-slate-100 p-1">
           {levelButtons.map((item) => (
             <button
@@ -425,6 +449,9 @@ function EmployeePerformance({
                               All Sites ({row.sites.length})
                             </h4>
 
+                            <div className="mt-2">
+                              <ExportButtonComponent data={employeeSiteExport(row.sites, row.name)} filename={`employee_${row.name.replace(/[^a-z0-9]+/gi, "_")}_sites`} label="Export Employee Sites" format="excel" variant="success" />
+                            </div>
                             <p className="mt-1 text-xs font-semibold text-slate-700">
                               Latest 3 days Cell AVB:
                               {latest3Dates.length > 0 ? (
@@ -1788,16 +1815,23 @@ function CategoryPage({
 }) {
   const [expandedGrid, setExpandedGrid] = useState<string | null>(null);
   const [selectedEmployee, setSelectedEmployee] = useState<string>("all");
+  const [selectedSubRegion, setSelectedSubRegion] = useState<string>("all");
 
   // Detail-table headers must stay readable on the light drill-down background.
   // The global light theme intentionally uses white text for the main blue table headers.
   const [selectedLevel, setSelectedLevel] = useState<"zongLead" | "msGtl" | "clusterOwner">("zongLead");
 
   const filteredSites = useMemo(() => sites.filter(filterFn), [sites, filterFn]);
-  const activeSites = useMemo(() => filteredSites.filter((s) => s.currentAvb > 0), [filteredSites]);
+  const subRegionOptions = useMemo(() => Array.from(new Set(
+    filteredSites.map(s => String(s.subRegion || "").trim()).filter(Boolean)
+  )).sort(), [filteredSites]);
+  const regionFilteredSites = useMemo(() => selectedSubRegion === "all"
+    ? filteredSites : filteredSites.filter(s => String(s.subRegion || "").trim() === selectedSubRegion),
+    [filteredSites, selectedSubRegion]);
+  const activeSites = useMemo(() => regionFilteredSites.filter((s) => s.currentAvb > 0), [regionFilteredSites]);
 
   const categoryExportData = useMemo(() => {
-    return filteredSites.map((s) => ({
+    return regionFilteredSites.map((s) => ({
       "Site ID": s.siteName,
       "Revenue Category": s.revenueCategory,
       "Sub-Region": s.subRegion,
@@ -1818,7 +1852,7 @@ function CategoryPage({
       Terrain: s.terrain || "-",
       City: s.city || "-",
     }));
-  }, [filteredSites]);
+  }, [regionFilteredSites]);
 
   const employeeNames = useMemo(() => {
     const names = new Set<string>();
@@ -1885,7 +1919,7 @@ function CategoryPage({
 
     const cutoffTime = cutoffKey ? toTime(cutoffKey) : Number.POSITIVE_INFINITY;
 
-    filteredSites.forEach((site) => {
+    regionFilteredSites.forEach((site) => {
       Object.entries(site.dailyData || {}).forEach(([key, value]) => {
         const normalized = normalizeDailyDateKey(key);
         if (!normalized || !Number.isFinite(value)) return;
@@ -1911,7 +1945,7 @@ function CategoryPage({
         const day = parseInt(dayStr, 10);
         return { dateKey, label: `${day}${getDaySuffix(day)} ${monthLong[monthStr] || monthStr}` };
       });
-  }, [filteredSites, lastUpdatedDate]);
+  }, [regionFilteredSites, lastUpdatedDate]);
 
   const worstSites = useMemo(() => {
     const sorted = [...employeeFilteredSites].sort((a, b) => a.currentAvb - b.currentAvb);
@@ -1981,7 +2015,7 @@ function CategoryPage({
   }, [unstableWithDays, lastThreeDays]);
 
   const stats = useMemo(() => {
-    const total = filteredSites.length;
+    const total = regionFilteredSites.length;
     const avgCa =
       employeeFilteredSites.length > 0
         ? employeeFilteredSites.reduce((sum, s) => sum + s.currentAvb, 0) / employeeFilteredSites.length
@@ -2023,7 +2057,7 @@ function CategoryPage({
       bestGrid,
       totalActive: employeeFilteredSites.length,
     };
-  }, [employeeFilteredSites, threshold, filteredSites.length]);
+  }, [employeeFilteredSites, threshold, regionFilteredSites.length]);
 
   const gridExport = stats.gridStats.map((g) => ({
     Grid: g.grid,
@@ -2043,9 +2077,14 @@ function CategoryPage({
         <div>
           <h2 className="text-xl sm:text-2xl font-extrabold tracking-tight text-slate-900 mb-1" style={{ color: "#102a43" }}>{title}</h2>
           <p className="text-slate-700 text-sm" style={{ color: "#475569" }}>{description}</p>
-          <p className="text-xs text-slate-600 mt-1">{filteredSites.length} sites in this category</p>
+          <p className="text-xs text-slate-600 mt-1">{regionFilteredSites.length} sites in this category</p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="text-xs font-bold text-slate-700" htmlFor="category-sub-region">Sub-Region</label>
+          <select id="category-sub-region" value={selectedSubRegion} onChange={e => { setSelectedSubRegion(e.target.value); setSelectedEmployee("all"); setExpandedGrid(null); }} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-bold text-slate-900">
+            <option value="all">All Sub-Regions</option>
+            {subRegionOptions.map(region => <option key={region} value={region}>{region}</option>)}
+          </select>
           <ExportButtonComponent
             data={categoryExportData}
             filename={`${title.toLowerCase().replace(/\s+/g, "_")}_all_sites`}
