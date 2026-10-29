@@ -5169,30 +5169,7 @@ function GridPerformanceScorecard({
               <> for <span className="font-semibold text-cyan-400">{selectedEmployee}</span></>
             )}
           </span>
-          <span>Grid scores, C-1/C-6 cards, exception exports and View Sites all follow this filter.</span>
-        </div>
-      </div>
-
-      {/* Category-wise exports irrespective of Grid */}
-      <div className="rounded-xl border border-slate-300 bg-white p-5">
-        <div className="mb-4">
-          <h3 className="text-lg font-semibold text-slate-900">Category-wise Performance Exceptions</h3>
-          <p className="mt-1 text-xs text-slate-600">Export sites not achieving Base, Target or Stretch irrespective of Grid.</p>
-        </div>
-        <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-          {exportGroups.map(({ config, base, target, stretch }) => (
-            <div key={config.key} className="rounded-lg border border-slate-300 bg-slate-50 p-4">
-              <div className="mb-3 flex items-center justify-between">
-                <span className="font-semibold text-slate-900">{config.label}</span>
-                <span className="text-[10px] text-slate-500">Valid CA only</span>
-              </div>
-              <div className="space-y-2">
-                <ExportButtonComponent data={base} filename={`${config.key}_below_base`} label={`Below Base (${base.length})`} format="excel" variant="danger" />
-                <ExportButtonComponent data={target} filename={`${config.key}_below_target`} label={`Below Target (${target.length})`} format="excel" variant="secondary" />
-                <ExportButtonComponent data={stretch} filename={`${config.key}_below_stretch`} label={`Below Stretch (${stretch.length})`} format="excel" variant="primary" />
-              </div>
-            </div>
-          ))}
+          <span>Grid scores, C-1/C-6 cards and View Sites all follow this filter.</span>
         </div>
       </div>
 
@@ -7278,6 +7255,17 @@ export default function App() {
     });
   };
 
+  // Prevent stalled Google Sheets requests from trapping the entire app on the loading screen.
+  const withSheetTimeout = <T,>(promise: Promise<T>, label: string, timeoutMs: number): Promise<T> => {
+    let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<T>((_, reject) => {
+      timeoutHandle = setTimeout(() => reject(new Error(`${label} timed out after ${timeoutMs / 1000}s`)), timeoutMs);
+    });
+    return Promise.race([promise, timeout]).finally(() => {
+      if (timeoutHandle !== undefined) clearTimeout(timeoutHandle);
+    });
+  };
+
   const loadMonthData = async (month: Month) => {
     // Every month must load strictly from its own workbook.
     // The sequence guard prevents an older request (for example August)
@@ -7309,7 +7297,7 @@ export default function App() {
 
       // Main AVB sheet is the source for ALL C1 & C6 dashboard analysis tabs.
       // Load it first and fail clearly if it is not available.
-      const data = await fetchGoogleSheet(sheetId);
+      const data = await withSheetTimeout(fetchGoogleSheet(sheetId), `${month} main AVB sheet`, 30000);
 
       if (requestId !== monthLoadSeq.current) return;
 
@@ -7339,7 +7327,7 @@ export default function App() {
         month === "october"
           ? fetchGoogleSheet(sheetId, "3 Basics KPIs")
           : Promise.resolve(null),
-      ]);
+      ].map((request, index) => withSheetTimeout(Promise.resolve(request), `${month} supporting sheet #${index + 1}`, 12000)));
 
       if (requestId !== monthLoadSeq.current) return;
 
