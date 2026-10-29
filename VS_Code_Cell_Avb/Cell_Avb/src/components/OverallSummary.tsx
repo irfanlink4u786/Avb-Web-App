@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 
 import {
 
@@ -14,25 +14,26 @@ import {
 
   AlertTriangle,
 
-  Lightbulb,
+  
 
   MapPin,
 
   Crown,
 
   Zap,
-
   Battery,
 
-  BatteryWarning,
+  
 
-  Download,
+  
+
+  
 
   ChevronDown,
 
   ChevronUp,
 
-  Eye,
+  
 
   FileSpreadsheet,
 
@@ -50,11 +51,11 @@ import {
 
   hasDG,
 
-  hasLiIon,
+  
 
-  hasAGM,
+  
 
-  isBelowBase,
+  
 
 } from "../types";
 
@@ -70,21 +71,7 @@ import ExportButton from "./ExportButton";
 
 
 
-interface Rec {
 
-  icon: string;
-
-  priority: "HIGH" | "MEDIUM";
-
-  text: string;
-
-  impact: string;
-
-  category: string;
-
-  sites: SiteData[];
-
-}
 
 
 
@@ -202,7 +189,7 @@ function KpiCard({
 
   return (
 
-    <div className="bg-slate-800 border border-slate-700 rounded-xl p-5 hover:border-slate-600 transition-colors">
+    <div className="bg-white border border-slate-200 rounded-xl p-5 hover:border-slate-600 transition-colors">
 
       <div className="flex items-center gap-3 mb-2">
 
@@ -216,11 +203,11 @@ function KpiCard({
 
           <div className="flex items-center justify-between">
 
-            <div className="text-2xl font-bold text-white">{value}</div>
+            <div className="text-2xl font-bold text-slate-950">{value}</div>
 
             {trend && (
 
-              <span className={`text-xs ${trend === "up" ? "text-emerald-400" : trend === "down" ? "text-red-400" : "text-slate-400"}`}>
+              <span className={`text-xs ${trend === "up" ? "text-emerald-700" : trend === "down" ? "text-red-600" : "text-slate-600"}`}>
 
                 {trend === "up" ? "↑" : trend === "down" ? "↓" : "—"}
 
@@ -230,9 +217,9 @@ function KpiCard({
 
           </div>
 
-          <div className="text-xs text-slate-400">{label}</div>
+          <div className="text-xs text-slate-600">{label}</div>
 
-          {subValue && <div className="text-[10px] text-slate-500 mt-0.5">{subValue}</div>}
+          {subValue && <div className="text-[10px] text-slate-600 mt-0.5">{subValue}</div>}
 
         </div>
 
@@ -260,7 +247,7 @@ function CategoryKpiCard({ kpi }: { kpi: CategoryKPI }) {
 
   return (
 
-    <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-4 hover:border-slate-600 transition-colors">
+    <div className="bg-white border border-slate-200 rounded-lg p-4 hover:border-slate-600 transition-colors">
 
       <div className="flex items-center gap-2 mb-2">
 
@@ -272,17 +259,17 @@ function CategoryKpiCard({ kpi }: { kpi: CategoryKPI }) {
 
         <div className="flex-1">
 
-          <div className="text-xs font-medium text-slate-400">{kpi.label}</div>
+          <div className="text-xs font-medium text-slate-600">{kpi.label}</div>
 
-          <div className="text-lg font-bold text-white">{kpi.avgCa.toFixed(2)}%</div>
+          <div className="text-lg font-bold text-slate-950">{kpi.avgCa.toFixed(2)}%</div>
 
         </div>
 
         <div className="text-right">
 
-          <div className="text-sm font-semibold text-slate-300">{kpi.count}</div>
+          <div className="text-sm font-semibold text-slate-700">{kpi.count}</div>
 
-          <div className="text-[10px] text-slate-500">sites</div>
+          <div className="text-[10px] text-slate-600">sites</div>
 
         </div>
 
@@ -290,9 +277,9 @@ function CategoryKpiCard({ kpi }: { kpi: CategoryKPI }) {
 
       <div className="flex items-center justify-between text-xs">
 
-        <span className="text-slate-500">Threshold: {kpi.threshold}%</span>
+        <span className="text-slate-600">Threshold: {kpi.threshold}%</span>
 
-        <span className={kpi.critical > 0 ? "text-red-400" : "text-emerald-400"}>
+        <span className={kpi.critical > 0 ? "text-red-600" : "text-emerald-700"}>
 
           {kpi.critical > 0 ? `${kpi.critical} critical` : "✓ All healthy"}
 
@@ -348,7 +335,7 @@ function RegionCategorySection({
 
   return (
 
-    <div className="bg-slate-800/30 border border-slate-700 rounded-xl p-5">
+    <div className="bg-white border border-slate-200 rounded-xl p-5">
 
       <button 
 
@@ -366,15 +353,15 @@ function RegionCategorySection({
 
           }`}>
 
-            <MapPin className={`w-4 h-4 ${regionName === "C-1" ? "text-cyan-400" : "text-indigo-400"}`} />
+            <MapPin className={`w-4 h-4 ${regionName === "C-1" ? "text-cyan-700" : "text-indigo-400"}`} />
 
           </div>
 
-          <h4 className="text-sm font-semibold text-white">
+          <h4 className="text-sm font-semibold text-slate-950">
 
             {regionName} Region
 
-            <span className="text-xs font-normal text-slate-500 ml-2">
+            <span className="text-xs font-normal text-slate-600 ml-2">
 
               ({regionData.totalSites} active sites)
 
@@ -386,7 +373,7 @@ function RegionCategorySection({
 
         <div className="flex items-center gap-3">
 
-          <span className="text-xs text-slate-500">
+          <span className="text-xs text-slate-600">
 
             Overall CA: {regionData.kpis.length > 0 ? 
 
@@ -398,11 +385,11 @@ function RegionCategorySection({
 
           {isExpanded ? (
 
-            <ChevronUp className="w-4 h-4 text-slate-400 group-hover:text-white transition-colors" />
+            <ChevronUp className="w-4 h-4 text-slate-600 group-hover:text-slate-950 transition-colors" />
 
           ) : (
 
-            <ChevronDown className="w-4 h-4 text-slate-400 group-hover:text-white transition-colors" />
+            <ChevronDown className="w-4 h-4 text-slate-600 group-hover:text-slate-950 transition-colors" />
 
           )}
 
@@ -425,260 +412,6 @@ function RegionCategorySection({
         </div>
 
       )}
-
-    </div>
-
-  );
-
-}
-
-
-
-// ============================================================
-
-// RECOMMENDATION CARD
-
-// ============================================================
-
-
-
-function RecCard({ rec, onExport }: { rec: Rec; onExport: () => void }) {
-
-  const priorityColor = rec.priority === "HIGH" 
-
-    ? "border-red-500/30 bg-red-500/5" 
-
-    : "border-amber-500/30 bg-amber-500/5";
-
-  const priorityBadge = rec.priority === "HIGH" 
-
-    ? "bg-red-500/20 text-red-400" 
-
-    : "bg-amber-500/20 text-amber-400";
-
-
-
-  return (
-
-    <div className={`border ${priorityColor} rounded-lg p-4 group hover:border-opacity-70 transition-all`}>
-
-      <div className="flex items-start gap-3">
-
-        <span className="text-xl">{rec.icon}</span>
-
-        <div className="flex-1 min-w-0">
-
-          <div className="flex items-center justify-between flex-wrap gap-2">
-
-            <div className="flex items-center gap-2">
-
-              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${priorityBadge}`}>
-
-                {rec.priority}
-
-              </span>
-
-              <span className="text-[10px] text-cyan-400 bg-cyan-500/10 px-1.5 py-0.5 rounded">
-
-                {rec.category}
-
-              </span>
-
-            </div>
-
-            <button
-
-              onClick={onExport}
-
-              className="flex items-center gap-1 px-2 py-1 rounded text-[10px] bg-slate-700 hover:bg-slate-600 text-slate-300 transition-colors opacity-0 group-hover:opacity-100"
-
-            >
-
-              <Download className="w-3 h-3" /> Export
-
-            </button>
-
-          </div>
-
-          <p className="text-sm text-slate-300 mt-1.5">{rec.text}</p>
-
-          <p className="text-xs text-cyan-400 mt-1.5 font-medium">→ {rec.impact}</p>
-
-          <div className="mt-2 flex flex-wrap gap-1">
-
-            {rec.sites.slice(0, 5).map((site) => (
-
-              <span key={site.siteName} className="text-[10px] bg-slate-700/50 px-1.5 py-0.5 rounded text-slate-400">
-
-                {site.siteName}
-
-              </span>
-
-            ))}
-
-            {rec.sites.length > 5 && (
-
-              <span className="text-[10px] text-slate-500">+{rec.sites.length - 5} more</span>
-
-            )}
-
-          </div>
-
-        </div>
-
-      </div>
-
-    </div>
-
-  );
-
-}
-
-
-
-// ============================================================
-
-// RECOMMENDATION SECTION
-
-// ============================================================
-
-
-
-function RecommendationSection({ 
-
-  title, 
-
-  icon, 
-
-  recs, 
-
-  regionName 
-
-}: { 
-
-  title: string; 
-
-  icon: React.ReactNode; 
-
-  recs: Rec[];
-
-  regionName: string;
-
-}) {
-
-  const handleExport = (rec: Rec) => {
-
-    const data = rec.sites.map((site) => ({
-
-      "Site ID": site.siteName,
-
-      "Category": site.revenueCategory,
-
-      "Current CA%": site.currentAvb.toFixed(2),
-
-      "Monthly CA%": site.monthlyAvb?.toFixed(2) || "-",
-
-      "Sub-Region": site.subRegion,
-
-      "Grid": site.grid,
-
-      "DG": site.dgInstalled,
-
-      "Li-ion": site.liIonInstalled,
-
-      "BB Status": site.bbStatus || "-",
-
-    }));
-
-
-
-    const csv = [
-
-      Object.keys(data[0] || {}).join(","),
-
-      ...data.map(row => Object.values(row).join(","))
-
-    ].join("\n");
-
-
-
-    const blob = new Blob([csv], { type: "text/csv" });
-
-    const url = URL.createObjectURL(blob);
-
-    const a = document.createElement("a");
-
-    a.href = url;
-
-    a.download = `${regionName}_${rec.category.toLowerCase().replace(/\s+/g, "_")}_recommendation.csv`;
-
-    a.click();
-
-    URL.revokeObjectURL(url);
-
-  };
-
-
-
-  const allRecs = [...recs.filter(r => r.priority === "HIGH"), ...recs.filter(r => r.priority === "MEDIUM")];
-
-
-
-  return (
-
-    <div className="bg-slate-800/50 border border-indigo-500/30 rounded-lg p-5">
-
-      <h4 className="text-lg font-semibold text-indigo-300 mb-4 flex items-center gap-2">
-
-        {icon}
-
-        {title}
-
-        <span className="text-xs font-normal text-slate-500 ml-2">
-
-          ({allRecs.length} recommendations)
-
-        </span>
-
-      </h4>
-
-      <div className="space-y-3">
-
-        {allRecs.length > 0 ? (
-
-          allRecs.map((rec, i) => (
-
-            <RecCard 
-
-              key={i} 
-
-              rec={rec} 
-
-              onExport={() => handleExport(rec)}
-
-            />
-
-          ))
-
-        ) : (
-
-          <div className="text-green-400 flex items-center gap-2 p-4 bg-emerald-500/5 rounded-lg border border-emerald-500/20">
-
-            <span className="text-2xl">✅</span>
-
-            <div>
-
-              <span className="font-medium">{regionName}</span>
-
-              <span className="text-slate-300 ml-2">region is performing optimally. No critical issues detected.</span>
-
-            </div>
-
-          </div>
-
-        )}
-
-      </div>
 
     </div>
 
@@ -800,25 +533,25 @@ function CategoryDetailRow({
 
     <>
 
-      <tr className="border-b border-slate-700/50 hover:bg-slate-700/30 transition-colors">
+      <tr className="border-b border-slate-200 hover:bg-sky-50 transition-colors">
 
-        <td className="py-3 px-3 text-slate-200 font-medium">{category}</td>
+        <td className="py-3 px-3 text-slate-800 font-medium">{category}</td>
 
-        <td className="py-3 px-3 text-center text-slate-300">{sites.length}</td>
+        <td className="py-3 px-3 text-center text-slate-700">{sites.length}</td>
 
-        <td className={`py-3 px-3 text-center font-semibold ${isHealthy ? "text-emerald-400" : "text-red-400"}`}>
+        <td className={`py-3 px-3 text-center font-semibold ${isHealthy ? "text-emerald-700" : "text-red-600"}`}>
 
           {avgCa.toFixed(2)}%
 
         </td>
 
-        <td className="py-3 px-3 text-center text-slate-500">{threshold}%</td>
+        <td className="py-3 px-3 text-center text-slate-600">{threshold}%</td>
 
         <td className="py-3 px-3 text-center">
 
           {criticalCount > 0 ? (
 
-            <span className="text-red-400 font-semibold">{criticalCount}</span>
+            <span className="text-red-600 font-semibold">{criticalCount}</span>
 
           ) : (
 
@@ -838,7 +571,7 @@ function CategoryDetailRow({
 
                 onClick={() => setIsExpanded(!isExpanded)}
 
-                className="flex items-center gap-1 px-2 py-1 rounded text-xs bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 transition-colors"
+                className="flex items-center gap-1 px-2 py-1 rounded text-xs bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-700 transition-colors"
 
               >
 
@@ -852,7 +585,7 @@ function CategoryDetailRow({
 
                 onClick={exportCriticalSites}
 
-                className="flex items-center gap-1 px-2 py-1 rounded text-xs bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 transition-colors"
+                className="flex items-center gap-1 px-2 py-1 rounded text-xs bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-700 transition-colors"
 
               >
 
@@ -886,7 +619,7 @@ function CategoryDetailRow({
 
               transition={{ duration: 0.3 }}
 
-              className="bg-slate-900/50 border-t border-slate-700"
+              className="bg-slate-50 border-t border-slate-200"
 
             >
 
@@ -894,13 +627,13 @@ function CategoryDetailRow({
 
                 <div className="flex items-center justify-between mb-3">
 
-                  <h5 className="text-sm font-semibold text-slate-300">
+                  <h5 className="text-sm font-semibold text-slate-700">
 
                     Critical Sites - {category} ({sortedSites.length} sites)
 
                   </h5>
 
-                  <span className="text-xs text-slate-500">
+                  <span className="text-xs text-slate-600">
 
                     Sorted by CA% (Lowest to Highest)
 
@@ -916,29 +649,29 @@ function CategoryDetailRow({
 
                     <thead>
 
-                      <tr className="border-b border-slate-700">
+                      <tr className="border-b border-slate-200">
 
-                        <th className="text-left py-2 px-3 text-slate-400 font-medium">#</th>
+                        <th className="text-left py-2 px-3 text-slate-600 font-medium">#</th>
 
-                        <th className="text-left py-2 px-3 text-slate-400 font-medium">Site ID</th>
+                        <th className="text-left py-2 px-3 text-slate-600 font-medium">Site ID</th>
 
-                        <th className="text-center py-2 px-3 text-slate-400 font-medium">CA%</th>
+                        <th className="text-center py-2 px-3 text-slate-600 font-medium">CA%</th>
 
-                        <th className="text-left py-2 px-3 text-slate-400 font-medium">Sub-Region</th>
+                        <th className="text-left py-2 px-3 text-slate-600 font-medium">Sub-Region</th>
 
-                        <th className="text-left py-2 px-3 text-slate-400 font-medium">Grid</th>
+                        <th className="text-left py-2 px-3 text-slate-600 font-medium">Grid</th>
 
-                        <th className="text-left py-2 px-3 text-slate-400 font-medium">DG</th>
+                        <th className="text-left py-2 px-3 text-slate-600 font-medium">DG</th>
 
-                        <th className="text-left py-2 px-3 text-slate-400 font-medium">Li-ion</th>
+                        <th className="text-left py-2 px-3 text-slate-600 font-medium">Li-ion</th>
 
-                        <th className="text-left py-2 px-3 text-slate-400 font-medium">BB Status</th>
+                        <th className="text-left py-2 px-3 text-slate-600 font-medium">BB Status</th>
 
-                        <th className="text-left py-2 px-3 text-slate-400 font-medium">Cluster Owner</th>
+                        <th className="text-left py-2 px-3 text-slate-600 font-medium">Cluster Owner</th>
 
-                        <th className="text-left py-2 px-3 text-slate-400 font-medium">MS GTL</th>
+                        <th className="text-left py-2 px-3 text-slate-600 font-medium">MS GTL</th>
 
-                        <th className="text-left py-2 px-3 text-slate-400 font-medium">Zone Lead</th>
+                        <th className="text-left py-2 px-3 text-slate-600 font-medium">Zone Lead</th>
 
                       </tr>
 
@@ -952,17 +685,17 @@ function CategoryDetailRow({
 
                           key={site.siteName} 
 
-                          className="border-b border-slate-700/50 hover:bg-slate-800/50 transition-colors"
+                          className="border-b border-slate-200 hover:bg-sky-50 transition-colors"
 
                         >
 
-                          <td className="py-2 px-3 text-slate-500">{index + 1}</td>
+                          <td className="py-2 px-3 text-slate-600">{index + 1}</td>
 
                           <td className="py-2 px-3 text-cyan-300 font-mono">{site.siteName}</td>
 
                           <td className={`py-2 px-3 text-center font-semibold ${
 
-                            site.currentAvb < 95 ? "text-red-400" : "text-amber-400"
+                            site.currentAvb < 95 ? "text-red-600" : "text-amber-700"
 
                           }`}>
 
@@ -970,21 +703,21 @@ function CategoryDetailRow({
 
                           </td>
 
-                          <td className="py-2 px-3 text-slate-300">{site.subRegion}</td>
+                          <td className="py-2 px-3 text-slate-700">{site.subRegion}</td>
 
-                          <td className="py-2 px-3 text-slate-300">{site.grid}</td>
+                          <td className="py-2 px-3 text-slate-700">{site.grid}</td>
 
-                          <td className="py-2 px-3 text-slate-400">{site.dgInstalled}</td>
+                          <td className="py-2 px-3 text-slate-600">{site.dgInstalled}</td>
 
-                          <td className="py-2 px-3 text-slate-400">{site.liIonInstalled}</td>
+                          <td className="py-2 px-3 text-slate-600">{site.liIonInstalled}</td>
 
-                          <td className="py-2 px-3 text-slate-400">{site.bbStatus || "-"}</td>
+                          <td className="py-2 px-3 text-slate-600">{site.bbStatus || "-"}</td>
 
-                          <td className="py-2 px-3 text-slate-300">{site.clusterOwner || "-"}</td>
+                          <td className="py-2 px-3 text-slate-700">{site.clusterOwner || "-"}</td>
 
-                          <td className="py-2 px-3 text-slate-300">{site.msGtl || "-"}</td>
+                          <td className="py-2 px-3 text-slate-700">{site.msGtl || "-"}</td>
 
-                          <td className="py-2 px-3 text-slate-300">{site.zongLead || "-"}</td>
+                          <td className="py-2 px-3 text-slate-700">{site.zongLead || "-"}</td>
 
                         </tr>
 
@@ -1022,277 +755,37 @@ function CategoryDetailRow({
 
 
 
-function GridDetailRow({
-  grid,
-  sites,
-  avgCa,
-}: {
-  grid: string;
-  sites: SiteData[];
-  avgCa: number;
-}) {
-  return (
-    <tr className="border-b border-slate-700/50 hover:bg-slate-700/30 transition-colors">
-      <td className="py-3 px-3 text-slate-200 font-medium">{grid}</td>
-      <td className="py-3 px-3 text-center text-slate-300">{sites.length}</td>
-      <td className={`py-3 px-3 text-center font-semibold ${avgCa >= 98 ? "text-emerald-400" : "text-red-400"}`}>
-        {avgCa.toFixed(2)}%
-      </td>
+function GridDetailRow({ grid, sites, avgCa }: { grid: string; sites: SiteData[]; avgCa: number }) {
+  const [expanded, setExpanded] = useState(false);
+  const rows = useMemo(() => [...sites].sort((a,b) => a.currentAvb-b.currentAvb), [sites]);
+  const exportRows = rows.map(s => ({
+    "Site ID": s.siteName, "Revenue Category": s.revenueCategory, "Sub-Region": s.subRegion,
+    Grid: s.grid, "Current CA": `${s.currentAvb.toFixed(2)}%`,
+    "Monthly CA": s.monthlyAvb == null ? "-" : `${s.monthlyAvb.toFixed(2)}%`,
+    DG: s.dgInstalled, "Li-ion": s.liIonInstalled, "BB Status": s.bbStatus || "-",
+    "Cluster Owner": s.clusterOwner || "-", "MPL GTL": s.msGtl || "-", "CMPAK GTL": s.zongLead || "-",
+  }));
+  return <>
+    <tr className="border-b border-slate-200 hover:bg-sky-50">
+      <td className="py-3 px-3 font-bold text-slate-900">{grid}</td>
+      <td className="py-3 px-3 text-center font-semibold text-slate-800">{sites.length}</td>
+      <td className={`py-3 px-3 text-center font-bold ${avgCa >= 98 ? "text-emerald-700" : "text-red-600"}`}>{avgCa.toFixed(2)}%</td>
+      <td className="py-3 px-3 text-center"><div className="flex justify-center gap-2">
+        <button type="button" onClick={() => setExpanded(!expanded)} className="rounded-lg bg-sky-100 px-3 py-1.5 text-xs font-bold text-sky-900">{expanded ? "Hide" : "View"}</button>
+        <ExportButton data={exportRows} filename={`grid_${grid}_sites`} label="Export" />
+      </div></td>
     </tr>
-  );
+    {expanded && <tr><td colSpan={4} className="bg-slate-50 p-4"><div className="mb-2 font-bold text-slate-900">{grid} — All Sites ({rows.length})</div>
+      <div className="overflow-x-auto"><table className="w-full min-w-[1100px] text-xs">
+        <thead className="bg-slate-100"><tr>{["Site ID","Revenue Category","Sub-Region","Current CA","Monthly CA","DG","Li-ion","BB Status","Cluster Owner","MPL GTL","CMPAK GTL"].map(h=><th key={h} className="px-3 py-2 text-left text-slate-900">{h}</th>)}</tr></thead>
+        <tbody>{rows.map(s=><tr key={s.siteName} className="border-b border-slate-200 text-slate-800">
+          <td className="px-3 py-2 font-bold text-blue-800">{s.siteName}</td><td className="px-3 py-2">{s.revenueCategory}</td><td className="px-3 py-2">{s.subRegion}</td>
+          <td className="px-3 py-2 font-bold">{s.currentAvb.toFixed(2)}%</td><td className="px-3 py-2">{s.monthlyAvb == null ? "-" : `${s.monthlyAvb.toFixed(2)}%`}</td>
+          <td className="px-3 py-2">{s.dgInstalled}</td><td className="px-3 py-2">{s.liIonInstalled}</td><td className="px-3 py-2">{s.bbStatus || "-"}</td>
+          <td className="px-3 py-2">{s.clusterOwner || "-"}</td><td className="px-3 py-2">{s.msGtl || "-"}</td><td className="px-3 py-2">{s.zongLead || "-"}</td>
+        </tr>)}</tbody></table></div></td></tr>}
+  </>;
 }
-
-// ============================================================
-
-// GENERATE REGION RECOMMENDATIONS
-
-// ============================================================
-
-
-
-function generateRegionRecs(regionSites: SiteData[], regionName: string): Rec[] {
-
-  const recs: Rec[] = [];
-
-  const active = regionSites.filter((s) => s.currentAvb > 0);
-
-
-
-  // AGM Recommendations
-
-  const agmSites = active.filter(hasAGM);
-
-  const agmCa = agmSites.length > 0 ? agmSites.reduce((s, r) => s + r.currentAvb, 0) / agmSites.length : 0;
-
-  const agmCritical = agmSites.filter((s) => s.currentAvb < 95);
-
-
-
-  if (agmSites.length > 0 && agmCa < 95) {
-
-    recs.push({
-
-      icon: "⚠️",
-
-      priority: "HIGH",
-
-      category: "AGM BB",
-
-      text: `AGM BB Performance Degraded (${agmCa.toFixed(2)}%): ${agmSites.length} sites with AGM batteries showing degraded AVB. Recommend immediate battery replacement program.`,
-
-      impact: `Potential improvement: +${(95 - agmCa).toFixed(2)}% for ${agmSites.length} sites`,
-
-      sites: agmCritical,
-
-    });
-
-  }
-
-
-
-  // DG Recommendations
-
-  const dgSites = active.filter(hasDG);
-
-  const dgCa = dgSites.length > 0 ? dgSites.reduce((s, r) => s + r.currentAvb, 0) / dgSites.length : 0;
-
-  const dgCritical = dgSites.filter((s) => s.currentAvb < 98.5);
-
-
-
-  if (dgSites.length > 0 && dgCritical.length > 0 && dgCa < 98.5) {
-
-    recs.push({
-
-      icon: "🔧",
-
-      priority: "MEDIUM",
-
-      category: "DG Sites",
-
-      text: `DG Site Underperformance (${dgCa.toFixed(2)}%): ${dgCritical.length} of ${dgSites.length} DG-equipped sites below 98.5% threshold. Review DG maintenance schedules and fuel availability.`,
-
-      impact: `Focus on ${dgCritical.length} critical DG sites`,
-
-      sites: dgCritical,
-
-    });
-
-  }
-
-
-
-  // Li-ion Recommendations
-
-  const liIonSites = active.filter(hasLiIon);
-
-  const liIonCa = liIonSites.length > 0 ? liIonSites.reduce((s, r) => s + r.currentAvb, 0) / liIonSites.length : 0;
-
-  const liIonCritical = liIonSites.filter((s) => s.currentAvb < 98);
-
-
-
-  if (liIonSites.length > 0 && liIonCa < 98) {
-
-    recs.push({
-
-      icon: "🔋",
-
-      priority: "MEDIUM",
-
-      category: "Li-ion BB",
-
-      text: `Li-ion Backup Issues (${liIonCa.toFixed(2)}%): ${liIonSites.length} Li-ion sites not meeting target. Verify battery health and charging systems.`,
-
-      impact: `${liIonCritical.length} sites need attention`,
-
-      sites: liIonCritical,
-
-    });
-
-  }
-
-
-
-  // Below Base Recommendations
-
-  const belowBaseSites = active.filter(isBelowBase);
-
-  const belowBaseCa = belowBaseSites.length > 0 ? belowBaseSites.reduce((s, r) => s + r.currentAvb, 0) / belowBaseSites.length : 0;
-
-
-
-  if (belowBaseSites.length > 0) {
-
-    recs.push({
-
-      icon: "📉",
-
-      priority: "HIGH",
-
-      category: "Below Base",
-
-      text: `Below Base Sites (${belowBaseCa.toFixed(2)}%): ${belowBaseSites.length} sites not meeting base values. Investigate root causes and implement corrective actions immediately.`,
-
-      impact: `Critical: ${belowBaseSites.length} sites require intervention`,
-
-      sites: belowBaseSites,
-
-    });
-
-  }
-
-
-
-  // Platinum+ Recommendations
-
-  const platPlusSites = active.filter((s) => s.revenueCategory === "Platinum +");
-
-  const platPlusCa = platPlusSites.length > 0 ? platPlusSites.reduce((s, r) => s + r.currentAvb, 0) / platPlusSites.length : 0;
-
-  const platPlusCritical = platPlusSites.filter((s) => s.currentAvb < 98);
-
-
-
-  if (platPlusSites.length > 0 && platPlusCa < 98) {
-
-    recs.push({
-
-      icon: "💎",
-
-      priority: "HIGH",
-
-      category: "Platinum+",
-
-      text: `Platinum+ Sites Below Target (${platPlusCa.toFixed(2)}%): ${platPlusCritical.length} premium sites below 98%. Prioritize these high-revenue sites for immediate action.`,
-
-      impact: `Revenue impact: ${platPlusCritical.length} premium sites`,
-
-      sites: platPlusCritical,
-
-    });
-
-  }
-
-
-
-  // PGS Recommendations
-
-  const pgsSites = active.filter((s) => PGS_GROUP.includes(s.revenueCategory));
-
-  const pgsCa = pgsSites.length > 0 ? pgsSites.reduce((s, r) => s + r.currentAvb, 0) / pgsSites.length : 0;
-
-  const pgsCritical = pgsSites.filter((s) => s.currentAvb < 98.1);
-
-
-
-  if (pgsSites.length > 0 && pgsCa < 98.1) {
-
-    recs.push({
-
-      icon: "📊",
-
-      priority: "HIGH",
-
-      category: "PGS",
-
-      text: `PGS Sites Underperforming (${pgsCa.toFixed(2)}%): ${pgsCritical.length} of ${pgsSites.length} PGS sites below 98.1% threshold. Focus on Platinum, Gold, and Strategic sites.`,
-
-      impact: `${pgsCritical.length} PGS sites need immediate attention`,
-
-      sites: pgsCritical,
-
-    });
-
-  }
-
-
-
-  // SB Recommendations
-
-  const sbSites = active.filter((s) => SB_GROUP.includes(s.revenueCategory));
-
-  const sbCa = sbSites.length > 0 ? sbSites.reduce((s, r) => s + r.currentAvb, 0) / sbSites.length : 0;
-
-  const sbCritical = sbSites.filter((s) => s.currentAvb < 95);
-
-
-
-  if (sbSites.length > 0 && sbCa < 95) {
-
-    recs.push({
-
-      icon: "📉",
-
-      priority: "MEDIUM",
-
-      category: "SB Sites",
-
-      text: `SB Sites Performance Issue (${sbCa.toFixed(2)}%): ${sbCritical.length} of ${sbSites.length} SB sites below 95% threshold. Schedule preventive maintenance for Silver and Bronze tier sites.`,
-
-      impact: `${sbCritical.length} SB sites need maintenance`,
-
-      sites: sbCritical,
-
-    });
-
-  }
-
-
-
-  return recs;
-
-}
-
-
-
-// ============================================================
-
-// MAIN COMPONENT
-
-// ============================================================
-
-
 
 export default function OverallSummary({ sites }: { sites: SiteData[] }) {
 
@@ -1336,7 +829,7 @@ export default function OverallSummary({ sites }: { sites: SiteData[] }) {
 
           iconBg: "bg-amber-500/20",
 
-          iconColor: "text-amber-400",
+          iconColor: "text-amber-700",
 
           filter: (s: SiteData) => s.revenueCategory === "Platinum +",
 
@@ -1352,7 +845,7 @@ export default function OverallSummary({ sites }: { sites: SiteData[] }) {
 
           iconBg: "bg-cyan-500/20",
 
-          iconColor: "text-cyan-400",
+          iconColor: "text-cyan-700",
 
           filter: (s: SiteData) => PGS_GROUP.includes(s.revenueCategory),
 
@@ -1368,7 +861,7 @@ export default function OverallSummary({ sites }: { sites: SiteData[] }) {
 
           iconBg: "bg-slate-500/20",
 
-          iconColor: "text-slate-400",
+          iconColor: "text-slate-600",
 
           filter: (s: SiteData) => SB_GROUP.includes(s.revenueCategory),
 
@@ -1400,7 +893,7 @@ export default function OverallSummary({ sites }: { sites: SiteData[] }) {
 
           iconBg: "bg-emerald-500/20",
 
-          iconColor: "text-emerald-400",
+          iconColor: "text-emerald-700",
 
           filter: (s: SiteData) => s.liIonInstalled?.toUpperCase() === "YES",
 
@@ -1740,11 +1233,6 @@ export default function OverallSummary({ sites }: { sites: SiteData[] }) {
 
 
 
-  const c1Recs = useMemo(() => generateRegionRecs(sites.filter((s) => s.subRegion === "C-1"), "C-1"), [sites]);
-
-  const c6Recs = useMemo(() => generateRegionRecs(sites.filter((s) => s.subRegion === "C-6"), "C-6"), [sites]);
-
-
 
   const kpiExport = [
 
@@ -1762,45 +1250,9 @@ export default function OverallSummary({ sites }: { sites: SiteData[] }) {
 
 
 
-  const categoryExport = stats.categoryData.map((c) => ({
-
-    Category: c.category, 
-
-    "Total Sites": c.count, 
-
-    "Avg CA": `${c.avgCa}%`,
-
-    "C-1 Sites": c.c1Count, 
-
-    "C-1 Avg CA": `${c.c1Avg}%`,
-
-    "C-6 Sites": c.c6Count, 
-
-    "C-6 Avg CA": `${c.c6Avg}%`,
-
-    Group: c.group, 
-
-    Threshold: `${c.threshold}%`, 
-
-    "Critical Sites": c.critical,
-
-  }));
 
 
 
-  const gridExport = stats.gridDetails.map((g) => ({
-
-    Grid: g.grid, 
-
-    "Total Sites": g.count, 
-
-    "Avg CA": `${g.avgCa.toFixed(2)}%`,
-
-    "Critical Sites": g.critical, 
-
-    Status: g.avgCa >= 98 ? "Healthy" : "Critical",
-
-  }));
 
 
 
@@ -1882,15 +1334,15 @@ export default function OverallSummary({ sites }: { sites: SiteData[] }) {
 
       {/* HEADER */}
 
-      <div className="bg-gradient-to-r from-slate-800 to-slate-900 border border-slate-700 rounded-xl p-6">
+      <div className="bg-gradient-to-r from-blue-50 to-cyan-50 border border-slate-200 rounded-xl p-6">
 
         <div className="flex items-center justify-between flex-wrap gap-4">
 
           <div>
 
-            <h2 className="text-2xl font-bold text-white mb-2">Overall Summary</h2>
+            <h2 className="text-2xl font-bold text-slate-950 mb-2">Overall Summary</h2>
 
-            <p className="text-slate-400">Comprehensive overview of {stats.totalSites} sites across C-1 and C-6 regions</p>
+            <p className="text-slate-600">Comprehensive overview of {stats.totalSites} sites across C-1 and C-6 regions</p>
 
           </div>
 
@@ -1928,7 +1380,7 @@ export default function OverallSummary({ sites }: { sites: SiteData[] }) {
 
           iconBg="bg-emerald-500/20" 
 
-          iconColor="text-emerald-400" 
+          iconColor="text-emerald-700" 
 
           value={`${stats.overallCa.toFixed(2)}%`} 
 
@@ -1944,7 +1396,7 @@ export default function OverallSummary({ sites }: { sites: SiteData[] }) {
 
           iconBg="bg-cyan-500/20" 
 
-          iconColor="text-cyan-400" 
+          iconColor="text-cyan-700" 
 
           value={`${stats.c1Ca.toFixed(2)}%`} 
 
@@ -1980,7 +1432,7 @@ export default function OverallSummary({ sites }: { sites: SiteData[] }) {
 
           iconBg="bg-red-500/20" 
 
-          iconColor="text-red-400" 
+          iconColor="text-red-600" 
 
           value={stats.criticalPgs + stats.criticalSb} 
 
@@ -1996,13 +1448,13 @@ export default function OverallSummary({ sites }: { sites: SiteData[] }) {
 
       {/* CELL AVAILABILITY BY CATEGORY */}
 
-      <div className="bg-slate-800 border border-slate-700 rounded-xl p-6">
+      <div className="bg-white border border-slate-200 rounded-xl p-6">
 
         <div className="flex items-center justify-between mb-4">
 
-          <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+          <h3 className="text-sm font-semibold text-slate-950 flex items-center gap-2">
 
-            <Activity className="w-4 h-4 text-cyan-400" />
+            <Activity className="w-4 h-4 text-cyan-700" />
 
             Cell Availability by Category
 
@@ -2010,7 +1462,7 @@ export default function OverallSummary({ sites }: { sites: SiteData[] }) {
 
           <div className="flex items-center gap-3">
 
-            <span className="text-xs text-slate-500">C-1 & C-6 regions</span>
+            <span className="text-xs text-slate-600">C-1 & C-6 regions</span>
 
             <ExportButton 
 
@@ -2029,6 +1481,24 @@ export default function OverallSummary({ sites }: { sites: SiteData[] }) {
         </div>
 
 
+
+        <div className="mb-5 grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="rounded-xl border border-cyan-200 bg-cyan-50 p-4">
+            <div className="text-xs font-bold text-cyan-800">Overall Cell Availability</div>
+            <div className="mt-1 text-3xl font-black text-slate-950">{stats.overallCa.toFixed(2)}%</div>
+            <div className="text-xs text-slate-600">{stats.activeCount} active sites</div>
+          </div>
+          <div className="rounded-xl border border-blue-200 bg-blue-50 p-4">
+            <div className="text-xs font-bold text-blue-800">C-1 Cell Availability</div>
+            <div className="mt-1 text-2xl font-black text-slate-950">{stats.c1Ca.toFixed(2)}%</div>
+            <div className="text-xs text-slate-600">{stats.c1Sites} sites</div>
+          </div>
+          <div className="rounded-xl border border-violet-200 bg-violet-50 p-4">
+            <div className="text-xs font-bold text-violet-800">C-6 Cell Availability</div>
+            <div className="mt-1 text-2xl font-black text-slate-950">{stats.c6Ca.toFixed(2)}%</div>
+            <div className="text-xs text-slate-600">{stats.c6Sites} sites</div>
+          </div>
+        </div>
 
         <div className="space-y-4">
 
@@ -2070,69 +1540,18 @@ export default function OverallSummary({ sites }: { sites: SiteData[] }) {
 
 
 
-      {/* AI RECOMMENDATIONS */}
-
-      <div className="bg-slate-800 border border-slate-700 rounded-xl p-6">
-
-        <div className="flex items-center gap-3 mb-1">
-
-          <Lightbulb className="w-6 h-6 text-amber-400" />
-
-          <h3 className="text-xl font-bold text-white">AI-Powered Improvement Recommendations</h3>
-
-          <span className="text-xs text-slate-500 ml-2">
-
-            ({c1Recs.length + c6Recs.length} total recommendations)
-
-          </span>
-
-        </div>
-
-        <p className="text-sm text-slate-400 mb-5">Data-driven insights to enhance cell availability • Export button available for each recommendation</p>
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-
-          <RecommendationSection 
-
-            title="C-1 Region Recommendations" 
-
-            icon={<MapPin className="w-5 h-5" />}
-
-            recs={c1Recs}
-
-            regionName="C-1"
-
-          />
-
-          <RecommendationSection 
-
-            title="C-6 Region Recommendations" 
-
-            icon={<MapPin className="w-5 h-5" />}
-
-            recs={c6Recs}
-
-            regionName="C-6"
-
-          />
-
-        </div>
-
-      </div>
-
-
 
       {/* REVENUE CATEGORY DETAILED BREAKDOWN */}
 
-      <div className="bg-slate-800 border border-slate-700 rounded-xl p-6">
+      <div className="bg-white border border-slate-200 rounded-xl p-6">
 
         <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
 
-          <h3 className="text-lg font-semibold text-white">Revenue Category Detailed Breakdown</h3>
+          <h3 className="text-lg font-semibold text-slate-950">Revenue Category Detailed Breakdown</h3>
 
           <div className="flex items-center gap-3 flex-wrap">
 
-            <div className="flex gap-1 bg-slate-900 rounded-lg p-1 border border-slate-700">
+            <div className="flex gap-1 bg-slate-100 rounded-lg p-1 border border-slate-200">
 
               {["overall", "c1", "c6"].map((mode) => (
 
@@ -2146,9 +1565,9 @@ export default function OverallSummary({ sites }: { sites: SiteData[] }) {
 
                     viewMode === mode
 
-                      ? "bg-cyan-500/20 text-cyan-400"
+                      ? "bg-cyan-500/20 text-cyan-700"
 
-                      : "text-slate-400 hover:text-slate-200"
+                      : "text-slate-600 hover:text-slate-800"
 
                   }`}
 
@@ -2186,19 +1605,19 @@ export default function OverallSummary({ sites }: { sites: SiteData[] }) {
 
             <thead>
 
-              <tr className="border-b border-slate-700">
+              <tr className="border-b border-slate-200">
 
-                <th className="text-left py-3 px-3 text-slate-400 font-medium">Category</th>
+                <th className="text-left py-3 px-3 text-slate-600 font-medium">Category</th>
 
-                <th className="text-center py-3 px-3 text-slate-400 font-medium">Total Sites</th>
+                <th className="text-center py-3 px-3 text-slate-600 font-medium">Total Sites</th>
 
-                <th className="text-center py-3 px-3 text-slate-400 font-medium">Avg CA</th>
+                <th className="text-center py-3 px-3 text-slate-600 font-medium">Avg CA</th>
 
-                <th className="text-center py-3 px-3 text-slate-400 font-medium">Threshold</th>
+                <th className="text-center py-3 px-3 text-slate-600 font-medium">Threshold</th>
 
-                <th className="text-center py-3 px-3 text-slate-400 font-medium">Critical Sites</th>
+                <th className="text-center py-3 px-3 text-slate-600 font-medium">Critical Sites</th>
 
-                <th className="text-center py-3 px-3 text-slate-400 font-medium">Actions</th>
+                <th className="text-center py-3 px-3 text-slate-600 font-medium">Actions</th>
 
               </tr>
 
@@ -2230,7 +1649,7 @@ export default function OverallSummary({ sites }: { sites: SiteData[] }) {
 
                 <tr>
 
-                  <td colSpan={6} className="py-8 text-center text-slate-500">
+                  <td colSpan={6} className="py-8 text-center text-slate-600">
 
                     No data available for the selected view.
 
@@ -2252,15 +1671,15 @@ export default function OverallSummary({ sites }: { sites: SiteData[] }) {
 
       {/* GRID PERFORMANCE ANALYSIS - ENHANCED */}
 
-      <div className="bg-slate-800 border border-slate-700 rounded-xl p-6">
+      <div className="bg-white border border-slate-200 rounded-xl p-6">
 
         <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
 
-          <h3 className="text-lg font-semibold text-white">Grid Performance Analysis</h3>
+          <h3 className="text-lg font-semibold text-slate-950">Grid Performance Analysis</h3>
 
           <div className="flex items-center gap-3 flex-wrap">
 
-            <div className="flex gap-1 bg-slate-900 rounded-lg p-1 border border-slate-700">
+            <div className="flex gap-1 bg-slate-100 rounded-lg p-1 border border-slate-200">
 
               {["overall", "c1", "c6"].map((mode) => (
 
@@ -2274,9 +1693,9 @@ export default function OverallSummary({ sites }: { sites: SiteData[] }) {
 
                     gridViewMode === mode
 
-                      ? "bg-cyan-500/20 text-cyan-400"
+                      ? "bg-cyan-500/20 text-cyan-700"
 
-                      : "text-slate-400 hover:text-slate-200"
+                      : "text-slate-600 hover:text-slate-800"
 
                   }`}
 
@@ -2314,13 +1733,14 @@ export default function OverallSummary({ sites }: { sites: SiteData[] }) {
 
             <thead>
 
-              <tr className="border-b border-slate-700">
+              <tr className="border-b border-slate-200">
 
-                <th className="text-left py-3 px-3 text-slate-400 font-medium">Grid</th>
+                <th className="text-left py-3 px-3 text-slate-600 font-medium">Grid</th>
 
-                <th className="text-center py-3 px-3 text-slate-400 font-medium">Total Sites</th>
+                <th className="text-center py-3 px-3 text-slate-600 font-medium">Total Sites</th>
 
-                <th className="text-center py-3 px-3 text-slate-400 font-medium">Avg CA</th>
+                <th className="text-center py-3 px-3 text-slate-600 font-medium">Avg CA</th>
+                <th className="text-center py-3 px-3 text-slate-600 font-medium">Actions</th>
 
 
 
@@ -2351,7 +1771,7 @@ export default function OverallSummary({ sites }: { sites: SiteData[] }) {
 
                 <tr>
 
-                  <td colSpan={3} className="py-8 text-center text-slate-500">
+                  <td colSpan={4} className="py-8 text-center text-slate-600">
 
                     No data available for the selected view.
 
@@ -2373,11 +1793,11 @@ export default function OverallSummary({ sites }: { sites: SiteData[] }) {
 
       {/* WORST 10 SITES */}
 
-      <div className="bg-slate-800 border border-slate-700 rounded-xl p-6">
+      <div className="bg-white border border-slate-200 rounded-xl p-6">
 
         <div className="flex items-center justify-between mb-4">
 
-          <h3 className="text-lg font-semibold text-white">Worst 10 Sites by CA (Excluding Dismantled)</h3>
+          <h3 className="text-lg font-semibold text-slate-950">Worst 10 Sites by CA (Excluding Dismantled)</h3>
 
           <ExportButton data={worst10Export} filename="worst_10_sites" sheetName="Worst 10" label="Export" />
 
@@ -2389,23 +1809,23 @@ export default function OverallSummary({ sites }: { sites: SiteData[] }) {
 
             <thead>
 
-              <tr className="border-b border-slate-700">
+              <tr className="border-b border-slate-200">
 
-                <th className="text-center py-3 px-2 text-slate-400 font-medium">Rank</th>
+                <th className="text-center py-3 px-2 text-slate-600 font-medium">Rank</th>
 
-                <th className="text-left py-3 px-3 text-slate-400 font-medium">Site ID</th>
+                <th className="text-left py-3 px-3 text-slate-600 font-medium">Site ID</th>
 
-                <th className="text-left py-3 px-3 text-slate-400 font-medium">Grid</th>
+                <th className="text-left py-3 px-3 text-slate-600 font-medium">Grid</th>
 
-                <th className="text-left py-3 px-3 text-slate-400 font-medium">Region</th>
+                <th className="text-left py-3 px-3 text-slate-600 font-medium">Region</th>
 
-                <th className="text-left py-3 px-3 text-slate-400 font-medium">Category</th>
+                <th className="text-left py-3 px-3 text-slate-600 font-medium">Category</th>
 
-                <th className="text-center py-3 px-3 text-slate-400 font-medium">Current CA</th>
+                <th className="text-center py-3 px-3 text-slate-600 font-medium">Current CA</th>
 
-                <th className="text-center py-3 px-3 text-slate-400 font-medium">Monthly CA</th>
+                <th className="text-center py-3 px-3 text-slate-600 font-medium">Monthly CA</th>
 
-                <th className="text-center py-3 px-3 text-slate-400 font-medium">Group</th>
+                <th className="text-center py-3 px-3 text-slate-600 font-medium">Group</th>
 
               </tr>
 
@@ -2415,25 +1835,25 @@ export default function OverallSummary({ sites }: { sites: SiteData[] }) {
 
               {stats.worst10.map((s, i) => (
 
-                <tr key={s.siteName + i} className="border-b border-slate-700/50 hover:bg-slate-700/30">
+                <tr key={s.siteName + i} className="border-b border-slate-200 hover:bg-sky-50">
 
-                  <td className="py-3 px-2 text-center text-slate-500">{i + 1}</td>
+                  <td className="py-3 px-2 text-center text-slate-600">{i + 1}</td>
 
                   <td className="py-3 px-3 text-cyan-300 font-mono">{s.siteName}</td>
 
-                  <td className="py-3 px-3 text-slate-300">{s.grid}</td>
+                  <td className="py-3 px-3 text-slate-700">{s.grid}</td>
 
-                  <td className="py-3 px-3 text-slate-400">{s.subRegion}</td>
+                  <td className="py-3 px-3 text-slate-600">{s.subRegion}</td>
 
-                  <td className="py-3 px-3 text-slate-300">{s.revenueCategory}</td>
+                  <td className="py-3 px-3 text-slate-700">{s.revenueCategory}</td>
 
-                  <td className={`py-3 px-3 text-center font-bold ${s.currentAvb < 95 ? "text-red-400" : "text-amber-400"}`}>
+                  <td className={`py-3 px-3 text-center font-bold ${s.currentAvb < 95 ? "text-red-600" : "text-amber-700"}`}>
 
                     {s.currentAvb.toFixed(2)}%
 
                   </td>
 
-                  <td className="py-3 px-3 text-center text-slate-400">
+                  <td className="py-3 px-3 text-center text-slate-600">
 
                     {s.monthlyAvb ? `${s.monthlyAvb.toFixed(2)}%` : "-"}
 
@@ -2443,7 +1863,7 @@ export default function OverallSummary({ sites }: { sites: SiteData[] }) {
 
                     <span className={`text-xs px-2 py-0.5 rounded ${
 
-                      PGS_GROUP.includes(s.revenueCategory) ? "bg-cyan-500/15 text-cyan-400" : "bg-slate-500/15 text-slate-400"
+                      PGS_GROUP.includes(s.revenueCategory) ? "bg-cyan-500/15 text-cyan-700" : "bg-slate-500/15 text-slate-600"
 
                     }`}>
 

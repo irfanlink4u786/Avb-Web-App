@@ -1,0 +1,20 @@
+/* Overall Summary readability patch — scoped to the embedded summary component */
+.overall-summary-enhanced .rounded-xl.bg-slate-800,
+.overall-summary-enhanced .rounded-2xl.bg-slate-800 {
+  background: #ffffff !important;
+  border: 1px solid #cbd5e1 !important;
+}
+.overall-summary-enhanced .rounded-xl.bg-slate-800 :is(.text-white,.text-slate-400,.text-slate-500,.text-slate-300,.text-slate-200),
+.overall-summary-enhanced .rounded-2xl.bg-slate-800 :is(.text-white,.text-slate-400,.text-slate-500,.text-slate-300,.text-slate-200) {
+  color: #334155 !important;
+  -webkit-text-fill-color: #334155 !important;
+}
+.overall-summary-enhanced :is(table tbody td, table tbody th) { color: #1e293b !important; }
+.overall-summary-enhanced table tbody tr { background: #ffffff !important; }
+.overall-summary-enhanced table tbody tr:nth-child(even) { background: #f1f5f9 !important; }
+.overall-summary-enhanced table thead th { color: #0f172a !important; -webkit-text-fill-color: #0f172a !important; }
+.overall-summary-enhanced table tbody .text-emerald-500,
+.overall-summary-enhanced table tbody .text-emerald-400 { color: #047857 !important; }
+.overall-summary-enhanced table tbody .text-red-500,
+.overall-summary-enhanced table tbody .text-red-400 { color: #b91c1c !important; }
+.overall-summary-enhanced .overall-expanded-detail-table thead th { color: #0f172a !important; }

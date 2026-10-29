@@ -1,3 +1,4 @@
+import "./overall-summary-readability.css";
 import "./enterprise-polish.css";
 import FuelDashboard from "./FuelDashboard";
 import ElectricityDashboard from "./ElectricityDashboard";
@@ -75,6 +76,23 @@ import {
   isBelowBase,
   isNPSSite,
 } from "./types";
+
+
+// Current-month CA bands; missing/zero CA is excluded from these bands.
+type CaBand = "all" | "below95" | "95to98" | "above98";
+const matchesCaBand = (value: number, band: CaBand) => {
+  if (band === "all") return true;
+  if (!Number.isFinite(value) || value <= 0) return false;
+  if (band === "below95") return value < 95;
+  if (band === "95to98") return value >= 95 && value < 98;
+  return value >= 98;
+};
+const caBandOptions: { value: CaBand; label: string }[] = [
+  { value: "all", label: "All CA" },
+  { value: "below95", label: "Below 95%" },
+  { value: "95to98", label: "95% to <98%" },
+  { value: "above98", label: "98% & Above" },
+];
 
 // ============================================================
 //  EMPLOYEE PERFORMANCE — INLINE / SELF-CONTAINED
@@ -230,10 +248,11 @@ function EmployeePerformance({
 }: EmployeePerformanceProps) {
   const [level, setLevel] = useState<EmployeePerformanceLevel>("zongLead");
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [caBand, setCaBand] = useState<CaBand>("all");
 
   const activeSites = useMemo(
-    () => sites.filter((site) => Number(site.currentAvb) > 0),
-    [sites]
+    () => sites.filter((site) => Number(site.currentAvb) > 0 && matchesCaBand(Number(site.currentAvb), caBand)),
+    [sites, caBand]
   );
 
   /**
@@ -356,6 +375,12 @@ function EmployeePerformance({
         <div className="flex flex-wrap items-center gap-2">
           <ExportButtonComponent data={employeeSummaryExport} filename={`employees_${level}_summary`} label="Export Summary" format="excel" variant="primary" />
           <ExportButtonComponent data={employeeRows.flatMap(row => employeeSiteExport(row.sites, row.name))} filename={`employees_${level}_all_sites`} label="Export All Sites" format="excel" variant="success" />
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <label htmlFor="employee-ca-band" className="text-xs font-bold text-slate-700">Current CA</label>
+          <select id="employee-ca-band" value={caBand} onChange={e => { setCaBand(e.target.value as CaBand); setExpanded(null); }} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-bold text-slate-900">
+            {caBandOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
         </div>
         <div className="flex gap-1 rounded-lg bg-slate-100 p-1">
           {levelButtons.map((item) => (
@@ -1816,6 +1841,7 @@ function CategoryPage({
   const [expandedGrid, setExpandedGrid] = useState<string | null>(null);
   const [selectedEmployee, setSelectedEmployee] = useState<string>("all");
   const [selectedSubRegion, setSelectedSubRegion] = useState<string>("all");
+  const [caBand, setCaBand] = useState<CaBand>("all");
 
   // Detail-table headers must stay readable on the light drill-down background.
   // The global light theme intentionally uses white text for the main blue table headers.
@@ -1825,9 +1851,10 @@ function CategoryPage({
   const subRegionOptions = useMemo(() => Array.from(new Set(
     filteredSites.map(s => String(s.subRegion || "").trim()).filter(Boolean)
   )).sort(), [filteredSites]);
-  const regionFilteredSites = useMemo(() => selectedSubRegion === "all"
-    ? filteredSites : filteredSites.filter(s => String(s.subRegion || "").trim() === selectedSubRegion),
-    [filteredSites, selectedSubRegion]);
+  const regionFilteredSites = useMemo(() => filteredSites.filter(s =>
+    (selectedSubRegion === "all" || String(s.subRegion || "").trim() === selectedSubRegion) &&
+    matchesCaBand(Number(s.currentAvb), caBand)
+  ), [filteredSites, selectedSubRegion, caBand]);
   const activeSites = useMemo(() => regionFilteredSites.filter((s) => s.currentAvb > 0), [regionFilteredSites]);
 
   const categoryExportData = useMemo(() => {
@@ -2085,10 +2112,14 @@ function CategoryPage({
             <option value="all">All Sub-Regions</option>
             {subRegionOptions.map(region => <option key={region} value={region}>{region}</option>)}
           </select>
+          <label htmlFor="category-ca-band" className="text-xs font-bold text-slate-700">Current CA</label>
+          <select id="category-ca-band" value={caBand} onChange={e => { setCaBand(e.target.value as CaBand); setSelectedEmployee("all"); setExpandedGrid(null); }} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-bold text-slate-900">
+            {caBandOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
           <ExportButtonComponent
             data={categoryExportData}
             filename={`${title.toLowerCase().replace(/\s+/g, "_")}_all_sites`}
-            label={`Export All ${filteredSites.length} Sites`}
+            label={`Export ${regionFilteredSites.length} Sites`}
             format="excel"
             variant="primary"
           />
@@ -5807,6 +5838,16 @@ function EnhancedOverallSummary({
         }
       `}</style>
 
+      <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+        {(() => { const valid=sites.map(s=>Number(s.currentAvb)).filter(v=>Number.isFinite(v)&&v>0);
+          const ca=valid.length?valid.reduce((a,b)=>a+b,0)/valid.length:0;
+          return <div className="rounded-2xl border border-emerald-200 bg-gradient-to-br from-emerald-50 to-cyan-50 p-5 shadow-sm">
+            <div className="text-xs font-black uppercase tracking-wide text-emerald-800">Overall CA · All Categories</div>
+            <div className="mt-2 text-3xl font-black text-emerald-900">{ca.toFixed(2)}%</div>
+            <div className="mt-1 text-xs font-semibold text-slate-600">{valid.length} valid sites · C-1 & C-6</div>
+          </div>;
+        })()}
+      </div>
       <OverallSummaryComponent sites={sites} />
     </div>
   );
@@ -5817,7 +5858,6 @@ function EnhancedOverallSummary({
 // ============================================================
 
 function OverallSummaryWithExport({ sites, rawData, lastUpdatedDate }: { sites: SiteData[]; rawData?: SheetPayload | null; lastUpdatedDate?: string }) {
-  const [targetRegion, setTargetRegion] = useState<"C-1" | "C-6" | null>(null);
   const [expandedOmo, setExpandedOmo] = useState<string | null>(null);
   const TARGET_CA = 99;
 
@@ -5865,92 +5905,32 @@ function OverallSummaryWithExport({ sites, rawData, lastUpdatedDate }: { sites: 
     }));
   }, [sites, rawData]);
 
-  // September 99% achievement plan.
-  // Minimum site count is calculated by restoring the lowest-AVB sites to 100%
-  // until the recomputed regional average reaches 99.00%.
-  const target99Plan = useMemo(() => {
-    const getRegion = (site: SiteData): "C-1" | "C-6" | null => {
-      const sr = String(site.subRegion || "").trim().toUpperCase().replace(/\s+/g, "");
-      const grid = String(site.grid || "").trim().toUpperCase();
-
-      if (sr === "C-1" || sr === "C1" || grid.startsWith("C1")) return "C-1";
-      if (sr === "C-6" || sr === "C6" || grid.startsWith("C6")) return "C-6";
-      return null;
-    };
-
-    return (["C-1", "C-6"] as const).map((region) => {
-      const regionSites = sites
-        .filter((site) => getRegion(site) === region)
-        .filter((site) => Number.isFinite(Number(site.monthlyAvb)) && Number(site.monthlyAvb) > 0)
-        .map((site) => ({ site, ca: Number(site.monthlyAvb) }));
-
-      const totalSites = regionSites.length;
-      const currentSum = regionSites.reduce((sum, row) => sum + row.ca, 0);
-      const currentAvg = totalSites > 0 ? currentSum / totalSites : 0;
-      const requiredTotal = TARGET_CA * totalSites;
-      const requiredGain = Math.max(0, requiredTotal - currentSum);
-
-      const sortedWorst = [...regionSites].sort((a, b) => a.ca - b.ca);
-      const sitesToFix: Array<{
-        site: SiteData;
-        ca: number;
-        possibleGain: number;
-        cumulativeGain: number;
-        projectedAvg: number;
-      }> = [];
-
-      let cumulativeGain = 0;
-      if (currentAvg < TARGET_CA) {
-        for (const row of sortedWorst) {
-          const possibleGain = Math.max(0, 100 - row.ca);
-          if (possibleGain <= 0) continue;
-
-          cumulativeGain += possibleGain;
-          sitesToFix.push({
-            ...row,
-            possibleGain,
-            cumulativeGain,
-            projectedAvg: totalSites > 0 ? (currentSum + cumulativeGain) / totalSites : 0,
-          });
-
-          if (currentSum + cumulativeGain >= requiredTotal - 0.000001) break;
-        }
-      }
-
-      const achievable = currentAvg >= TARGET_CA || currentSum + cumulativeGain >= requiredTotal - 0.000001;
-      const projectedAvg = totalSites > 0 ? Math.min(100, (currentSum + cumulativeGain) / totalSites) : 0;
-
-      return {
-        region,
-        totalSites,
-        currentAvg,
-        requiredGain,
-        sitesToFix,
-        achievable,
-        projectedAvg,
-      };
+  const [expandedOverallGrid, setExpandedOverallGrid] = useState<string | null>(null);
+  const overallGridRows = useMemo(() => {
+    const groups = new Map<string, SiteData[]>();
+    sites.forEach(site => {
+      const grid = String(site.grid || "Unassigned").trim();
+      if (!groups.has(grid)) groups.set(grid, []);
+      groups.get(grid)!.push(site);
     });
+    return [...groups.entries()].map(([grid, members]) => {
+      const valid = members.map(s => Number(s.currentAvb)).filter(v => Number.isFinite(v) && v > 0);
+      return {grid, members, ca: valid.length ? valid.reduce((a,b)=>a+b,0)/valid.length : 0,
+        critical: valid.filter(v=>v<98).length};
+    }).sort((a,b)=>a.ca-b.ca);
   }, [sites]);
-
-  const selectedTargetPlan = target99Plan.find((p) => p.region === targetRegion) || null;
-
-  const targetPlanExport = (plan: (typeof target99Plan)[number]) =>
-    plan.sitesToFix.map((row, index) => ({
-      Rank: index + 1,
-      "Site ID": row.site.siteName,
-      Region: plan.region,
-      Grid: row.site.grid || "-",
-      "Revenue Category": row.site.revenueCategory || "-",
-      "September Cell AVB": row.ca.toFixed(2) + "%",
-      "Potential Gain if Fixed to 100%": row.possibleGain.toFixed(2) + " pp",
-      "Projected Regional Avg": row.projectedAvg.toFixed(2) + "%",
-      "Battery Type": hasLiIon(row.site) ? "Li-ion" : hasAGM(row.site) ? "AGM" : row.site.agmBb || "-",
-      DG: hasDG(row.site) ? "Yes" : "No",
-      "Cluster Owner": row.site.clusterOwner || "-",
-      "MS GTL": row.site.msGtl || "-",
-      "Zone Lead": row.site.zongLead || "-",
-    }));
-
+  const overallGridExport = (members: SiteData[]) => members.map(site => {
+    const row: Record<string, string | number> = {
+      "Site ID": site.siteName, "Grid": site.grid || "-", "Sub-Region": site.subRegion || "-",
+      "Revenue Category": site.revenueCategory || "-", "Current Month CA": Number(site.currentAvb)>0 ? `${Number(site.currentAvb).toFixed(2)}%` : "-",
+      "DG Status": site.dgStatus || site.dgInstalled || "-", "Li-ion": site.liIonInstalled || "-",
+      "BB Status": site.bbStatus || "-", "CMPAK GTL": site.zongLead || "-",
+      "MPL GTL": site.msGtl || "-", "Cluster Owner": site.clusterOwner || "-"
+    };
+    const dates = [...new Set(members.flatMap(s => Object.keys(s.dailyData || {}).map(d => empNormalizeDailyDateKey(d)).filter((d): d is string => !!d)))].sort((a,b)=>empDateKeyToTime(a)-empDateKeyToTime(b)).slice(-3);
+    dates.forEach(d => { const v = empGetDailyAvb(site,d); row[`${empFormatDailyDateHeader(d)} AVB`] = v>0 ? `${v.toFixed(2)}%` : "-"; });
+    return row;
+  });
 
   // ============================================================
   //  SHARING AS GUEST — OMO-WISE SUMMARY
@@ -6137,83 +6117,29 @@ function OverallSummaryWithExport({ sites, rawData, lastUpdatedDate }: { sites: 
         <EnhancedOverallSummary sites={sites} lastUpdatedDate={lastUpdatedDate} />
       </div>
 
-      {/* September regional 99% target achievement plan */}
-      <div className="rounded-xl border border-cyan-500/25 bg-gradient-to-r from-cyan-500/10 via-slate-800 to-slate-800 p-5">
-        <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <div className="flex items-center gap-2">
-              <TrendingUp className="h-5 w-5 text-cyan-400" />
-              <h3 className="text-lg font-bold text-white">October · Sites Required to Achieve 99% Cell AVB</h3>
-            </div>
-            <p className="mt-1 text-xs text-slate-400">
-              Lowest monthly Cell AVB sites are prioritized first. Count assumes each selected site is restored to 100% Cell AVB.
-            </p>
-          </div>
-          <span className="rounded-full border border-cyan-500/25 bg-cyan-500/10 px-3 py-1 text-xs font-semibold text-cyan-300">Target: 99.00%</span>
+      {/* Grid-wise drilldown within Overall Summary */}
+      <section className="rounded-2xl border border-sky-200 bg-white p-5 shadow-sm">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <div><h3 className="text-lg font-black text-slate-900">Grid Performance — Overall Summary</h3>
+            <p className="text-xs text-slate-500">Current month CA · lowest performing grids first · View site details</p></div>
+          <ExportButtonComponent data={overallGridExport(sites)} filename="Overall_Grid_All_Sites" label="Export All Grids" format="excel" variant="success" />
         </div>
-
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          {target99Plan.map((plan) => {
-            const achieved = plan.currentAvg >= TARGET_CA;
-            return (
-              <div key={plan.region} className="rounded-xl border border-slate-700 bg-slate-900/55 p-5">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="text-xs font-semibold uppercase tracking-wider text-slate-500">{plan.region}</div>
-                    <div className={`mt-1 text-3xl font-extrabold ${achieved ? "text-emerald-400" : "text-white"}`}>
-                      {plan.totalSites > 0 ? `${plan.currentAvg.toFixed(2)}%` : "—"}
-                    </div>
-                    <div className="mt-1 text-xs text-slate-400">Current October average · {plan.totalSites} valid sites</div>
-                  </div>
-
-                  <div className={`rounded-lg border px-4 py-3 text-center ${achieved ? "border-emerald-500/30 bg-emerald-500/10" : "border-red-500/30 bg-red-500/10"}`}>
-                    <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Sites to Fix</div>
-                    <div className={`text-3xl font-extrabold ${achieved ? "text-emerald-400" : "text-red-400"}`}>
-                      {achieved ? 0 : plan.sitesToFix.length}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="mt-4 grid grid-cols-3 gap-2">
-                  <div className="rounded-lg border border-slate-700/70 bg-slate-800/60 p-3">
-                    <div className="text-[10px] uppercase text-slate-500">Gap to 99</div>
-                    <div className={`mt-1 font-bold ${plan.currentAvg >= TARGET_CA ? "text-emerald-400" : "text-red-400"}`}>
-                      {plan.totalSites > 0 ? `${Math.max(0, TARGET_CA - plan.currentAvg).toFixed(2)} pp` : "—"}
-                    </div>
-                  </div>
-                  <div className="rounded-lg border border-slate-700/70 bg-slate-800/60 p-3">
-                    <div className="text-[10px] uppercase text-slate-500">Required Gain</div>
-                    <div className="mt-1 font-bold text-amber-300">{plan.totalSites > 0 ? plan.requiredGain.toFixed(2) : "—"}</div>
-                  </div>
-                  <div className="rounded-lg border border-slate-700/70 bg-slate-800/60 p-3">
-                    <div className="text-[10px] uppercase text-slate-500">After Fix</div>
-                    <div className="mt-1 font-bold text-cyan-300">{plan.totalSites > 0 ? `${plan.projectedAvg.toFixed(2)}%` : "—"}</div>
-                  </div>
-                </div>
-
-                <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-                  <div className="text-xs text-slate-400">
-                    {achieved
-                      ? `${plan.region} has already achieved the 99% target.`
-                      : plan.achievable
-                        ? `Fix the worst ${plan.sitesToFix.length} site${plan.sitesToFix.length === 1 ? "" : "s"} to mathematically cross 99%.`
-                        : "99% cannot be reached under the current calculation assumptions."}
-                  </div>
-                  {!achieved && plan.sitesToFix.length > 0 && (
-                    <button
-                      onClick={() => setTargetRegion(plan.region)}
-                      className="flex items-center gap-2 rounded-lg bg-cyan-500/15 px-3 py-2 text-xs font-semibold text-cyan-300 transition-colors hover:bg-cyan-500/25"
-                    >
-                      <Search className="h-3.5 w-3.5" /> View {plan.sitesToFix.length} Sites
-                    </button>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
+        <div className="overflow-x-auto"><table className="w-full min-w-[650px] text-sm">
+          <thead className="bg-sky-900 text-white"><tr>{["Grid","Sites","Current CA","Below 98%","Actions"].map(h=><th key={h} className="px-4 py-3 text-left text-white">{h}</th>)}</tr></thead>
+          <tbody>{overallGridRows.map(g=><React.Fragment key={g.grid}>
+            <tr className="border-b border-slate-100 even:bg-sky-50/50">
+              <td className="px-4 py-3 font-bold text-slate-900">{g.grid}</td><td className="px-4 py-3">{g.members.length}</td>
+              <td className="px-4 py-3"><AvailabilityBadge value={g.ca}/></td><td className="px-4 py-3 font-bold text-rose-600">{g.critical}</td>
+              <td className="px-4 py-3"><div className="flex gap-2"><button type="button" onClick={()=>setExpandedOverallGrid(expandedOverallGrid===g.grid?null:g.grid)} className="rounded-lg bg-sky-100 px-3 py-2 font-bold text-sky-800">{expandedOverallGrid===g.grid?"Hide":"View"}</button>
+              <ExportButtonComponent data={overallGridExport(g.members)} filename={`Overall_Grid_${g.grid}`} label="Export" format="excel" variant="success" /></div></td>
+            </tr>
+            {expandedOverallGrid===g.grid && <tr><td colSpan={5} className="bg-slate-50 p-3"><div className="max-h-[520px] overflow-auto"><table className="min-w-[1350px] w-full text-xs">
+              <thead className="bg-emerald-900 text-white"><tr>{Object.keys(overallGridExport(g.members)[0] || {}).map(h=><th key={h} className="whitespace-nowrap px-3 py-2 text-left text-white">{h}</th>)}</tr></thead>
+              <tbody>{overallGridExport(g.members).sort((a,b)=>parseFloat(String(a["Current Month CA"]))-parseFloat(String(b["Current Month CA"]))).map((r,i)=><tr key={i} className="border-b border-slate-200 even:bg-white">{Object.values(r).map((v,j)=><td key={j} className="whitespace-nowrap px-3 py-2 text-slate-800">{v}</td>)}</tr>)}</tbody>
+              </table></div></td></tr>}
+          </React.Fragment>)}</tbody>
+        </table></div>
+      </section>
 
       {/* Sharing as Guest — OMO-wise summary */}
       <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
@@ -6403,83 +6329,7 @@ function OverallSummaryWithExport({ sites, rawData, lastUpdatedDate }: { sites: 
         </div>
       </div>
 
-      <AnimatePresence>
-        {selectedTargetPlan && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[80] flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm"
-            onClick={() => setTargetRegion(null)}
-          >
-            <motion.div
-              initial={{ scale: 0.96, y: 14 }}
-              animate={{ scale: 1, y: 0 }}
-              exit={{ scale: 0.96, y: 14 }}
-              onClick={(event) => event.stopPropagation()}
-              className="flex max-h-[88vh] w-full max-w-7xl flex-col overflow-hidden rounded-2xl border border-slate-600 bg-slate-900 shadow-2xl"
-            >
-              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-700 p-5">
-                <div>
-                  <h3 className="text-xl font-bold text-white">{selectedTargetPlan.region} · Priority Sites to Reach 99%</h3>
-                  <p className="mt-1 text-xs text-slate-400">
-                    Current {selectedTargetPlan.currentAvg.toFixed(2)}% → projected {selectedTargetPlan.projectedAvg.toFixed(2)}% · {selectedTargetPlan.sitesToFix.length} sites required
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <ExportButtonComponent
-                    data={targetPlanExport(selectedTargetPlan)}
-                    filename={`${selectedTargetPlan.region.replace("-", "")}_september_99_target_sites`}
-                    label={`Export ${selectedTargetPlan.sitesToFix.length} Sites`}
-                    format="excel"
-                    variant="primary"
-                  />
-                  <button onClick={() => setTargetRegion(null)} className="rounded-md p-2 text-slate-400 hover:bg-slate-800 hover:text-white">
-                    <X className="h-5 w-5" />
-                  </button>
-                </div>
-              </div>
 
-              <div className="overflow-auto p-5">
-                <table className="w-full min-w-[1200px] text-sm">
-                  <thead>
-                    <tr className="border-b border-slate-700 bg-slate-900/70 text-left">
-                      <th className="px-3 py-2 text-xs text-slate-500">#</th>
-                      <th className="px-3 py-2 text-xs text-slate-500">Site ID</th>
-                      <th className="px-3 py-2 text-xs text-slate-500">Grid</th>
-                      <th className="px-3 py-2 text-xs text-slate-500">Category</th>
-                      <th className="px-3 py-2 text-center text-xs text-slate-500">Sep AVB</th>
-                      <th className="px-3 py-2 text-center text-xs text-slate-500">Potential Gain</th>
-                      <th className="px-3 py-2 text-center text-xs text-slate-500">Projected Region Avg</th>
-                      <th className="px-3 py-2 text-xs text-slate-500">Battery</th>
-                      <th className="px-3 py-2 text-center text-xs text-slate-500">DG</th>
-                      <th className="px-3 py-2 text-xs text-slate-500">Cluster Owner</th>
-                      <th className="px-3 py-2 text-xs text-slate-500">MS GTL</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {selectedTargetPlan.sitesToFix.map((row, index) => (
-                      <tr key={`${selectedTargetPlan.region}-${row.site.siteName}-${index}`} className="border-b border-slate-800 hover:bg-slate-800/50">
-                        <td className="px-3 py-2 text-slate-500">{index + 1}</td>
-                        <td className="px-3 py-2 font-mono font-semibold text-cyan-300">{row.site.siteName || "—"}</td>
-                        <td className="px-3 py-2 text-slate-300">{row.site.grid || "—"}</td>
-                        <td className="px-3 py-2"><CategoryBadge category={row.site.revenueCategory || "—"} /></td>
-                        <td className="px-3 py-2 text-center font-bold text-red-400">{row.ca.toFixed(2)}%</td>
-                        <td className="px-3 py-2 text-center font-semibold text-amber-300">+{row.possibleGain.toFixed(2)} pp</td>
-                        <td className={`px-3 py-2 text-center font-bold ${row.projectedAvg >= TARGET_CA ? "text-emerald-400" : "text-cyan-300"}`}>{row.projectedAvg.toFixed(2)}%</td>
-                        <td className="px-3 py-2 text-slate-300">{hasLiIon(row.site) ? "Li-ion" : hasAGM(row.site) ? "AGM" : row.site.agmBb || "—"}</td>
-                        <td className="px-3 py-2 text-center text-slate-300">{hasDG(row.site) ? "Yes" : "No"}</td>
-                        <td className="px-3 py-2 text-slate-300">{row.site.clusterOwner || "—"}</td>
-                        <td className="px-3 py-2 text-slate-300">{row.site.msGtl || "—"}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
     </div>
   );
 }
