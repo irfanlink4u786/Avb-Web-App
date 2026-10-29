@@ -7267,6 +7267,8 @@ export default function App() {
   };
 
   const loadMonthData = async (month: Month) => {
+    // October-only mode: prevent requests to archived monthly workbooks.
+    if (month !== "october") return loadMonthData("october");
     // Every month must load strictly from its own workbook.
     // The sequence guard prevents an older request (for example August)
     // from finishing later and overwriting a newer September selection.
@@ -7395,12 +7397,7 @@ export default function App() {
     setErrorMsg("");
     // Fuel History and Deviation Fuel may live in a workbook other than the
     // active Cell AVB month. Search configured workbooks, newest first.
-    const workbooks = [
-      SHEET_IDS.october,
-      SHEET_IDS.september,
-      SHEET_IDS.august,
-      SHEET_IDS.july,
-    ];
+    const workbooks = [SHEET_IDS.october];
     const attempts: string[] = [];
     let history: SheetPayload | null = null;
     let deviation: SheetPayload | null = null;
@@ -7647,18 +7644,6 @@ export default function App() {
           <h1 className="text-5xl md:text-7xl font-extrabold text-white leading-tight mb-6 drop-shadow-lg">C1 & C6 <br /><span className="bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">Cell Avb Analysis</span></h1>
           <motion.div variants={{ hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.15 } } }} initial="hidden" animate="show" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5 mt-9">
 
-            <motion.button variants={{ hidden: { opacity: 0, y: 30 }, show: { opacity: 1, y: 0 } }} whileHover={{ scale: 1.03, boxShadow: "0 0 40px rgba(6, 182, 212, 0.25)" }} whileTap={{ scale: 0.98 }} onClick={() => loadMonthData("july")} className="group relative w-full min-h-[142px] px-6 py-7 rounded-2xl bg-gradient-to-br from-slate-800/90 to-slate-900/90 border border-slate-600/50 hover:border-cyan-400 transition-all duration-300 shadow-xl backdrop-blur-sm overflow-hidden">
-              <span className="absolute inset-0 bg-gradient-to-r from-cyan-500/10 to-blue-500/10 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-              <div className="relative text-center"><span className="block text-xl sm:text-2xl font-extrabold tracking-tight text-white">July 2026</span><span className="text-slate-300 text-sm">Final data · 31 days</span></div>
-            </motion.button>
-            <motion.button variants={{ hidden: { opacity: 0, y: 30 }, show: { opacity: 1, y: 0 } }} whileHover={{ scale: 1.03, boxShadow: "0 0 40px rgba(6, 182, 212, 0.25)" }} whileTap={{ scale: 0.98 }} onClick={() => loadMonthData("august")} className="group relative w-full min-h-[142px] px-6 py-7 rounded-2xl bg-gradient-to-br from-slate-800/90 to-slate-900/90 border border-slate-600/50 hover:border-cyan-400 transition-all duration-300 shadow-xl backdrop-blur-sm overflow-hidden">
-              <span className="absolute inset-0 bg-gradient-to-r from-cyan-500/10 to-blue-500/10 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-              <div className="relative text-center"><span className="block text-xl sm:text-2xl font-extrabold tracking-tight text-white">August 2026</span><span className="text-slate-300 text-sm">Final data · 31 days</span></div>
-            </motion.button>
-            <motion.button variants={{ hidden: { opacity: 0, y: 30 }, show: { opacity: 1, y: 0 } }} whileHover={{ scale: 1.03, boxShadow: "0 0 40px rgba(16, 185, 129, 0.35)" }} whileTap={{ scale: 0.98 }} onClick={() => loadMonthData("september")} className="group relative w-full min-h-[142px] px-6 py-7 rounded-2xl bg-gradient-to-br from-emerald-500/20 to-green-500/20 border border-emerald-400/30 hover:border-emerald-300 transition-all duration-300 shadow-xl hover:shadow-emerald-500/40 backdrop-blur-sm overflow-hidden">
-              <span className="absolute inset-0 bg-gradient-to-r from-emerald-400/20 to-green-400/20 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-              <div className="relative text-center"><span className="block text-xl sm:text-2xl font-extrabold tracking-tight text-white">September 2026</span><span className="text-slate-200 text-sm">Live updates · Progressive</span></div>
-            </motion.button>
             <motion.button variants={{ hidden: { opacity: 0, y: 30 }, show: { opacity: 1, y: 0 } }} whileHover={{ scale: 1.03, boxShadow: "0 0 40px rgba(34, 211, 238, 0.35)" }} whileTap={{ scale: 0.98 }} onClick={() => loadMonthData("october")} className="group relative w-full min-h-[142px] px-6 py-7 rounded-2xl bg-gradient-to-br from-cyan-500/20 to-emerald-500/20 border border-cyan-400/30 hover:border-cyan-300 transition-all duration-300 shadow-xl hover:shadow-cyan-500/40 backdrop-blur-sm overflow-hidden">
               <span className="absolute inset-0 bg-gradient-to-r from-cyan-400/20 to-emerald-400/20 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
               <div className="relative text-center"><span className="block text-xl sm:text-2xl font-extrabold tracking-tight text-white">October 2026</span><span className="text-cyan-200 text-sm">LIVE · Active data</span></div>
@@ -7691,14 +7676,11 @@ export default function App() {
               <span className="absolute inset-0 bg-gradient-to-r from-cyan-400/20 to-blue-400/20 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
               <div className="relative text-center">
                 <span className="block text-xl sm:text-2xl font-extrabold tracking-tight text-white">5G Sites</span>
-                <span className="text-slate-200 text-sm">September 2026 · KPI Dashboard</span>
+                <span className="text-slate-200 text-sm">October 2026 · KPI Dashboard</span>
               </div>
             </motion.button>
 
-            <motion.button variants={{ hidden: { opacity: 0, y: 30 }, show: { opacity: 1, y: 0 } }} whileHover={{ scale: 1.03, boxShadow: "0 0 40px rgba(168, 85, 247, 0.25)" }} whileTap={{ scale: 0.98 }} onClick={loadPreVsPost} className="group relative w-full min-h-[142px] px-6 py-7 rounded-2xl bg-gradient-to-br from-purple-500/20 to-pink-500/20 border border-purple-400/30 hover:border-purple-300 transition-all duration-300 shadow-xl hover:shadow-purple-500/40 backdrop-blur-sm overflow-hidden">
-              <span className="absolute inset-0 bg-gradient-to-r from-purple-400/20 to-pink-400/20 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-              <div className="relative text-center"><span className="block text-xl sm:text-2xl font-extrabold tracking-tight text-white">Plat+ & DG Pre Vs Post</span><span className="text-slate-200 text-sm">July vs August comparison</span></div>
-            </motion.button>
+
 
           </motion.div>
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.6 }} className="mt-12 text-slate-300 text-sm flex items-center justify-center gap-2">
