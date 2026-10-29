@@ -7294,6 +7294,7 @@ export default function App() {
     setMonthLastUpdated("");
     setMonthLastColumnIndex(0);
 
+    let mainSheetReady = false;
     try {
       console.info(`[Cell AVB] Loading ${month} workbook: ${sheetId}`);
 
@@ -7307,28 +7308,23 @@ export default function App() {
         throw new Error(`No AVB rows returned from ${month} workbook (${sheetId})`);
       }
 
+      mainSheetReady = true;
       setMonthData(data);
+      // Show October dashboard as soon as its main AVB data is ready.
+      // Supporting tabs continue in the background and populate their own views.
+      setViewMode("month");
+      setAppState("dashboard");
 
       // Supporting tabs are optional. A missing supporting tab must NOT cause
       // the whole dashboard to fall back to old/mock data.
       const [dateResult, rcaResult, fiveGResult, historyResult, s2sResult, revenueLostResult, threeBasicsResult] = await Promise.allSettled([
         fetchGoogleSheet(sheetId, "Updated Date"),
         fetchGoogleSheet(sheetId, "RCA of Plat +"),
-        (month === "august" || month === "september" || month === "october")
-          ? fetchGoogleSheet(sheetId, "5G")
-          : Promise.resolve(null),
-        (month === "september" || month === "october")
-          ? fetchGoogleSheet(sheetId, "Cell Avb history")
-          : Promise.resolve(null),
-        (month === "september" || month === "october")
-          ? fetchGoogleSheet(sheetId, "S2S BB installed")
-          : Promise.resolve(null),
-        (month === "september" || month === "october")
-          ? fetchGoogleSheet(sheetId, "Revenue Lost sites")
-          : Promise.resolve(null),
-        month === "october"
-          ? fetchGoogleSheet(sheetId, "3 Basics KPIs")
-          : Promise.resolve(null),
+        fetchGoogleSheet(sheetId, "5G"),
+        fetchGoogleSheet(sheetId, "Cell Avb history"),
+        fetchGoogleSheet(sheetId, "S2S BB installed"),
+        fetchGoogleSheet(sheetId, "Revenue Lost sites"),
+        fetchGoogleSheet(sheetId, "3 Basics KPIs"),
       ].map((request, index) => withSheetTimeout(Promise.resolve(request), `${month} supporting sheet #${index + 1}`, 12000)));
 
       if (requestId !== monthLoadSeq.current) return;
@@ -7351,10 +7347,10 @@ export default function App() {
 
       setMonthRca(rcaSheet);
       setMonth5G(fiveGSheet);
-      setMonthCellAvbHistory((month === "september" || month === "october") ? cellAvbHistory : null);
-      setMonthS2SBB((month === "september" || month === "october") ? s2sBBData : null);
-      setMonthRevenueLost((month === "september" || month === "october") ? revenueLostData : null);
-      setMonth3Basics(month === "october" ? threeBasicsData : null);
+      setMonthCellAvbHistory(cellAvbHistory);
+      setMonthS2SBB(s2sBBData);
+      setMonthRevenueLost(revenueLostData);
+      setMonth3Basics(threeBasicsData);
 
       if (dateData && Array.isArray(dateData.rows) && dateData.rows.length > 0) {
         const row = dateData.rows[0];
@@ -7364,12 +7360,14 @@ export default function App() {
         setMonthLastColumnIndex(Number.isFinite(parsedIndex) ? parsedIndex : 0);
       }
 
-      setViewMode("month");
-      setAppState("dashboard");
     } catch (error) {
       if (requestId !== monthLoadSeq.current) return;
 
       console.error(`[Cell AVB] Error loading ${month} workbook ${sheetId}:`, error);
+      if (mainSheetReady) {
+        // Optional tab processing failure must not hide the already loaded dashboard.
+        return;
+      }
 
       // Never leave the previous month's data on screen after a failed month switch.
       setMonthData(null);
