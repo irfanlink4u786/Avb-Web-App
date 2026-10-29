@@ -7255,16 +7255,9 @@ export default function App() {
     });
   };
 
-  // Prevent stalled Google Sheets requests from trapping the entire app on the loading screen.
-  const withSheetTimeout = <T,>(promise: Promise<T>, label: string, timeoutMs: number): Promise<T> => {
-    let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
-    const timeout = new Promise<T>((_, reject) => {
-      timeoutHandle = setTimeout(() => reject(new Error(`${label} timed out after ${timeoutMs / 1000}s`)), timeoutMs);
-    });
-    return Promise.race([promise, timeout]).finally(() => {
-      if (timeoutHandle !== undefined) clearTimeout(timeoutHandle);
-    });
-  };
+  // Google Sheets service manages network timeouts and caching.
+  // Do not race supporting requests against a separate application timeout:
+  // a timed-out Promise.race can discard a successful response arriving later.
 
   const loadMonthData = async (month: Month) => {
     // October-only mode: prevent requests to archived monthly workbooks.
@@ -7300,7 +7293,7 @@ export default function App() {
 
       // Main AVB sheet is the source for ALL C1 & C6 dashboard analysis tabs.
       // Load it first and fail clearly if it is not available.
-      const data = await withSheetTimeout(fetchGoogleSheet(sheetId), `${month} main AVB sheet`, 30000);
+      const data = await fetchGoogleSheet(sheetId);
 
       if (requestId !== monthLoadSeq.current) return;
 
@@ -7317,47 +7310,38 @@ export default function App() {
 
       // Supporting tabs are optional. A missing supporting tab must NOT cause
       // the whole dashboard to fall back to old/mock data.
-      const [dateResult, rcaResult, fiveGResult, historyResult, s2sResult, revenueLostResult, threeBasicsResult] = await Promise.allSettled([
-        fetchGoogleSheet(sheetId, "Updated Date"),
-        fetchGoogleSheet(sheetId, "RCA of Plat +"),
-        fetchGoogleSheet(sheetId, "5G"),
-        fetchGoogleSheet(sheetId, "Cell Avb history"),
-        fetchGoogleSheet(sheetId, "S2S BB installed"),
-        fetchGoogleSheet(sheetId, "Revenue Lost sites"),
-        fetchGoogleSheet(sheetId, "3 Basics KPIs"),
-      ].map((request, index) => withSheetTimeout(Promise.resolve(request), `${month} supporting sheet #${index + 1}`, 12000)));
-
-      if (requestId !== monthLoadSeq.current) return;
-
-      const dateData = dateResult.status === "fulfilled" ? dateResult.value : null;
-      const rcaSheet = rcaResult.status === "fulfilled" ? rcaResult.value : null;
-      const fiveGSheet = fiveGResult.status === "fulfilled" ? fiveGResult.value : null;
-      const cellAvbHistory = historyResult.status === "fulfilled" ? historyResult.value : null;
-      const s2sBBData = s2sResult.status === "fulfilled" ? s2sResult.value : null;
-      const revenueLostData = revenueLostResult.status === "fulfilled" ? revenueLostResult.value : null;
-      const threeBasicsData = threeBasicsResult.status === "fulfilled" ? threeBasicsResult.value : null;
-
-      if (dateResult.status === "rejected") console.warn(`[Cell AVB] ${month}: Updated Date tab unavailable`, dateResult.reason);
-      if (rcaResult.status === "rejected") console.warn(`[Cell AVB] ${month}: RCA of Plat + tab unavailable`, rcaResult.reason);
-      if (fiveGResult.status === "rejected") console.warn(`[Cell AVB] ${month}: 5G tab unavailable`, fiveGResult.reason);
-      if (historyResult.status === "rejected") console.warn(`[Cell AVB] ${month}: Cell Avb history tab unavailable`, historyResult.reason);
-      if (s2sResult.status === "rejected") console.warn(`[Cell AVB] ${month}: S2S BB installed tab unavailable`, s2sResult.reason);
-      if (revenueLostResult.status === "rejected") console.warn(`[Cell AVB] ${month}: Revenue Lost sites tab unavailable`, revenueLostResult.reason);
-      if (threeBasicsResult.status === "rejected") console.warn(`[Cell AVB] ${month}: 3 Basics KPIs tab unavailable`, threeBasicsResult.reason);
-
-      setMonthRca(rcaSheet);
-      setMonth5G(fiveGSheet);
-      setMonthCellAvbHistory(cellAvbHistory);
-      setMonthS2SBB(s2sBBData);
-      setMonthRevenueLost(revenueLostData);
-      setMonth3Basics(threeBasicsData);
-
-      if (dateData && Array.isArray(dateData.rows) && dateData.rows.length > 0) {
-        const row = dateData.rows[0];
-        setMonthLastUpdated(row["Last Updated"] || row["Date"] || row["Last Date"] || "");
-
-        const parsedIndex = parseInt(row["Column Index"] || row["Column"] || row["Index"] || "0", 10);
-        setMonthLastColumnIndex(Number.isFinite(parsedIndex) ? parsedIndex : 0);
+      // Fetch at most two optional tabs at once to avoid flooding Google Sheets.
+      // Apply each successful response immediately, not after all seven finish.
+      const supportingTabs: Array<{ name: string; apply: (data: SheetPayload) => void }> = [
+        { name: "Updated Date", apply: (dateData) => {
+          if (!dateData.rows?.length) return;
+          const row = dateData.rows[0];
+          setMonthLastUpdated(row["Last Updated"] || row["Date"] || row["Last Date"] || "");
+          const parsedIndex = parseInt(row["Column Index"] || row["Column"] || row["Index"] || "0", 10);
+          setMonthLastColumnIndex(Number.isFinite(parsedIndex) ? parsedIndex : 0);
+        } },
+        { name: "RCA of Plat +", apply: setMonthRca },
+        { name: "5G", apply: setMonth5G },
+        { name: "Cell Avb history", apply: setMonthCellAvbHistory },
+        { name: "S2S BB installed", apply: setMonthS2SBB },
+        { name: "Revenue Lost sites", apply: setMonthRevenueLost },
+        { name: "3 Basics KPIs", apply: setMonth3Basics },
+      ];
+      const loadSupportingTab = async (item: typeof supportingTabs[number]) => {
+        try {
+          const result = await fetchGoogleSheet(sheetId, item.name);
+          if (requestId !== monthLoadSeq.current) return;
+          item.apply(result);
+          console.info(`[Cell AVB] ${month}: ${item.name} loaded (${result.rows.length} rows)`);
+        } catch (error) {
+          if (requestId === monthLoadSeq.current) {
+            console.warn(`[Cell AVB] ${month}: ${item.name} tab unavailable`, error);
+          }
+        }
+      };
+      for (let index = 0; index < supportingTabs.length; index += 2) {
+        if (requestId !== monthLoadSeq.current) return;
+        await Promise.all(supportingTabs.slice(index, index + 2).map(loadSupportingTab));
       }
 
     } catch (error) {

@@ -1,123 +1,125 @@
-// Re-export SheetPayload so other files can import it from this module
+// Optimized Google Sheets service: metadata cache, bounded concurrency, and request reuse.
 export type { SheetPayload } from "../types";
+import type { SheetPayload } from "../types";
 
-import { SheetPayload } from "../types";
+const DEFAULT_SHEET_ID = "1Bu4lneVsXvoHdiiJtJvzKSVq0MrTHQOqvH38w7MlNPk";
+// Set VITE_GOOGLE_SHEETS_API_KEY in your .env file.
+const API_KEY = (import.meta.env.VITE_GOOGLE_SHEETS_API_KEY as string | undefined) || 'AIzaSyCmwalE0E1hsB-sxfLYB82ZuuSYYoTz1x8';
+const CACHE_MS = 5 * 60 * 1000;
+const MAX_ACTIVE = 3;
+let active = 0;
+const waiting: Array<() => void> = [];
+const resultCache = new Map<string, { until: number; value: SheetPayload }>();
+const inflight = new Map<string, Promise<SheetPayload>>();
+const metadataCache = new Map<string, { until: number; value: SpreadsheetMetadata }>();
+const metadataInflight = new Map<string, Promise<SpreadsheetMetadata>>();
 
-// Default sheet ID – only used when no sheetId is passed.
-// In your App.tsx you always pass the specific month sheet IDs,
-// so this fallback is not used.
-const DEFAULT_SHEET_ID = '1Bu4lneVsXvoHdiiJtJvzKSVq0MrTHQOqvH38w7MlNPk';
+type TabMeta = { properties?: { title?: string; gridProperties?: { columnCount?: number } } };
+type SpreadsheetMetadata = { properties?: { title?: string }; sheets?: TabMeta[] };
 
-// ✅ UPDATED API KEY
-const API_KEY = 'AIzaSyCmwalE0E1hsB-sxfLYB82ZuuSYYoTz1x8';
+async function limited<T>(task: () => Promise<T>): Promise<T> {
+  if (active >= MAX_ACTIVE) await new Promise<void>(resolve => waiting.push(resolve));
+  active++;
+  try { return await task(); }
+  finally { active--; waiting.shift()?.(); }
+}
+
+async function getJson<T>(url: string): Promise<T> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 45000);
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    if (!response.ok) {
+      const body = await response.text().catch(() => "");
+      throw new Error(`Google Sheets HTTP ${response.status}: ${body.slice(0, 250)}`);
+    }
+    return await response.json() as T;
+  } finally { clearTimeout(timer); }
+}
 
 function columnToLetter(n: number): string {
-  let letter = '';
-  while (n > 0) {
-    const mod = (n - 1) % 26;
-    letter = String.fromCharCode(65 + mod) + letter;
-    n = Math.floor((n - 1) / 26);
+  let result = "";
+  for (; n > 0; n = Math.floor((n - 1) / 26)) {
+    result = String.fromCharCode(65 + ((n - 1) % 26)) + result;
   }
-  return letter;
+  return result;
+}
+
+async function getMetadata(sheetId: string): Promise<SpreadsheetMetadata> {
+  const cached = metadataCache.get(sheetId);
+  if (cached && cached.until > Date.now()) return cached.value;
+  const existing = metadataInflight.get(sheetId);
+  if (existing) return existing;
+  const promise = limited(() => getJson<SpreadsheetMetadata>(
+    `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId)}?fields=properties(title),sheets(properties(title,gridProperties(columnCount)))&key=${encodeURIComponent(API_KEY!)}`
+  ));
+  metadataInflight.set(sheetId, promise);
+  try {
+    const value = await promise;
+    metadataCache.set(sheetId, { value, until: Date.now() + CACHE_MS });
+    return value;
+  } finally { metadataInflight.delete(sheetId); }
+}
+
+export function clearGoogleSheetCache(): void {
+  resultCache.clear();
+  metadataCache.clear();
 }
 
 export async function fetchGoogleSheet(
   sheetId: string = DEFAULT_SHEET_ID,
   tab?: string
 ): Promise<SheetPayload> {
-  console.log('🔄 Fetching from Google Sheets API directly...');
-  
-  try {
-    // Step 1: Get sheet metadata to find the sheet name and dimensions
-    const metaUrl = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}?key=${API_KEY}`;
-    console.log('📡 Fetching metadata...');
-    
-    const metaRes = await fetch(metaUrl);
-    if (!metaRes.ok) {
-      const errText = await metaRes.text();
-      console.error('❌ Metadata error:', errText);
-      throw new Error(`Failed to fetch sheet metadata: ${metaRes.status}`);
-    }
-    
-    const meta = await metaRes.json();
-    const sheetTitle = meta.title || 'Sheet';
-    const sheets = meta.sheets || [];
-    
-    // Find the target sheet
-    let targetSheet = sheets[0];
-    if (tab) {
-      targetSheet = sheets.find((s: any) => s.properties?.title === tab) || sheets[0];
-    }
-    
-    const tabTitle = targetSheet?.properties?.title || 'Sheet1';
-    const grid = targetSheet?.properties?.gridProperties || {};
-    const rowCount = grid.rowCount || 10000;
-    const colCount = (grid.columnCount || 26) + 20;
-    const colLetter = columnToLetter(colCount);
-    const range = `${tabTitle}!A1:${colLetter}${rowCount}`;
-    
-    console.log(`📊 Fetching range: ${range}`);
-    
-    // Step 2: Get the actual data
-    const valuesUrl = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(range)}?key=${API_KEY}`;
-    const valuesRes = await fetch(valuesUrl);
-    
-    if (!valuesRes.ok) {
-      const errText = await valuesRes.text();
-      console.error('❌ Values error:', errText);
-      throw new Error(`Failed to fetch sheet data: ${valuesRes.status}`);
-    }
-    
-    const valuesData = await valuesRes.json();
-    const allRows = valuesData.values || [];
+  if (!API_KEY) throw new Error("Missing VITE_GOOGLE_SHEETS_API_KEY");
+  const key = `${sheetId}::${tab ?? "__first__"}`;
+  const cached = resultCache.get(key);
+  if (cached && cached.until > Date.now()) return cached.value;
+  const pending = inflight.get(key);
+  if (pending) return pending;
 
-    if (allRows.length === 0) {
-      console.warn('⚠️ No data found in sheet');
-      return {
-        sheetTitle,
-        tabTitle,
-        headers: [],
-        rows: [],
-        totalRows: 0,
-        fetchedAt: new Date().toISOString(),
-      };
-    }
-
-    // Process headers - handle duplicates by adding column index
-    const rawHeaders = allRows[0].map((h: any) => (h ?? '').toString().trim());
-    const headerCount: Record<string, number> = {};
-    const headers = rawHeaders.map((h: string, idx: number) => {
-      if (!h) return `__col_${idx}`;
-      headerCount[h] = (headerCount[h] || 0) + 1;
-      if (headerCount[h] > 1) {
-        return `${h}__${idx}`;
-      }
-      return h;
+  const task = (async (): Promise<SheetPayload> => {
+    const meta = await getMetadata(sheetId);
+    const sheets = meta.sheets ?? [];
+    const target = tab
+      ? sheets.find(s => s.properties?.title === tab)
+      : sheets[0];
+    if (!target) throw new Error(`Google Sheets tab not found: ${tab ?? "first sheet"}`);
+    const tabTitle = target.properties?.title ?? "Sheet1";
+    const colCount = Math.max(1, target.properties?.gridProperties?.columnCount ?? 26);
+    // Open-ended rows avoid downloading a large grid of empty rows.
+    // Column count is the actual grid width, without the previous extra 20 columns.
+    const escapedTitle = `'${tabTitle.replace(/'/g, "''")}'`;
+    const range = `${escapedTitle}!A1:${columnToLetter(colCount)}`;
+    const url = `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId)}/values/${encodeURIComponent(range)}?majorDimension=ROWS&valueRenderOption=FORMATTED_VALUE&key=${encodeURIComponent(API_KEY)}`;
+    const data = await limited(() => getJson<{ values?: unknown[][] }>(url));
+    const allRows = data.values ?? [];
+    const rawHeaders = (allRows[0] ?? []).map(v => String(v ?? "").trim());
+    const counts: Record<string, number> = {};
+    const headers = rawHeaders.map((h, i) => {
+      if (!h) return `__col_${i}`;
+      counts[h] = (counts[h] ?? 0) + 1;
+      return counts[h] > 1 ? `${h}__${i}` : h;
     });
-
-    // Process data rows
-    const dataRows = allRows.slice(1)
-      .filter((row: any[]) => row.some((cell: any) => (cell ?? '').toString().trim() !== ''))
-      .map((row: any[]) => {
-        const obj: Record<string, string> = {};
-        headers.forEach((h: string, i: number) => {
-          obj[h] = (row[i] ?? '').toString().trim();
-        });
-        return obj;
+    const rows = allRows.slice(1)
+      .filter(row => row.some(v => String(v ?? "").trim() !== ""))
+      .map(row => {
+        const result: Record<string, string> = {};
+        headers.forEach((h, i) => { result[h] = String(row[i] ?? "").trim(); });
+        return result;
       });
-
-    console.log(`✅ Successfully fetched ${dataRows.length} rows with ${headers.length} columns`);
-
-    return {
-      sheetTitle,
+    const result: SheetPayload = {
+      sheetTitle: meta.properties?.title ?? "Sheet",
       tabTitle,
       headers,
-      rows: dataRows,
-      totalRows: dataRows.length,
+      rows,
+      totalRows: rows.length,
       fetchedAt: new Date().toISOString(),
     };
-  } catch (error) {
-    console.error('❌ fetchGoogleSheet error:', error);
-    throw error;
-  }
+    resultCache.set(key, { value: result, until: Date.now() + CACHE_MS });
+    console.info(`[Sheets] ${tabTitle}: ${rows.length} rows, ${headers.length} columns`);
+    return result;
+  })();
+  inflight.set(key, task);
+  try { return await task; }
+  finally { inflight.delete(key); }
 }

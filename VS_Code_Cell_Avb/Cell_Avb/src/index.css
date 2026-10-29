@@ -1,1 +1,7 @@
 @import "tailwindcss";
+
+/* Grid Performance - Site ID text black */
+.grid-performance-site-modal td:first-child {
+  color: #000000 !important;
+  font-weight: 600 !important;
+}
