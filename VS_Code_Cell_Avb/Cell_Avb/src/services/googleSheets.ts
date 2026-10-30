@@ -6,6 +6,9 @@ const DEFAULT_SHEET_ID = "1Bu4lneVsXvoHdiiJtJvzKSVq0MrTHQOqvH38w7MlNPk";
 // Set VITE_GOOGLE_SHEETS_API_KEY in your .env file.
 const API_KEY = (import.meta.env.VITE_GOOGLE_SHEETS_API_KEY as string | undefined) || 'AIzaSyCmwalE0E1hsB-sxfLYB82ZuuSYYoTz1x8';
 const CACHE_MS = 5 * 60 * 1000;
+const DB_NAME = "cell-avb-sheet-cache-v1";
+const STORE_NAME = "sheets";
+const MAX_PERSIST_AGE = 7 * 24 * 60 * 60 * 1000;
 const MAX_ACTIVE = 3;
 let active = 0;
 const waiting: Array<() => void> = [];
@@ -61,6 +64,46 @@ async function getMetadata(sheetId: string): Promise<SpreadsheetMetadata> {
   } finally { metadataInflight.delete(sheetId); }
 }
 
+type StoredSheet = { key: string; savedAt: number; value: SheetPayload };
+let dbPromise: Promise<IDBDatabase | null> | null = null;
+function openCacheDb(): Promise<IDBDatabase | null> {
+  if (typeof indexedDB === "undefined") return Promise.resolve(null);
+  if (!dbPromise) dbPromise = new Promise(resolve => {
+    try {
+      const request = indexedDB.open(DB_NAME, 1);
+      request.onupgradeneeded = () => {
+        if (!request.result.objectStoreNames.contains(STORE_NAME)) request.result.createObjectStore(STORE_NAME, { keyPath: "key" });
+      };
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => resolve(null);
+      request.onblocked = () => resolve(null);
+    } catch { resolve(null); }
+  });
+  return dbPromise;
+}
+async function readPersistent(key: string): Promise<StoredSheet | null> {
+  const db = await openCacheDb();
+  if (!db) return null;
+  return new Promise(resolve => {
+    try {
+      const request = db.transaction(STORE_NAME, "readonly").objectStore(STORE_NAME).get(key);
+      request.onsuccess = () => resolve(request.result ?? null);
+      request.onerror = () => resolve(null);
+    } catch { resolve(null); }
+  });
+}
+async function savePersistent(key: string, value: SheetPayload): Promise<void> {
+  const db = await openCacheDb();
+  if (!db) return;
+  await new Promise<void>(resolve => {
+    try {
+      const request = db.transaction(STORE_NAME, "readwrite").objectStore(STORE_NAME).put({ key, value, savedAt: Date.now() } as StoredSheet);
+      request.onsuccess = () => resolve();
+      request.onerror = () => resolve();
+    } catch { resolve(); }
+  });
+}
+
 export function clearGoogleSheetCache(): void {
   resultCache.clear();
   metadataCache.clear();
@@ -68,13 +111,21 @@ export function clearGoogleSheetCache(): void {
 
 export async function fetchGoogleSheet(
   sheetId: string = DEFAULT_SHEET_ID,
-  tab?: string
+  tab?: string,
+  options: { forceRefresh?: boolean } = {}
 ): Promise<SheetPayload> {
   if (!API_KEY) throw new Error("Missing VITE_GOOGLE_SHEETS_API_KEY");
   const key = `${sheetId}::${tab ?? "__first__"}`;
   const cached = resultCache.get(key);
-  if (cached && cached.until > Date.now()) return cached.value;
+  if (!options.forceRefresh && cached && cached.until > Date.now()) return cached.value;
   const pending = inflight.get(key);
+  if (!options.forceRefresh && !pending) {
+    const stored = await readPersistent(key);
+    if (stored && Date.now() - stored.savedAt < MAX_PERSIST_AGE) {
+      resultCache.set(key, { value: stored.value, until: Date.now() + CACHE_MS });
+      return stored.value;
+    }
+  }
   if (pending) return pending;
 
   const task = (async (): Promise<SheetPayload> => {
@@ -116,6 +167,7 @@ export async function fetchGoogleSheet(
       fetchedAt: new Date().toISOString(),
     };
     resultCache.set(key, { value: result, until: Date.now() + CACHE_MS });
+    void savePersistent(key, result);
     console.info(`[Sheets] ${tabTitle}: ${rows.length} rows, ${headers.length} columns`);
     return result;
   })();

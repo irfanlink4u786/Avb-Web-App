@@ -10,11 +10,9 @@ import {
   Crown,
   TrendingUp,
   TrendingDown,
-  Sparkles,
   Zap,
   Battery,
   AlertTriangle,
-  BatteryWarning,
   Radio,
   RefreshCw,
   Database,
@@ -61,7 +59,7 @@ import OverallSummaryComponent from "./components/OverallSummary";
 import ExportButton from "./components/ExportButton";
 import WeatherRadar from "./components/WeatherRadar";
 import RainAlertWidget from "./components/RainAlertWidget";
-import { fetchGoogleSheet } from "./services/googleSheets";
+import { fetchGoogleSheet as fetchGoogleSheetService } from "./services/googleSheets";
 import { type SheetPayload } from "./types";
 import {
   type SiteData,
@@ -1248,14 +1246,8 @@ const NAV_ITEMS = [
   { id: "revenue-lost", label: "Revenue Lost Sites", icon: CircleDollarSign },
   { id: "employees", label: "Employees", icon: Users },
   { id: "platinum-plus", label: "Platinum+", icon: Crown },
-  { id: "pgs", label: "PGS Sites", icon: TrendingUp },
-  { id: "sb", label: "SB Sites", icon: TrendingDown },
-  { id: "nps", label: "NPS Sites", icon: Sparkles },
   { id: "5g", label: "5G Sites", icon: Radio },
   { id: "dg", label: "DG Sites", icon: Zap },
-  { id: "li-ion", label: "Li-ion BB", icon: Battery },
-  { id: "below-base", label: "Below Base", icon: AlertTriangle },
-  { id: "agm", label: "AGM BB", icon: BatteryWarning },
   { id: "rca", label: "RCA of Plat+", icon: ListChecks },
   { id: "query", label: "Site Query", icon: Search },
   { id: "weather", label: "Weather Radar", icon: CloudRain },
@@ -5834,6 +5826,117 @@ function EnhancedOverallSummary({
 //  OVERALL SUMMARY WITH EXPORT (unchanged)
 // ============================================================
 
+
+// Lightweight replacement for the original heavy Overall page.
+// Processes the already normalized site records once and renders at most 50 rows.
+function FastOverallDashboard({ sites, lastUpdatedDate }: { sites: SiteData[]; lastUpdatedDate?: string }) {
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(0);
+  const [region, setRegion] = useState("All");
+  const PAGE_SIZE = 50;
+  const summary = useMemo(() => {
+    const regions = new Map<string, { count: number; caSum: number; caCount: number; low: number }>();
+    const grids = new Map<string, { count: number; caSum: number; caCount: number; low: number }>();
+    let validCount = 0, caSum = 0, low95 = 0, low98 = 0, high98 = 0;
+    const update = (map: Map<string, { count: number; caSum: number; caCount: number; low: number }>, key: string, ca: number) => {
+      const item = map.get(key) ?? { count: 0, caSum: 0, caCount: 0, low: 0 };
+      item.count++;
+      if (ca > 0 && Number.isFinite(ca)) {
+        item.caSum += ca; item.caCount++;
+        if (ca < 98) item.low++;
+      }
+      map.set(key, item);
+    };
+    for (const site of sites) {
+      const ca = Number(site.currentAvb);
+      if (ca > 0 && Number.isFinite(ca)) {
+        validCount++; caSum += ca;
+        if (ca < 95) low95++;
+        else if (ca < 98) low98++;
+        else high98++;
+      }
+      update(regions, String(site.subRegion || "Unassigned"), ca);
+      update(grids, String(site.grid || "Unassigned"), ca);
+    }
+    const asRows = (map: typeof regions) => Array.from(map, ([name, item]) => ({
+      name, ...item, ca: item.caCount ? item.caSum / item.caCount : 0
+    })).sort((a, b) => a.ca - b.ca);
+    return { validCount, averageCA: validCount ? caSum / validCount : 0, low95, low98, high98, regions: asRows(regions), grids: asRows(grids) };
+  }, [sites]);
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return sites.filter(site =>
+      (region === "All" || String(site.subRegion || "Unassigned") === region) &&
+      (!q || [site.siteName, site.grid, site.subRegion, site.revenueCategory].some(v => String(v ?? "").toLowerCase().includes(q)))
+    );
+  }, [sites, search, region]);
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages - 1);
+  const visible = filtered.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);
+  const exportRows = (items: SiteData[]) => items.map(site => ({
+    "Site ID": site.siteName, "Sub-Region": site.subRegion, "Grid": site.grid,
+    "Revenue Category": site.revenueCategory, "Current CA %": site.currentAvb,
+    "DG Status": site.dgStatus || site.dgInstalled, "Li-ion": site.liIonInstalled,
+    "Technology": site.technology
+  }));
+  return (
+    <div className="space-y-5 text-slate-900">
+      <div className="rounded-xl border border-slate-200 bg-white p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div><h3 className="text-xl font-bold">Overall Cell AVB Dashboard</h3>
+            <p className="text-sm text-slate-500">Fast mode — {sites.length.toLocaleString()} sites{lastUpdatedDate ? ` · Updated ${lastUpdatedDate}` : ""}</p></div>
+          <button className="rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white" onClick={() => exportToCSV(exportRows(filtered), "Cell_AVB_Overall_Sites.csv")}>Export filtered sites CSV</button>
+        </div>
+        <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-5">
+          {[
+            ["Total Sites", sites.length.toLocaleString()],
+            ["Average CA", `${summary.averageCA.toFixed(2)}%`],
+            ["CA <95%", summary.low95.toLocaleString()],
+            ["CA 95–98%", summary.low98.toLocaleString()],
+            ["CA ≥98%", summary.high98.toLocaleString()]
+          ].map(([label, value]) => <div key={label} className="rounded-lg bg-slate-100 p-3"><div className="text-xs text-slate-600">{label}</div><div className="mt-1 text-xl font-bold">{value}</div></div>)}
+        </div>
+        <p className="mt-3 text-xs text-slate-500">CA bands count sites with a valid CA greater than zero. Average CA is the unweighted average of valid site CA values.</p>
+      </div>
+      <div className="grid gap-4 lg:grid-cols-2">
+        {([{ title: "Sub-Region Summary", rows: summary.regions }, { title: "Grid Summary", rows: summary.grids }] as const).map(section =>
+          <div key={section.title} className="rounded-xl border border-slate-200 bg-white p-4">
+            <h4 className="mb-3 font-bold">{section.title}</h4>
+            <div className="max-h-80 overflow-auto"><table className="w-full text-left text-sm">
+              <thead className="sticky top-0 bg-slate-100"><tr><th className="p-2">Name</th><th className="p-2">Sites</th><th className="p-2">CA</th><th className="p-2">Below 98%</th></tr></thead>
+              <tbody>{section.rows.map(item => <tr key={item.name} className="border-t border-slate-100">
+                <td className="p-2">{item.name}</td><td className="p-2">{item.count}</td><td className="p-2">{item.caCount ? `${item.ca.toFixed(2)}%` : "-"}</td><td className="p-2">{item.low}</td>
+              </tr>)}</tbody>
+            </table></div>
+          </div>)}
+      </div>
+      <div className="rounded-xl border border-slate-200 bg-white p-4">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+          <h4 className="font-bold">Site Details ({filtered.length.toLocaleString()})</h4>
+          <div className="flex flex-wrap gap-2">
+            <select aria-label="Filter sub-region" className="rounded border border-slate-300 p-2 text-sm" value={region} onChange={e => { setRegion(e.target.value); setPage(0); }}>
+              <option value="All">All sub-regions</option>
+              {summary.regions.map(item => <option key={item.name} value={item.name}>{item.name}</option>)}
+            </select>
+            <input aria-label="Search sites" className="rounded border border-slate-300 p-2 text-sm" placeholder="Site ID, grid, category" value={search} onChange={e => { setSearch(e.target.value); setPage(0); }}/>
+          </div>
+        </div>
+        <div className="overflow-x-auto"><table className="w-full text-left text-sm">
+          <thead className="bg-slate-100"><tr>{["Site ID","Sub-Region","Grid","Category","CA","Technology"].map(v => <th key={v} className="whitespace-nowrap p-2">{v}</th>)}</tr></thead>
+          <tbody>{visible.map((site, i) => <tr key={`${site.siteName}-${i}`} className="border-t border-slate-100">
+            <td className="p-2">{site.siteName}</td><td className="p-2">{site.subRegion}</td><td className="p-2">{site.grid}</td><td className="p-2">{site.revenueCategory}</td>
+            <td className="p-2">{Number(site.currentAvb) > 0 ? `${Number(site.currentAvb).toFixed(2)}%` : "-"}</td><td className="p-2">{site.technology}</td>
+          </tr>)}</tbody>
+        </table></div>
+        <div className="mt-3 flex items-center justify-between gap-3 text-sm">
+          <span>Page {currentPage + 1} of {totalPages} · Max {PAGE_SIZE} rows per page</span>
+          <div className="flex gap-2"><button disabled={currentPage === 0} onClick={() => setPage(v => Math.max(0, v - 1))} className="rounded border px-3 py-1 disabled:opacity-40">Previous</button><button disabled={currentPage >= totalPages - 1} onClick={() => setPage(v => v + 1)} className="rounded border px-3 py-1 disabled:opacity-40">Next</button></div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function OverallSummaryWithExport({ sites, rawData, lastUpdatedDate }: { sites: SiteData[]; rawData?: SheetPayload | null; lastUpdatedDate?: string }) {
   const [expandedOmo, setExpandedOmo] = useState<string | null>(null);
   const TARGET_CA = 99;
@@ -7159,6 +7262,59 @@ const normalizeDateLabel = (value: string): string => {
   return raw;
 };
 
+
+// ===== Cell AVB diagnostic instrumentation =====
+// All requests are logged with duration, sheet/tab, row count, and error details.
+// Never log API keys, complete URLs, or site-level records.
+const CELL_AVB_DEBUG = true;
+let cellAvbRequestNumber = 0;
+const cellAvbLog = (level: "info" | "warn" | "error", event: string, details?: unknown) => {
+  if (!CELL_AVB_DEBUG) return;
+  const prefix = `[Cell AVB DEBUG ${new Date().toISOString()}] ${event}`;
+  if (details === undefined) console[level](prefix);
+  else console[level](prefix, details);
+};
+const cellAvbErrorDetails = (error: unknown) =>
+  error instanceof Error
+    ? { name: error.name, message: error.message, stack: error.stack }
+    : { message: String(error) };
+
+const fetchGoogleSheet: typeof fetchGoogleSheetService = async (...args) => {
+  const requestNumber = ++cellAvbRequestNumber;
+  const [sheetId, tabName, options] = args;
+  const started = performance.now();
+  const context = {
+    requestNumber,
+    workbook: typeof sheetId === "string" ? `${sheetId.slice(0, 8)}…` : "unknown",
+    tab: tabName || "MAIN AVB",
+    forceRefresh: Boolean(options?.forceRefresh),
+  };
+  cellAvbLog("info", "SHEET REQUEST START", context);
+  try {
+    const result = await fetchGoogleSheetService(...args);
+    const durationMs = Math.round(performance.now() - started);
+    const resultInfo = {
+      ...context,
+      durationMs,
+      rows: Array.isArray(result?.rows) ? result.rows.length : "invalid",
+      columns: Array.isArray(result?.headers) ? result.headers.length : "unknown",
+    };
+    cellAvbLog(durationMs > 10000 ? "warn" : "info", "SHEET REQUEST SUCCESS", resultInfo);
+    if (!result || !Array.isArray(result.rows)) {
+      cellAvbLog("error", "INVALID SHEET RESPONSE", resultInfo);
+    }
+    return result;
+  } catch (error) {
+    cellAvbLog("error", "SHEET REQUEST FAILED", {
+      ...context,
+      durationMs: Math.round(performance.now() - started),
+      error: cellAvbErrorDetails(error),
+    });
+    throw error;
+  }
+};
+// ===== End diagnostic instrumentation =====
+
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   useEffect(() => {
@@ -7203,6 +7359,51 @@ export default function App() {
   const [prePostSidebarOpen, setPrePostSidebarOpen] = useState(false);
   const [prePostSubView, setPrePostSubView] = useState<PrePostSubView>("analysis");
   const monthLoadSeq = useRef(0);
+
+  useEffect(() => {
+    cellAvbLog("info", "APP MOUNTED", {
+      online: navigator.onLine,
+      userAgent: navigator.userAgent,
+      currentPath: window.location.pathname,
+    });
+    const onError = (event: ErrorEvent) => {
+      cellAvbLog("error", "UNCAUGHT BROWSER ERROR", {
+        message: event.message,
+        file: event.filename,
+        line: event.lineno,
+        column: event.colno,
+        error: cellAvbErrorDetails(event.error),
+      });
+    };
+    const onRejection = (event: PromiseRejectionEvent) => {
+      cellAvbLog("error", "UNHANDLED PROMISE REJECTION", cellAvbErrorDetails(event.reason));
+    };
+    const onOffline = () => cellAvbLog("warn", "NETWORK OFFLINE");
+    const onOnline = () => cellAvbLog("info", "NETWORK ONLINE");
+    window.addEventListener("error", onError);
+    window.addEventListener("unhandledrejection", onRejection);
+    window.addEventListener("offline", onOffline);
+    window.addEventListener("online", onOnline);
+    return () => {
+      window.removeEventListener("error", onError);
+      window.removeEventListener("unhandledrejection", onRejection);
+      window.removeEventListener("offline", onOffline);
+      window.removeEventListener("online", onOnline);
+    };
+  }, []);
+
+  useEffect(() => {
+    cellAvbLog("info", "DASHBOARD STATE", {
+      viewMode,
+      activeTab,
+      selectedMonth,
+      appState,
+      mainRows: monthData?.rows?.length ?? 0,
+      error: errorMsg || undefined,
+    });
+  }, [viewMode, activeTab, selectedMonth, appState, monthData, errorMsg]);
+
+
 
   const parsePrePostRows = (rows: Record<string, string>[]): SiteData[] => {
     return rows.map((row) => {
@@ -7259,6 +7460,7 @@ export default function App() {
   // Do not race supporting requests against a separate application timeout:
   // a timed-out Promise.race can discard a successful response arriving later.
 
+
   const loadMonthData = async (month: Month) => {
     // October-only mode: prevent requests to archived monthly workbooks.
     if (month !== "october") return loadMonthData("october");
@@ -7266,6 +7468,7 @@ export default function App() {
     // The sequence guard prevents an older request (for example August)
     // from finishing later and overwriting a newer September selection.
     const requestId = ++monthLoadSeq.current;
+    cellAvbLog("info", "MONTH LOAD BEGIN", { month, requestId });
     const sheetId = SHEET_IDS[month];
 
     setAppState("loading");
@@ -7301,6 +7504,7 @@ export default function App() {
         throw new Error(`No AVB rows returned from ${month} workbook (${sheetId})`);
       }
 
+      cellAvbLog("info", "MAIN AVB READY", { month, requestId, rows: data.rows.length });
       mainSheetReady = true;
       setMonthData(data);
       // Show October dashboard as soon as its main AVB data is ready.
@@ -7308,41 +7512,17 @@ export default function App() {
       setViewMode("month");
       setAppState("dashboard");
 
-      // Supporting tabs are optional. A missing supporting tab must NOT cause
-      // the whole dashboard to fall back to old/mock data.
-      // Fetch at most two optional tabs at once to avoid flooding Google Sheets.
-      // Apply each successful response immediately, not after all seven finish.
-      const supportingTabs: Array<{ name: string; apply: (data: SheetPayload) => void }> = [
-        { name: "Updated Date", apply: (dateData) => {
-          if (!dateData.rows?.length) return;
-          const row = dateData.rows[0];
-          setMonthLastUpdated(row["Last Updated"] || row["Date"] || row["Last Date"] || "");
-          const parsedIndex = parseInt(row["Column Index"] || row["Column"] || row["Index"] || "0", 10);
-          setMonthLastColumnIndex(Number.isFinite(parsedIndex) ? parsedIndex : 0);
-        } },
-        { name: "RCA of Plat +", apply: setMonthRca },
-        { name: "5G", apply: setMonth5G },
-        { name: "Cell Avb history", apply: setMonthCellAvbHistory },
-        { name: "S2S BB installed", apply: setMonthS2SBB },
-        { name: "Revenue Lost sites", apply: setMonthRevenueLost },
-        { name: "3 Basics KPIs", apply: setMonth3Basics },
-      ];
-      const loadSupportingTab = async (item: typeof supportingTabs[number]) => {
-        try {
-          const result = await fetchGoogleSheet(sheetId, item.name);
-          if (requestId !== monthLoadSeq.current) return;
-          item.apply(result);
-          console.info(`[Cell AVB] ${month}: ${item.name} loaded (${result.rows.length} rows)`);
-        } catch (error) {
-          if (requestId === monthLoadSeq.current) {
-            console.warn(`[Cell AVB] ${month}: ${item.name} tab unavailable`, error);
-          }
-        }
-      };
-      for (let index = 0; index < supportingTabs.length; index += 2) {
-        if (requestId !== monthLoadSeq.current) return;
-        await Promise.all(supportingTabs.slice(index, index + 2).map(loadSupportingTab));
-      }
+      // Fast initial render: only the small Updated Date tab is required.
+      // All other supporting sheets load when their dashboard tab is opened.
+      void fetchGoogleSheet(sheetId, "Updated Date").then(dateData => {
+        if (requestId !== monthLoadSeq.current || !dateData.rows?.length) return;
+        const row = dateData.rows[0];
+        setMonthLastUpdated(row["Last Updated"] || row["Date"] || row["Last Date"] || "");
+        const index = parseInt(row["Column Index"] || row["Column"] || row["Index"] || "0", 10);
+        setMonthLastColumnIndex(Number.isFinite(index) ? index : 0);
+      }).catch(error => console.warn("Updated Date unavailable", error));
+
+      // No automatic refresh: user-initiated Refresh keeps initial render stable.
 
     } catch (error) {
       if (requestId !== monthLoadSeq.current) return;
@@ -7373,6 +7553,59 @@ export default function App() {
     }
   };
 
+
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [refreshError, setRefreshError] = useState("");
+  const refreshOctober = async () => {
+    if (isRefreshing) return;
+    setIsRefreshing(true);
+    setRefreshError("");
+    try {
+      const data = await fetchGoogleSheet(SHEET_IDS.october, undefined, { forceRefresh: true });
+      if (!data.rows?.length) throw new Error("October sheet returned no rows");
+      setMonthData(data);
+      // Refresh any supporting sheets that are currently visible.
+      const name = ({"rca":"RCA of Plat +", "5g":"5G", "3-basics-kpis":"3 Basics KPIs", "recurring":"Cell Avb history", "s2s-bb":"S2S BB installed", "revenue-lost":"Revenue Lost sites", "query":"Cell Avb history"} as Record<string,string>)[activeTab];
+      if (name) {
+        const result = await fetchGoogleSheet(SHEET_IDS.october, name, { forceRefresh: true });
+        if (name === "RCA of Plat +") setMonthRca(result);
+        else if (name === "5G") setMonth5G(result);
+        else if (name === "3 Basics KPIs") setMonth3Basics(result);
+        else if (name === "Cell Avb history") setMonthCellAvbHistory(result);
+        else if (name === "S2S BB installed") setMonthS2SBB(result);
+        else if (name === "Revenue Lost sites") setMonthRevenueLost(result);
+      }
+    } catch (error) {
+      cellAvbLog("error", "MANUAL REFRESH FAILED", cellAvbErrorDetails(error));
+      setRefreshError(error instanceof Error ? error.message : "Refresh failed");
+    } finally { setIsRefreshing(false); }
+  };
+
+  // Lazy load supporting tabs only when the corresponding view needs them.
+  useEffect(() => {
+    if (viewMode !== "month" || !monthData || selectedMonth !== "october") return;
+    const required: Record<string, Array<[string, SheetPayload | null, (v: SheetPayload) => void]>> = {
+      "rca": [["RCA of Plat +", monthRca, setMonthRca]],
+      "5g": [["5G", month5G, setMonth5G]],
+      "3-basics-kpis": [["3 Basics KPIs", month3Basics, setMonth3Basics]],
+      "recurring": [["Cell Avb history", monthCellAvbHistory, setMonthCellAvbHistory]],
+      "query": [["Cell Avb history", monthCellAvbHistory, setMonthCellAvbHistory]],
+      "s2s-bb": [["S2S BB installed", monthS2SBB, setMonthS2SBB], ["Cell Avb history", monthCellAvbHistory, setMonthCellAvbHistory]],
+      "revenue-lost": [["Revenue Lost sites", monthRevenueLost, setMonthRevenueLost]],
+    };
+    let cancelled = false;
+    cellAvbLog("info", "LAZY TAB CHECK", { activeTab, requiredTabs: (required[activeTab] ?? []).map(([name]) => name) });
+    for (const [tab, loaded, apply] of required[activeTab] ?? []) {
+      if (loaded) continue;
+      void fetchGoogleSheet(SHEET_IDS.october, tab).then(value => {
+        if (!cancelled) {
+          cellAvbLog("info", "LAZY TAB READY", { tab, rows: value?.rows?.length ?? 0 });
+          apply(value);
+        }
+      }).catch(error => console.warn(`[Cell AVB] ${tab} unavailable`, error));
+    }
+    return () => { cancelled = true; };
+  }, [viewMode, selectedMonth, activeTab, monthData, monthRca, month5G, month3Basics, monthCellAvbHistory, monthS2SBB, monthRevenueLost]);
 
   const loadFuelDashboard = async () => {
     setAppState("loading");
@@ -7576,7 +7809,9 @@ export default function App() {
     if (useMock) return MOCK_SITES;
     if (!monthData?.rows?.length) return [];
 
-    return monthData.rows.map((rawRow: Record<string, any>) => {
+    const startedAt = performance.now();
+    cellAvbLog("info", "SITE NORMALIZATION START", { rows: monthData.rows.length });
+    const normalizedSites = monthData.rows.map((rawRow: Record<string, any>) => {
       const normalized = normalizeRow(rawRow);
       const extracted = extractDailySeries(rawRow);
 
@@ -7594,18 +7829,15 @@ export default function App() {
             : (normalized.dailyLs || {}),
       } as SiteData;
     });
+    const elapsedMs = Math.round(performance.now() - startedAt);
+    cellAvbLog(elapsedMs > 1000 ? "warn" : "info", "SITE NORMALIZATION COMPLETE", { rows: normalizedSites.length, durationMs: elapsedMs });
+    return normalizedSites;
   }, [monthData, useMock]);
 
   const rcaData = monthRca;
 
   const platinumPlusRows = useMemo(() => sites.filter((s) => s.revenueCategory === "Platinum +"), [sites]);
-  const pgsRows = useMemo(() => sites.filter((s) => PGS_GROUP.includes(s.revenueCategory)), [sites]);
-  const sbRows = useMemo(() => sites.filter((s) => SB_GROUP.includes(s.revenueCategory)), [sites]);
-  const npsRows = useMemo(() => sites.filter((s) => isNPSSite(s)), [sites]);
   const dgRows = useMemo(() => sites.filter((s) => hasDG(s)), [sites]);
-  const liIonRows = useMemo(() => sites.filter((s) => hasLiIon(s)), [sites]);
-  const belowBaseRows = useMemo(() => sites.filter((s) => isBelowBase(s)), [sites]);
-  const agmRows = useMemo(() => sites.filter((s) => hasAGM(s)), [sites]);
 
   const activeLabel = NAV_ITEMS.find((item) => item.id === activeTab)?.label ?? "";
 
@@ -7840,16 +8072,21 @@ export default function App() {
             </div>
             <div className="flex items-center gap-2">
               <button onClick={goHome} className="flex items-center gap-2 px-3.5 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm font-medium transition-colors shrink-0"><span className="text-slate-400">←</span> Switch Month</button>
-              <button onClick={() => loadMonthData(selectedMonth as Month)} className="flex items-center gap-2 px-3.5 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm font-medium transition-colors shrink-0"><RefreshCw className="w-4 h-4" /> Refresh</button>
+              <button onClick={refreshOctober} disabled={isRefreshing} className="flex items-center gap-2 px-3.5 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm font-medium transition-colors shrink-0 disabled:opacity-50"><RefreshCw className={`w-4 h-4 ${isRefreshing ? "animate-spin" : ""}`} /> {isRefreshing ? "Refreshing" : "Refresh"}</button>
             </div>
           </div>
         </header>
 
         <main className="flex-1 p-4 sm:p-6 space-y-6">
+          {refreshError && <div role="alert" className="rounded-lg bg-amber-50 text-amber-900 p-3 text-sm">Refresh failed; previous dashboard data remains available. {refreshError}</div>}
           <ErrorBoundary key={activeTab + selectedMonth}>
             <AnimatePresence mode="wait">
               <motion.div key={activeTab + selectedMonth} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.2 }} className="space-y-6">
-                {activeTab === "overall" && <div className="overall-vibrant"><OverallSummaryWithExport sites={sites} rawData={monthData} lastUpdatedDate={monthLastUpdated} /></div>}
+                {activeTab === "overall" && (
+                  <div className="overall-vibrant">
+                    <FastOverallDashboard sites={sites} lastUpdatedDate={monthLastUpdated} />
+                  </div>
+                )}
                 {activeTab === "grid-performance" && <div className="grid-vibrant"><GridPerformanceScorecard rawData={monthData} lastUpdatedDate={monthLastUpdated} /></div>}
                 {activeTab === "3-basics-kpis" && <div className="basics-vibrant"><ThreeBasicsKpiPage kpiData={month3Basics} sites={sites} lastUpdatedDate={monthLastUpdated} /></div>}
                 {activeTab === "recurring" && <RecurringSitesPage sites={sites} historyData={monthCellAvbHistory} />}
@@ -7883,14 +8120,8 @@ export default function App() {
   }
 `}</style><EmployeePerformance sites={sites} lastUpdatedDate={monthLastUpdated} /></div></>}
                 {activeTab === "platinum-plus" && <CategoryPage sites={sites} title="Platinum+ Sites" description={`${platinumPlusRows.length} sites in the Platinum+ category`} threshold={98.5} filterFn={(s) => s.revenueCategory === "Platinum +"} lastUpdatedDate={monthLastUpdated} lastColumnIndex={monthLastColumnIndex} />}
-                {activeTab === "pgs" && <CategoryPage sites={sites} title="PGS Sites" description={`${pgsRows.length} high-priority revenue sites`} threshold={98.1} filterFn={(s) => PGS_GROUP.includes(s.revenueCategory)} lastUpdatedDate={monthLastUpdated} lastColumnIndex={monthLastColumnIndex} />}
-                {activeTab === "sb" && <CategoryPage sites={sites} title="SB Sites" description={`${sbRows.length} standard-tier revenue sites`} threshold={95} filterFn={(s) => SB_GROUP.includes(s.revenueCategory)} lastUpdatedDate={monthLastUpdated} lastColumnIndex={monthLastColumnIndex} />}
-                {activeTab === "nps" && <CategoryPage sites={sites} title="NPS Sites (New Physical Sites)" description={`${npsRows.length} NPS Y26 sites`} threshold={95} filterFn={(s) => isNPSSite(s)} lastUpdatedDate={monthLastUpdated} lastColumnIndex={monthLastColumnIndex} />}
                 {activeTab === "5g" && <FiveGPage data={month5G} lastUpdatedDate={monthLastUpdated} lastColumnIndex={monthLastColumnIndex} />}
                 {activeTab === "dg" && <CategoryPage sites={sites} title="DG Sites (Diesel Generator Backup)" description={`${dgRows.length} sites with diesel generators`} threshold={98.5} filterFn={(s) => hasDG(s)} lastUpdatedDate={monthLastUpdated} lastColumnIndex={monthLastColumnIndex} />}
-                {activeTab === "li-ion" && <CategoryPage sites={sites} title="Li-ion Battery Backup Sites" description={`${liIonRows.length} sites with Li-ion batteries installed`} threshold={98} filterFn={(s) => hasLiIon(s)} lastUpdatedDate={monthLastUpdated} lastColumnIndex={monthLastColumnIndex} />}
-                {activeTab === "below-base" && <CategoryPage sites={sites} title="Below Base Sites" description={`${belowBaseRows.length} sites flagged below base threshold`} threshold={95} filterFn={(s) => isBelowBase(s)} lastUpdatedDate={monthLastUpdated} lastColumnIndex={monthLastColumnIndex} />}
-                {activeTab === "agm" && <CategoryPage sites={sites} title="AGM Battery Backup Sites" description={`${agmRows.length} sites with AGM battery banks`} threshold={95} filterFn={(s) => hasAGM(s)} lastUpdatedDate={monthLastUpdated} lastColumnIndex={monthLastColumnIndex} />}
                 {activeTab === "rca" && <RcaSummary rcaData={rcaData} />}
                 {activeTab === "query" && <SiteQuery sites={sites} rawData={monthData} historyData={(selectedMonth === "september" || selectedMonth === "october") ? monthCellAvbHistory : null} />}
                 {activeTab === "weather" && <WeatherRadar />}
