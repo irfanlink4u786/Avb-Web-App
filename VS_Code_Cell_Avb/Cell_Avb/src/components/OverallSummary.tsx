@@ -103,6 +103,8 @@ interface RegionCategoryKPIs {
 
   totalSites: number;
 
+  overallCa: number;
+
   kpis: CategoryKPI[];
 
 }
@@ -375,11 +377,7 @@ function RegionCategorySection({
 
           <span className="text-xs text-slate-600">
 
-            Overall CA: {regionData.kpis.length > 0 ? 
-
-              (regionData.kpis.reduce((sum, k) => sum + (k.avgCa * k.count), 0) / 
-
-               regionData.kpis.reduce((sum, k) => sum + k.count, 0)).toFixed(2) : "0.00"}%
+            Overall CA: {regionData.overallCa.toFixed(2)}%
 
           </span>
 
@@ -831,7 +829,7 @@ export default function OverallSummary({ sites }: { sites: SiteData[] }) {
 
           iconColor: "text-amber-700",
 
-          filter: (s: SiteData) => s.revenueCategory === "Platinum +",
+          filter: (s: SiteData) => ["platinum+", "platplus"].includes(String(s.revenueCategory || "").toLowerCase().replace(/\s+/g, "")),
 
           threshold: 98.5,
 
@@ -1510,6 +1508,8 @@ export default function OverallSummary({ sites }: { sites: SiteData[] }) {
 
               totalSites: stats.c1Total,
 
+              overallCa: stats.c1Ca,
+
               kpis: stats.c1CategoryKPIs 
 
             }}
@@ -1525,6 +1525,8 @@ export default function OverallSummary({ sites }: { sites: SiteData[] }) {
               region: "C-6", 
 
               totalSites: stats.c6Total,
+
+              overallCa: stats.c6Ca,
 
               kpis: stats.c6CategoryKPIs 
 
