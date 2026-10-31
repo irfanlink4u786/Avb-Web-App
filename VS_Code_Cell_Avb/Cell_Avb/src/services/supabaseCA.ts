@@ -1,77 +1,96 @@
-import type { SheetPayload } from "../types";
+import type { SheetPayload } from '../types';
 
-/**
- * Authoritative current-month CA from Central BB Analytics.
- * Google Sheets remains the source of fuel/electricity/3 Basics/site metadata.
- * Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY (publishable/anon ONLY).
- * Supabase policies must authorize this read. Never use service_role in Vite.
- */
-// Same-origin Vercel API: sensitive Supabase credentials live only on Vercel server.
-const DAY_FIELDS = Array.from({ length: 31 }, (_, i) => `${i + 1}-Oct`);
-type CaRecord = Record<string, unknown>;
-export type CaSnapshot = { bySite: Map<string, CaRecord>; latestDate: string; total: number };
-const parseCa = (raw: unknown): number | null => {
-  if (raw === null || raw === undefined || String(raw).trim() === "") return null;
-  const n = Number(String(raw).replace(/%/g, "").trim());
-  return Number.isFinite(n) && n >= 0 && n <= 100 ? n : null;
+const PROJECT_URL = (import.meta.env.VITE_SUPABASE_URL || 'https://yogjbkwurzjcuokcnhif.supabase.co').replace(/\/+$/, '');
+const PUBLIC_KEY = String(import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || import.meta.env.VITE_SUPABASE_ANON_KEY || '').trim();
+const HAS_KEY = Boolean(PUBLIC_KEY) && !/PASTE_|YOUR_|REPLACE_|_HERE/i.test(PUBLIC_KEY);
+const TABLE = 'ca_tracker_oct2026';
+const DAYS = Array.from({ length: 31 }, (_, i) => `${i + 1}-Oct`);
+const FIELDS = ['SITE_ID', 'Sub-Region', 'Grid', 'BB Type', "OCT'26 Cell A", ...DAYS];
+type Row = Record<string, unknown>;
+export type CaSnapshot = { bySite: Map<string, Row>; latestDate: string; total: number };
+const siteKey = (v: unknown) => String(v ?? '').trim().replace(/^0+(?=\d)/, '');
+const normalize = (v: unknown) => String(v ?? '').toUpperCase().replace(/[\s_-]/g, '');
+const validSite = (r: Row) => {
+  const sub = normalize(r['Sub-Region']);
+  const grid = normalize(r.Grid);
+  return (['CENTRAL1', 'CENTRAL6', 'C1', 'C6'].includes(sub) || /^C[16]\d/.test(grid)) && !/dismantled|locked/i.test(String(r['BB Type'] ?? ''));
 };
-const siteKey = (value: unknown): string => String(value ?? "").trim().replace(/^0+(?=\d)/, "");
-export async function fetchSupabaseOctoberCA(): Promise<CaSnapshot> {
+const numeric = (v: unknown) => v != null && String(v).trim() !== '' && Number.isFinite(Number(String(v).replace('%', '')));
+
+async function fetchPage(url: string, headers: Record<string, string>): Promise<Row[]> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 30000);
+  const timeout = setTimeout(() => controller.abort(), 20000);
   try {
-    const response = await fetch(`/api/ca?date=${Date.now()}`, {
-      method: "GET",
-      credentials: "same-origin",
-      signal: controller.signal,
-      cache: "no-store",
-    });
-    if (response.status === 401 || response.status === 403) {
-      throw new Error("CA endpoint denied access; check Vercel API deployment and server configuration.");
+    const response = await fetch(url, { headers, signal: controller.signal, cache: 'no-store' });
+    if (!response.ok) throw new Error(`Supabase HTTP ${response.status}: ${(await response.text()).slice(0, 250)}`);
+    const contentType = response.headers.get('content-type') || '';
+    if (!contentType.includes('application/json')) throw new Error(`Expected Supabase JSON but received ${contentType || 'unknown content type'}`);
+    const data: unknown = await response.json();
+    if (!Array.isArray(data)) throw new Error('Supabase returned JSON without a row array');
+    return data as Row[];
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+export async function fetchSupabaseOctoberCA(): Promise<CaSnapshot> {
+  let rows: Row[] = [];
+  if (HAS_KEY) {
+    const select = FIELDS.map(f => `"${f.replace(/"/g, '""')}"`).join(',');
+    const headers: Record<string, string> = { apikey: PUBLIC_KEY, Accept: 'application/json' };
+    // Legacy JWT anon keys support bearer auth; publishable keys are passed as apikey.
+    if (!PUBLIC_KEY.startsWith('sb_publishable_')) headers.Authorization = `Bearer ${PUBLIC_KEY}`;
+    for (let offset = 0; offset < 20000; offset += 1000) {
+      const query = new URLSearchParams({ select, order: '"SITE_ID".asc', limit: '1000', offset: String(offset) });
+      const page = await fetchPage(`${PROJECT_URL}/rest/v1/${TABLE}?${query}`, headers);
+      rows.push(...page);
+      if (page.length < 1000) break;
+      if (offset === 19000) throw new Error('Supabase pagination limit reached');
     }
-    if (!response.ok) throw new Error(`CA API HTTP ${response.status}: ${(await response.text()).slice(0, 220)}`);
-    const body = await response.json() as { rows?: CaRecord[]; latestDate?: string };
-    if (!Array.isArray(body.rows) || body.rows.length === 0) throw new Error("CA API returned no C1/C6 sites; check Vercel server logs and Supabase access");
-    const bySite = new Map<string, CaRecord>();
-    for (const record of body.rows) {
-      const id = siteKey(record["SITE_ID"]);
-      if (id) bySite.set(id, record);
+  } else {
+    // On Vercel the serverless endpoint can use the server-only service-role key.
+    // Local Vite requires VITE_SUPABASE_PUBLISHABLE_KEY, unless /api/ca is proxied.
+    const response = await fetch('/api/ca', { headers: { Accept: 'application/json' }, cache: 'no-store' });
+    if (!response.ok) throw new Error(`CA API HTTP ${response.status}: ${(await response.text()).slice(0, 250)}`);
+    if (!(response.headers.get('content-type') || '').includes('application/json')) {
+      throw new Error('The /api/ca endpoint returned HTML, not JSON. Configure VITE_SUPABASE_PUBLISHABLE_KEY in .env.local and restart Vite.');
     }
-    const check4004=bySite.get('4004');
-    console.info('[CA Sync] API check Site 4004',{exists:!!check4004,day30:check4004?.['30-Oct'],mtd:check4004?.["OCT'26 Cell A"],latestDate:body.latestDate,rows:bySite.size});
-    return { bySite, total: bySite.size, latestDate: body.latestDate || "" };
-  } finally { clearTimeout(timer); }
+    const body: unknown = await response.json();
+    if (Array.isArray(body)) rows = body as Row[];
+    else if (body && typeof body === 'object' && Array.isArray((body as { rows?: unknown }).rows)) rows = (body as { rows: Row[] }).rows;
+    else throw new Error('CA API JSON has no rows array');
+  }
+  const bySite = new Map<string, Row>();
+  for (const row of rows) if (validSite(row)) {
+    const id = siteKey(row.SITE_ID);
+    if (id) bySite.set(id, row);
+  }
+  if (!bySite.size) throw new Error('Supabase returned zero eligible C1/C6 CA sites. Check table permissions and RLS.');
+  let last = 0;
+  for (const row of bySite.values()) for (let day = 31; day > last; day--) {
+    if (numeric(row[`${day}-Oct`])) { last = day; break; }
+  }
+  return { bySite, total: bySite.size, latestDate: last ? `${String(last).padStart(2, '0')}-Oct-26` : '' };
 }
 
 export function mergeSheetWithSupabaseCA(sheet: SheetPayload, ca: CaSnapshot): {
-  sheet: SheetPayload;
-  caCoverage: { matched: number; sheetSites: number; excluded: number };
+  sheet: SheetPayload; caCoverage: { matched: number; sheetSites: number; excluded: number };
 } {
   let matched = 0;
-  let excluded = 0;
   const rows = sheet.rows.map(raw => {
     const copy: Record<string, string> = { ...raw };
-    const id = siteKey(raw["Site ID"] || raw["SITE_ID"] || raw["SiteID"] || raw["Site"] || raw["SID"]);
+    const id = siteKey(raw['Site ID'] || raw.SITE_ID || raw.SiteID || raw.Site || raw.SID);
     const record = ca.bySite.get(id);
-    // Remove stale daily CA and current CA from Sheets, preserve all non-CA metrics.
-    for (const key of Object.keys(copy)) {
-      if (/^\d{1,2}-Oct-(?:26|2026)$/i.test(key)) delete copy[key];
-    }
-    for (const key of ["Current Month", "Current Month CA", "Current CA", "Current CA%", "Monthly AVB", "Monthly CA", "Cell AVB"]) {
-      if (key in copy) copy[key] = "";
-    }
-    if (!record) { excluded += 1; return copy; }
-    matched += 1;
-    const monthly = parseCa(record["OCT'26 Cell A"]);
-    const monthlyText = monthly === null ? "" : String(monthly);
-    copy["Current Month"] = monthlyText;
-    copy["Current Month CA"] = monthlyText;
-    for (const day of DAY_FIELDS) {
-      const v = parseCa(record[day]);
-      if (v !== null) copy[`${day}-26`] = String(v);
+    if (!record) return copy;
+    matched++;
+    const monthly = String(record["OCT'26 Cell A"] ?? '');
+    copy['Current Month'] = monthly;
+    copy['Current Month CA'] = monthly;
+    for (let d = 1; d <= 31; d++) {
+      const value = record[`${d}-Oct`];
+      if (value != null && String(value).trim() !== '') copy[`${d}-Oct-26`] = String(value);
     }
     return copy;
   });
-  return {sheet: {...sheet, rows, fetchedAt: new Date().toISOString()},
-    caCoverage: {matched, sheetSites: rows.length, excluded}};
+  return { sheet: { ...sheet, rows }, caCoverage: { matched, sheetSites: rows.length, excluded: rows.length - matched } };
 }

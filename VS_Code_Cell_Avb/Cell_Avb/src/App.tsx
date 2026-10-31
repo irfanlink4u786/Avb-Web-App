@@ -62,7 +62,7 @@ import ExportButton from "./components/ExportButton";
 import WeatherRadar from "./components/WeatherRadar";
 import RainAlertWidget from "./components/RainAlertWidget";
 import { fetchGoogleSheet } from "./services/googleSheets";
-import { fetchSupabaseOctoberCA, mergeSheetWithSupabaseCA } from "./services/supabaseCA";
+import { fetchSupabaseMonthCA, mergeSheetWithSupabaseCA } from "./services/supabaseCA";
 import { type SheetPayload } from "./types";
 import {
   type SiteData,
@@ -77,7 +77,6 @@ import {
   isBelowBase,
   isNPSSite,
 } from "./types";
-
 
 // Current-month CA bands; missing/zero CA is excluded from these bands.
 type CaBand = "all" | "below95" | "95to98" | "above98";
@@ -1239,6 +1238,7 @@ const SHEET_IDS = {
   august: "1po40LvnGZL8Nnd4BBk-P6uC_tL4Fi9Q8PuMQZ7aQSdc",
   september: "1po40LvnGZL8Nnd4BBk-P6uC_tL4Fi9Q8PuMQZ7aQSdc",
   october: "1po40LvnGZL8Nnd4BBk-P6uC_tL4Fi9Q8PuMQZ7aQSdc",
+  november: "1po40LvnGZL8Nnd4BBk-P6uC_tL4Fi9Q8PuMQZ7aQSdc",
 } as const;
 
 // Month dashboard navigation
@@ -1264,7 +1264,7 @@ const NAV_ITEMS = [
   { id: "weather", label: "Weather Radar", icon: CloudRain },
 ] as const;
 
-type Month = "july" | "august" | "september" | "october";
+type Month = "july" | "august" | "september" | "october" | "november";
 type AppState = "loading" | "dashboard" | "error";
 type ViewMode = "home" | "month" | "prepost" | "fuel" | "electricity";
 type PrePostSubView = "analysis" | "query";
@@ -3605,7 +3605,7 @@ function SiteQuery({ sites, historyData = null, rawData = null }: { sites: SiteD
     };
 
     return {
-      month: "Oct'26",
+      month: (rawData?.rows?.[0]?.["__selectedMonth"] === "november" ? "Nov'26" : "Oct'26"),
       g2,
       g3,
       g4,
@@ -7272,7 +7272,7 @@ export default function App() {
 
   const loadMonthData = async (month: Month) => {
     // October-only mode: prevent requests to archived monthly workbooks.
-    if (month !== "october") return loadMonthData("october");
+    if (month !== "october" && month !== "november") return loadMonthData("october");
     // Every month must load strictly from its own workbook.
     // The sequence guard prevents an older request (for example August)
     // from finishing later and overwriting a newer September selection.
@@ -7300,40 +7300,25 @@ export default function App() {
 
     let mainSheetReady = false;
     try {
-      console.info(`[Cell AVB] Loading ${month} workbook: ${sheetId}`);
+      console.info(`[Cell AVB] Loading ${month} Cell AVB CA from Supabase; supporting KPIs from Google Sheets workbook: ${sheetId}`);
 
-      // Main AVB sheet is the source for ALL C1 & C6 dashboard analysis tabs.
-      // Load it first and fail clearly if it is not available.
-      // Do NOT block dashboard startup on a Vercel-only API. In Codespaces Vite
-      // does not serve /api/ca; Google Sheets must still let the app render.
-      const data = await withSheetTimeout(fetchGoogleSheet(sheetId), `${month} main site master`, 30000);
+      // Google Sheet-1 is always the master. Supabase supplies ONLY the selected
+      // month's day-wise CA, derived monthly CA and available technology CA.
+      // Never build a new site master from Supabase rows.
+      const master = await withSheetTimeout(fetchGoogleSheet(sheetId), 'Google Sheet-1 master', 30000);
       if (requestId !== monthLoadSeq.current) return;
-      if (!data || !Array.isArray(data.rows) || data.rows.length === 0) {
-        throw new Error(`No site master rows returned from ${month} workbook (${sheetId})`);
-      }
+      if (!master.rows.length) throw new Error('Google Sheet-1 returned no site master records');
+      const snapshot = await withSheetTimeout(fetchSupabaseMonthCA(month), `${month} Supabase CA`, 30000);
+      if (requestId !== monthLoadSeq.current) return;
+      if (!snapshot.bySite.size) throw new Error(`Supabase ${month} CA table returned no sites`);
+      const merged = mergeSheetWithSupabaseCA(master, snapshot);
+      merged.sheet.rows.forEach(r => { r["__selectedMonth"] = month; });
       mainSheetReady = true;
-      setMonthData(data);
-      setCaSyncStatus('CA sync pending — Google Sheets data displayed temporarily');
-      // Supabase sync is asynchronous, and updates only CA fields on success.
-      void withSheetTimeout(fetchSupabaseOctoberCA(), 'Supabase October CA', 12000)
-        .then(snapshot => {
-          if (requestId !== monthLoadSeq.current) return;
-          const merged = mergeSheetWithSupabaseCA(data, snapshot);
-          const coverage = merged.caCoverage;
-          console.info(`[Cell AVB] Supabase CA ${snapshot.latestDate}: matched ${coverage.matched}/${coverage.sheetSites}`);
-          setMonthData(previous => previous ? mergeSheetWithSupabaseCA(previous, snapshot).sheet : merged.sheet);
-          setMonthLastUpdated(snapshot.latestDate || '');
-          setCaSyncStatus(`Supabase CA · ${snapshot.latestDate || 'no populated day'} · ${coverage.matched}/${coverage.sheetSites} matched · Site 4004: ${String(snapshot.bySite.get('4004')?.['30-Oct'] ?? 'NOT RETURNED')}% (30-Oct)`);
-        })
-        .catch(error => {
-          if (requestId !== monthLoadSeq.current) return;
-          console.warn('[Cell AVB] CA sync unavailable; Google Sheets site master retained', error);
-          setCaSyncStatus(`CA sync unavailable (Google Sheets displayed): ${error instanceof Error ? error.message : String(error)}`);
-        });
-      // Show October dashboard as soon as its main AVB data is ready.
-      // Supporting tabs continue in the background and populate their own views.
-      setViewMode("month");
-      setAppState("dashboard");
+      setMonthData(merged.sheet);
+      setMonthLastUpdated(snapshot.latestDate || '');
+      setCaSyncStatus(`Google Sheet-1 master: ${master.rows.length} sites · Supabase ${month} CA matched: ${merged.caCoverage.matched} · Latest: ${snapshot.latestDate || 'no populated day'}`);
+      setViewMode('month');
+      setAppState('dashboard');
 
       // Supporting tabs are optional. A missing supporting tab must NOT cause
       // the whole dashboard to fall back to old/mock data.
@@ -7402,7 +7387,7 @@ export default function App() {
       setUseMock(false);
       setViewMode("month");
       setErrorMsg(
-        `Failed to load ${month.charAt(0).toUpperCase() + month.slice(1)} AVB data from its configured Google Sheet. ` +
+        `Failed to load Google Sheet-1 master or ${month.charAt(0).toUpperCase() + month.slice(1)} CA data from Supabase. ` +
         `Previous month data has been cleared to avoid showing stale values.`
       );
       setAppState("error");
@@ -7529,8 +7514,9 @@ export default function App() {
         fetchGoogleSheet(sheetId, "Updated Date"),
       ]);
 
-      // Preserve Supabase CA when visiting the 5G page; never overwrite it with stale Sheet1 CA.
-      setMonthData(previous => previous?.rows?.length ? previous : data);
+      // The standalone 5G dashboard is Google Sheets-backed.
+      // Only the October Cell AVB CA dashboard uses Supabase.
+      setMonthData(data);
       setMonth5G(fiveGSheet);
       setSelectedMonth("october");
       setUseMock(false);
@@ -7612,15 +7598,20 @@ export default function App() {
   // While the C1/C6 dashboard stays open, refresh only CA every 15 minutes.
   // Other Google Sheets data is kept in memory and is not re-downloaded.
   useEffect(() => {
-    if (viewMode !== "month" || selectedMonth !== "october" || !monthData) return;
+    if (viewMode !== "month" || (selectedMonth !== "october" && selectedMonth !== "november") || !monthData) return;
     let alive = true;
     const timer = setInterval(async () => {
       try {
-        const snapshot = await fetchSupabaseOctoberCA();
+        const snapshot = await fetchSupabaseMonthCA(selectedMonth);
         if (!alive) return;
-        setMonthData(previous => previous ? mergeSheetWithSupabaseCA(previous, snapshot).sheet : previous);
+        setMonthData(previous => {
+          if (!previous) return previous;
+          const updated = mergeSheetWithSupabaseCA(previous, snapshot).sheet;
+          updated.rows.forEach(r => { r["__selectedMonth"] = selectedMonth; });
+          return updated;
+        });
         setMonthLastUpdated(snapshot.latestDate || "");
-        setCaSyncStatus(`Supabase CA · ${snapshot.latestDate || "no populated day"} · ${snapshot.total} eligible C1/C6 sites · 4004 (30-Oct): ${String(snapshot.bySite.get('4004')?.['30-Oct'] ?? 'NOT RETURNED')}%`);
+        setCaSyncStatus(`Google Sheet-1 master preserved · Supabase ${selectedMonth} CA · ${snapshot.latestDate || "no populated day"} · ${snapshot.total} source records`);
       } catch (error) {
         if (alive) { console.warn("Supabase CA background refresh failed; last verified data retained", error); setCaSyncStatus(`CA refresh error: ${error instanceof Error ? error.message : String(error)}`); }
       }
@@ -7691,6 +7682,9 @@ export default function App() {
             <motion.button variants={{ hidden: { opacity: 0, y: 30 }, show: { opacity: 1, y: 0 } }} whileHover={{ scale: 1.03, boxShadow: "0 0 40px rgba(34, 211, 238, 0.35)" }} whileTap={{ scale: 0.98 }} onClick={() => loadMonthData("october")} className="group relative w-full min-h-[142px] px-6 py-7 rounded-2xl bg-gradient-to-br from-cyan-500/20 to-emerald-500/20 border border-cyan-400/30 hover:border-cyan-300 transition-all duration-300 shadow-xl hover:shadow-cyan-500/40 backdrop-blur-sm overflow-hidden">
               <span className="absolute inset-0 bg-gradient-to-r from-cyan-400/20 to-emerald-400/20 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
               <div className="relative text-center"><span className="block text-xl sm:text-2xl font-extrabold tracking-tight text-white">October 2026</span><span className="text-cyan-200 text-sm">LIVE · Active data</span></div>
+            </motion.button>
+            <motion.button variants={{ hidden: { opacity: 0, y: 30 }, show: { opacity: 1, y: 0 } }} whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.98 }} onClick={() => loadMonthData("november")} className="group relative w-full min-h-[142px] px-6 py-7 rounded-2xl bg-gradient-to-br from-blue-500/20 to-violet-500/20 border border-blue-400/30 hover:border-blue-300 transition-all duration-300 shadow-xl backdrop-blur-sm overflow-hidden">
+              <div className="relative text-center"><span className="block text-xl sm:text-2xl font-extrabold tracking-tight text-white">November 2026</span><span className="text-blue-200 text-sm">LIVE · Independent monthly CA</span></div>
             </motion.button>
             <motion.button variants={{ hidden: { opacity: 0, y: 30 }, show: { opacity: 1, y: 0 } }} whileHover={{ scale: 1.03, boxShadow: "0 0 40px rgba(34, 197, 94, 0.35)" }} whileTap={{ scale: 0.98 }} onClick={loadFuelDashboard} className="group relative w-full min-h-[142px] px-6 py-7 rounded-2xl bg-gradient-to-br from-green-500/25 to-emerald-700/25 border border-green-400/40 hover:border-green-300 transition-all duration-300 shadow-xl hover:shadow-green-500/40 backdrop-blur-sm overflow-hidden">
               <span className="absolute inset-0 bg-gradient-to-r from-green-400/20 to-emerald-400/20 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
@@ -7838,8 +7832,8 @@ export default function App() {
           ? "August 2026"
           : selectedMonth === "september"
             ? "September 2026"
-            : "October 2026";
-  const isLive = selectedMonth === "october";
+            : selectedMonth === "november" ? "November 2026" : "October 2026";
+  const isLive = selectedMonth === "october" || selectedMonth === "november";
 
   return (
     <div className="light-app min-h-screen bg-[#eef0f3] text-slate-900 flex">
@@ -7859,11 +7853,11 @@ export default function App() {
         </div>
         <nav className="flex-1 overflow-y-auto p-3 space-y-1">
           {NAV_ITEMS.filter((item) => {
-            if (item.id === "5g") return selectedMonth === "august" || selectedMonth === "september" || selectedMonth === "october";
+            if (item.id === "5g") return selectedMonth === "august" || selectedMonth === "september" || selectedMonth === "october" || selectedMonth === "november" || selectedMonth === "november";
             if (item.id === "3-basics-kpis") return selectedMonth === "october";
-            if (item.id === "recurring") return selectedMonth === "september" || selectedMonth === "october";
-            if (item.id === "s2s-bb") return selectedMonth === "september" || selectedMonth === "october";
-            if (item.id === "revenue-lost") return selectedMonth === "september" || selectedMonth === "october";
+            if (item.id === "recurring") return selectedMonth === "september" || selectedMonth === "october" || selectedMonth === "november";
+            if (item.id === "s2s-bb") return selectedMonth === "september" || selectedMonth === "october" || selectedMonth === "november";
+            if (item.id === "revenue-lost") return selectedMonth === "september" || selectedMonth === "october" || selectedMonth === "november";
             return true;
           }).map((item) => {
             const Icon = item.icon;
@@ -7955,13 +7949,13 @@ export default function App() {
                 {activeTab === "below-base" && <CategoryPage sites={sites} title="Below Base Sites" description={`${belowBaseRows.length} sites flagged below base threshold`} threshold={95} filterFn={(s) => isBelowBase(s)} lastUpdatedDate={monthLastUpdated} lastColumnIndex={monthLastColumnIndex} />}
                 {activeTab === "agm" && <CategoryPage sites={sites} title="AGM Battery Backup Sites" description={`${agmRows.length} sites with AGM battery banks`} threshold={95} filterFn={(s) => hasAGM(s)} lastUpdatedDate={monthLastUpdated} lastColumnIndex={monthLastColumnIndex} />}
                 {activeTab === "rca" && <RcaSummary rcaData={rcaData} />}
-                {activeTab === "query" && <SiteQuery sites={sites} rawData={monthData} historyData={(selectedMonth === "september" || selectedMonth === "october") ? monthCellAvbHistory : null} />}
+                {activeTab === "query" && <SiteQuery sites={sites} rawData={monthData} historyData={(selectedMonth === "september" || selectedMonth === "october" || selectedMonth === "november") ? monthCellAvbHistory : null} />}
                 {activeTab === "weather" && <WeatherRadar />}
               </motion.div>
             </AnimatePresence>
           </ErrorBoundary>
           <footer className="text-center text-xs text-slate-600 py-4">
-            {useMock ? "📊 Demo Mode - Using sample data" : `Live data from Google Sheets (${monthLabel})`} · {sites.length} sites · C1 & C6 Cell Avb Analysis
+            {useMock ? "📊 Demo Mode - Using sample data" : `Google Sheet-1 master + Supabase daily CA (${monthLabel})`} · {sites.length} sites · C1 & C6 Cell Avb Analysis
           </footer>
         </main>
       </div>
