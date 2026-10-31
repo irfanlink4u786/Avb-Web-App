@@ -7853,7 +7853,7 @@ export default function App() {
         </div>
         <nav className="flex-1 overflow-y-auto p-3 space-y-1">
           {NAV_ITEMS.filter((item) => {
-            if (item.id === "5g") return selectedMonth === "august" || selectedMonth === "september" || selectedMonth === "october" || selectedMonth === "november" || selectedMonth === "november";
+            if (item.id === "5g") return selectedMonth === "august" || selectedMonth === "september" || selectedMonth === "october" || selectedMonth === "november";
             if (item.id === "3-basics-kpis") return selectedMonth === "october";
             if (item.id === "recurring") return selectedMonth === "september" || selectedMonth === "october" || selectedMonth === "november";
             if (item.id === "s2s-bb") return selectedMonth === "september" || selectedMonth === "october" || selectedMonth === "november";
