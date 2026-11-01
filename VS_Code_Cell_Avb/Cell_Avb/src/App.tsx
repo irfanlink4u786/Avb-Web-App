@@ -1265,33 +1265,33 @@ async function fetchCellAvbFromSupabase(): Promise<SheetPayload> {
   }
   const headers = { apikey: key, Authorization: `Bearer ${token}`, Accept: "application/json" };
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 45000);
+  const timer = setTimeout(() => controller.abort(), 20000);
 
-  const fetchPages = async (table: string, columns: string, filter = "") => {
-    const rows: Record<string, any>[] = [];
-    for (let offset = 0; offset < 9000; offset += 1000) {
-      const url = `${base}/rest/v1/${table}?select=${encodeURIComponent(columns)}${filter}&limit=1000&offset=${offset}`;
-      const response = await fetch(url, { headers, cache: "no-store", signal: controller.signal });
-      if (!response.ok) {
-        const details = (await response.text()).slice(0, 240);
-        throw new Error(`Supabase ${table}: HTTP ${response.status}: ${details}`);
-      }
-      const page = await response.json() as Record<string, any>[];
-      rows.push(...page);
-      if (page.length < 1000) break;
-    }
-    return rows;
+  const fetchPages = async (table: string, columns: string, filter = "", maxRows = 8000) => {
+    const pageSize = 1000;
+    const offsets = Array.from({ length: Math.ceil(maxRows / pageSize) }, (_, i) => i * pageSize);
+    const load = async (offset: number) => {
+      const url = `${base}/rest/v1/${table}?select=${encodeURIComponent(columns)}${filter}&limit=${pageSize}&offset=${offset}`;
+      const response = await fetch(url, { headers, signal: controller.signal });
+      if (!response.ok) throw new Error(`Supabase ${table}: HTTP ${response.status}: ${(await response.text()).slice(0, 240)}`);
+      return await response.json() as Record<string, any>[];
+    };
+    // Parallel pages: master has ~1,866 records; October CA has ~1,888 for C1/C6.
+    // Do not sequentially wait for every page before starting the next.
+    const pages = await Promise.all(offsets.map(load));
+    return pages.flat();
   };
 
   try {
-    const master = await fetchPages(CELL_MASTER_TABLE, "*");
+    const masterPromise = fetchPages(CELL_MASTER_TABLE, "*", "", 2000);
+    const dayNames = Array.from({ length: 31 }, (_, i) => `${i + 1}-Oct`);
+    const caFields = ["SITE_ID", "OCT'26 Cell A", "OCT'26 LS", "OCT'26 TCH", "OCT'26 Utran", "OCT'26 Eutran", "OCT'26 NR Cell", ...dayNames];
+    const columns = caFields.map(name => `"${name.replace(/"/g, '\\"')}"`).join(",");
+    const caPromise = fetchPages(CELL_CA_TABLE, columns, `&${encodeURIComponent("Sub-Region")}=in.(Central-1,Central-6)`, 3000);
+    const [master, caRows] = await Promise.all([masterPromise, caPromise]);
     if (!master.length) {
       throw new Error("C-1/C-6 Site Master returned no records. Sign in with an authorized Supabase account; the table has 1,866 imported sites and its RLS does not permit anonymous access.");
     }
-    const dayNames = Array.from({ length: 31 }, (_, i) => `${i + 1}-Oct`);
-    const caFields = ["SITE_ID", "OCT'26 Cell A", "OCT'26 LS", "OCT'26 TCH", "OCT'26 Utran", "OCT'26 Eutran", "OCT'26 NR Cell", ...dayNames];
-    const columns = caFields.map(name => `"${name.replace(/"/g, '\"')}"`).join(",");
-    const caRows = await fetchPages(CELL_CA_TABLE, columns, `&${encodeURIComponent("Sub-Region")}=in.(Central-1,Central-6)`);
     if (!caRows.length) throw new Error("No CA records found for Central-1 and Central-6. Check the Supabase CA table and sub-region values.");
     const byId = new Map(caRows.map(r => [String(r.SITE_ID ?? "").trim().replace(/\.0+$/, ""), r]));
     const matchedCount = master.filter(site => byId.has(String(site["Site ID"] ?? "").trim().replace(/\.0+$/, ""))).length;
@@ -6499,7 +6499,7 @@ function LoadingScreen() {
       />
       <div className="text-center">
         <h2 className="text-xl font-semibold text-white">Loading Dashboard</h2>
-        <p className="text-slate-300 text-sm mt-1">Preparing your data…</p>
+        <p className="text-slate-300 text-sm mt-1">Connecting to Supabase (maximum 22 seconds)…</p>
       </div>
     </div>
   );
@@ -7546,7 +7546,7 @@ export default function App() {
 
       // Main AVB sheet is the source for ALL C1 & C6 dashboard analysis tabs.
       // Load it first and fail clearly if it is not available.
-      const data = await withSheetTimeout(fetchCellAvbFromSupabase(), `${month} Supabase AVB`, 30000);
+      const data = await withSheetTimeout(fetchCellAvbFromSupabase(), `${month} Supabase AVB`, 22000);
 
       if (requestId !== monthLoadSeq.current) return;
 
@@ -7772,9 +7772,9 @@ export default function App() {
 
   const activeLabel = NAV_ITEMS.find((item) => item.id === activeTab)?.label ?? "";
 
+  if (!isAuthenticated) return <LoginScreen onLogin={handleLogin} />;
   if (appState === "loading") return <LoadingScreen />;
   if (appState === "error") return <ErrorScreen message={errorMsg} onRetry={viewMode === "prepost" ? loadPreVsPost : viewMode === "fuel" ? loadFuelDashboard : () => loadMonthData(selectedMonth || "october")} />;
-  if (!isAuthenticated) return <LoginScreen onLogin={handleLogin} />;
 
   // ----- HOME SCREEN (four buttons) -----
   if (viewMode === "home") {
