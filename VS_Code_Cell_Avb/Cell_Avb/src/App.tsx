@@ -7338,12 +7338,60 @@ const normalizeDateLabel = (value: string): string => {
   return raw;
 };
 
+// Local-first, user-scoped IndexedDB. Supabase is contacted only by explicit Sync Data.
+const AVB_DB_NAME = "cell-avb-offline-v1";
+const AVB_STORE = "snapshots";
+type AvbSnapshot = { key: string; payload: SheetPayload; syncedAt: string };
+const avbUserScope = (): string => {
+  try { const s = JSON.parse(sessionStorage.getItem("cell_avb_supabase_session") || "null"); return String(s?.user?.id || "unknown"); }
+  catch { return "unknown"; }
+};
+const avbCacheKey = (name: string): string => `${avbUserScope()}:${name}`;
+function openAvbDb(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(AVB_DB_NAME, 1);
+    req.onupgradeneeded = () => { if (!req.result.objectStoreNames.contains(AVB_STORE)) req.result.createObjectStore(AVB_STORE, { keyPath: "key" }); };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error || new Error("IndexedDB unavailable"));
+  });
+}
+async function readAvbCache(name: string): Promise<AvbSnapshot | null> {
+  const db = await openAvbDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(AVB_STORE, "readonly");
+    const req = tx.objectStore(AVB_STORE).get(avbCacheKey(name));
+    req.onsuccess = () => resolve((req.result as AvbSnapshot | undefined) || null);
+    req.onerror = () => reject(req.error);
+    tx.oncomplete = () => db.close();
+    tx.onerror = () => { db.close(); reject(tx.error); };
+  });
+}
+async function saveAvbCaches(entries: Array<{ name: string; payload: SheetPayload }>): Promise<void> {
+  const db = await openAvbDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(AVB_STORE, "readwrite");
+    const syncedAt = new Date().toISOString();
+    for (const entry of entries) tx.objectStore(AVB_STORE).put({ key: avbCacheKey(entry.name), payload: entry.payload, syncedAt } as AvbSnapshot);
+    tx.oncomplete = () => { db.close(); resolve(); };
+    tx.onerror = () => { db.close(); reject(tx.error); };
+    tx.onabort = () => { db.close(); reject(tx.error); };
+  });
+}
+
 export default function App() {
+  const [syncing, setSyncing] = useState(false);
+  const [syncNotice, setSyncNotice] = useState("");
+  const [lastSync, setLastSync] = useState("");
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   useEffect(() => {
     const auth = sessionStorage.getItem("cell_avb_supabase_session");
     if (auth) { try { if (JSON.parse(auth)?.access_token) setIsAuthenticated(true); } catch { sessionStorage.removeItem("cell_avb_supabase_session"); } }
   }, []);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    void readAvbCache("october-ca").then(snapshot => { if (snapshot) setLastSync(snapshot.syncedAt); }).catch(() => {});
+  }, [isAuthenticated]);
 
   const handleLogin = (success: boolean) => {
     if (success) {
@@ -7540,76 +7588,27 @@ export default function App() {
     setMonthLastUpdated("");
     setMonthLastColumnIndex(0);
 
-    let mainSheetReady = false;
     try {
-      console.info(`[Cell AVB] Loading ${month} CA and site master from Supabase`);
-
-      // Main AVB sheet is the source for ALL C1 & C6 dashboard analysis tabs.
-      // Load it first and fail clearly if it is not available.
-      const data = await withSheetTimeout(fetchCellAvbFromSupabase(), `${month} Supabase AVB`, 22000);
-
+      const cached = await readAvbCache("october-ca");
       if (requestId !== monthLoadSeq.current) return;
-
-      if (!data || !Array.isArray(data.rows) || data.rows.length === 0) {
-        throw new Error(`No AVB rows returned from Supabase for ${month}`);
+      if (!cached?.payload?.rows?.length) {
+        setViewMode("month");
+        setAppState("error");
+        setErrorMsg("No offline October CA snapshot found. Go Home and press Sync Data once while online.");
+        return;
       }
-
-      mainSheetReady = true;
-      setMonthData(data);
-      // Show October dashboard as soon as its main AVB data is ready.
-      // Supporting tabs continue in the background and populate their own views.
+      setMonthData(cached.payload);
+      setMonthLastUpdated(cached.syncedAt);
+      setLastSync(cached.syncedAt);
+      const basics = await readAvbCache("3 Basics KPIs").catch(() => null);
+      setMonth3Basics(basics?.payload || null);
       setViewMode("month");
       setAppState("dashboard");
-
-      // Supporting tabs are optional. A missing supporting tab must NOT cause
-      // the whole dashboard to fall back to old/mock data.
-      // The only migrated supporting tab is 3 Basics KPIs.
-      // Unmigrated tabs are intentionally not fetched from Google Sheets.
-      const [threeBasicsResult] = await Promise.allSettled([
-        withSheetTimeout(fetchArchivedSheet("3 Basics KPIs"), "3 Basics KPIs", 30000),
-      ]);
-      const dateResult = { status: "fulfilled" as const, value: null as SheetPayload | null };
-      const rcaResult = { status: "fulfilled" as const, value: null as SheetPayload | null };
-      const fiveGResult = { status: "fulfilled" as const, value: null as SheetPayload | null };
-      const historyResult = { status: "fulfilled" as const, value: null as SheetPayload | null };
-      const s2sResult = { status: "fulfilled" as const, value: null as SheetPayload | null };
-      const revenueLostResult = { status: "fulfilled" as const, value: null as SheetPayload | null };
-
-      if (requestId !== monthLoadSeq.current) return;
-
-      const dateData = dateResult.status === "fulfilled" ? dateResult.value : null;
-      const rcaSheet = rcaResult.status === "fulfilled" ? rcaResult.value : null;
-      const fiveGSheet = fiveGResult.status === "fulfilled" ? fiveGResult.value : null;
-      const cellAvbHistory = historyResult.status === "fulfilled" ? historyResult.value : null;
-      const s2sBBData = s2sResult.status === "fulfilled" ? s2sResult.value : null;
-      const revenueLostData = revenueLostResult.status === "fulfilled" ? revenueLostResult.value : null;
-      const threeBasicsData = threeBasicsResult.status === "fulfilled" ? threeBasicsResult.value : null;
-
-      if (threeBasicsResult.status === "rejected") console.error(`[Cell AVB] ${month}: 3 Basics KPIs loading failed (tab verified to exist)`, threeBasicsResult.reason);
-
-      setMonthRca(rcaSheet);
-      setMonth5G(fiveGSheet);
-      setMonthCellAvbHistory(cellAvbHistory);
-      setMonthS2SBB(s2sBBData);
-      setMonthRevenueLost(revenueLostData);
-      setMonth3Basics(threeBasicsData);
-
-      if (dateData && Array.isArray(dateData.rows) && dateData.rows.length > 0) {
-        const row = dateData.rows[0];
-        setMonthLastUpdated(row["Last Updated"] || row["Date"] || row["Last Date"] || "");
-
-        const parsedIndex = parseInt(row["Column Index"] || row["Column"] || row["Index"] || "0", 10);
-        setMonthLastColumnIndex(Number.isFinite(parsedIndex) ? parsedIndex : 0);
-      }
-
+      return;
     } catch (error) {
       if (requestId !== monthLoadSeq.current) return;
 
       console.error(`[Cell AVB] Error loading ${month} from Supabase:`, error);
-      if (mainSheetReady) {
-        // Optional tab processing failure must not hide the already loaded dashboard.
-        return;
-      }
 
       // Never leave the previous month's data on screen after a failed month switch.
       setMonthData(null);
@@ -7635,57 +7634,61 @@ export default function App() {
   const loadFuelDashboard = async () => {
     setAppState("loading");
     setErrorMsg("");
-    // Fuel datasets are loaded from Supabase only.
-    // Fetch all available fuel datasets from Supabase only; T-Prime is not migrated.
-    let history: SheetPayload;
-    let deviation: SheetPayload | null = null;
-    let monthlyHistory: SheetPayload | null = null;
     try {
-      const [h, d, m] = await Promise.all([
-        fetchArchivedSheet("Fuel History"),
-        fetchArchivedSheet("Deviation Fuel"),
-        fetchArchivedSheet("Monthly Fuel History"),
+      const [h, d, m, own] = await Promise.all([
+        readAvbCache("Fuel History"), readAvbCache("Deviation Fuel"),
+        readAvbCache("Monthly Fuel History"), readAvbCache("october-ca")
       ]);
-      history = h;
-      deviation = d;
-      monthlyHistory = m;
-    } catch (error) {
-      console.error("Supabase fuel archive loading failed", error);
-      setFuelHistory(null);
-      setMonthlyFuelData(null);
-      setFuelDeviation(null);
+      if (!h?.payload?.rows?.length) throw new Error("Fuel data is not cached. Return Home and press Sync Data once.");
+      setFuelHistory(h.payload);
+      setFuelDeviation(d?.payload || null);
+      setMonthlyFuelData(m?.payload || null);
       setFuelTPrime(null);
+      setLastSync(h.syncedAt);
+      setFuelOwnership(own?.payload ? {
+        ...own.payload,
+        rows: own.payload.rows.map(raw => {
+          const site = normalizeRow(raw);
+          return { "Site ID": String(site.siteName ?? "").trim(), "Cluster Owner": String(site.clusterOwner ?? "").trim(), "MS GTL": String(site.msGtl ?? "").trim(), "Zone Lead": String(site.zongLead ?? "").trim() };
+        })
+      } : null);
       setViewMode("fuel");
-      setErrorMsg(`Fuel archive could not be loaded from Supabase: ${error instanceof Error ? error.message : String(error)}`);
+      setAppState("dashboard");
+    } catch (error) {
+      setViewMode("fuel");
+      setErrorMsg(error instanceof Error ? error.message : String(error));
       setAppState("error");
-      return;
     }
-    // Render fuel dashboard immediately after its three Supabase datasets arrive.
-    // Site ownership is loaded independently from Supabase in the background.
-    setMonthlyFuelData(monthlyHistory);
-    setFuelTPrime(null);
-    setFuelOwnership(null);
-    setFuelHistory(history);
-    setFuelDeviation(deviation);
-    setViewMode("fuel");
-    setAppState("dashboard");
+  };
 
-    void (async () => {
-      try {
-        const source = await fetchCellAvbFromSupabase();
-        if (source?.rows?.length) {
-          setFuelOwnership({ ...source, rows: source.rows.map(raw => {
-            const site = normalizeRow(raw);
-            return {
-              "Site ID": String(site.siteName ?? "").trim(),
-              "Cluster Owner": String(site.clusterOwner ?? "").trim(),
-              "MS GTL": String(site.msGtl ?? "").trim(),
-              "Zone Lead": String(site.zongLead ?? "").trim(),
-            };
-          }) });
-        }
-      } catch (err) { console.warn("Optional fuel ownership lookup failed", err); }
-    })();
+  const syncAllData = async () => {
+    if (syncing) return;
+    setSyncing(true);
+    setSyncNotice("Syncing October CA and fuel datasets from Supabase…");
+    try {
+      // Download everything before replacing any snapshot; failed sync retains previous cache.
+      // Refresh Supabase auth before the archive requests, if needed.
+      const ca = await fetchCellAvbFromSupabase();
+      setSyncNotice("October CA downloaded. Syncing fuel and 3 Basics…");
+      const [basics, fuel, monthly, deviation] = await Promise.all([
+        fetchArchivedSheet("3 Basics KPIs"),
+        fetchArchivedSheet("Fuel History"),
+        fetchArchivedSheet("Monthly Fuel History"),
+        fetchArchivedSheet("Deviation Fuel"),
+      ]);
+      await saveAvbCaches([
+        { name: "october-ca", payload: ca },
+        { name: "3 Basics KPIs", payload: basics },
+        { name: "Fuel History", payload: fuel },
+        { name: "Monthly Fuel History", payload: monthly },
+        { name: "Deviation Fuel", payload: deviation },
+      ]);
+      const now = new Date().toISOString();
+      setLastSync(now);
+      setSyncNotice(`Sync successful: ${ca.rows.length} CA sites, ${basics.rows.length} 3 Basics, ${fuel.rows.length} fuel entries, ${monthly.rows.length} monthly fuel, ${deviation.rows.length} deviations. Open a dashboard tab to view refreshed data.`);
+    } catch (error) {
+      setSyncNotice(`Sync failed; previous offline data preserved. ${error instanceof Error ? error.message : String(error)}`);
+    } finally { setSyncing(false); }
   };
 
   const load5GPage = async () => {
@@ -7774,7 +7777,7 @@ export default function App() {
 
   if (!isAuthenticated) return <LoginScreen onLogin={handleLogin} />;
   if (appState === "loading") return <LoadingScreen />;
-  if (appState === "error") return <ErrorScreen message={errorMsg} onRetry={viewMode === "prepost" ? loadPreVsPost : viewMode === "fuel" ? loadFuelDashboard : () => loadMonthData(selectedMonth || "october")} />;
+  if (appState === "error") return <div className="min-h-screen bg-slate-900"><div className="absolute left-5 top-5 z-50"><button onClick={goHome} className="rounded-lg bg-cyan-500 px-5 py-2 font-semibold text-slate-950">← Home / Sync Data</button></div><ErrorScreen message={errorMsg} onRetry={viewMode === "prepost" ? loadPreVsPost : viewMode === "fuel" ? loadFuelDashboard : () => loadMonthData(selectedMonth || "october")} /></div>;
 
   // ----- HOME SCREEN (four buttons) -----
   if (viewMode === "home") {
@@ -7787,6 +7790,14 @@ export default function App() {
             <span className="text-cyan-300 font-bold tracking-widest text-sm">📶 ZONG 5G</span>
           </motion.div>
           <h1 className="text-5xl md:text-7xl font-extrabold text-white leading-tight mb-6 drop-shadow-lg">C1 & C6 <br /><span className="bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">Cell Avb Analysis</span></h1>
+          <div className="mx-auto mt-5 max-w-3xl rounded-xl border border-cyan-400/30 bg-slate-950/80 px-5 py-4 text-white">
+            <div className="flex flex-wrap items-center justify-center gap-3">
+              <button disabled={syncing} onClick={() => { void syncAllData(); }} className="rounded-lg bg-cyan-500 px-5 py-2 font-bold text-slate-950 disabled:opacity-60">{syncing ? "Syncing…" : "↻ Sync Data (Manual)"}</button>
+              <span className="text-xs text-slate-300">Offline-first · IndexedDB · No automatic refresh</span>
+            </div>
+            {lastSync && <p className="mt-2 text-xs text-emerald-300">Last sync: {new Date(lastSync).toLocaleString()}</p>}
+            {syncNotice && <p role="status" className="mt-2 break-words text-sm text-cyan-100">{syncNotice}</p>}
+          </div>
           <motion.div variants={{ hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.15 } } }} initial="hidden" animate="show" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5 mt-9">
 
             <motion.button variants={{ hidden: { opacity: 0, y: 30 }, show: { opacity: 1, y: 0 } }} whileHover={{ scale: 1.03, boxShadow: "0 0 40px rgba(34, 211, 238, 0.35)" }} whileTap={{ scale: 0.98 }} onClick={() => loadMonthData("october")} className="group relative w-full min-h-[142px] px-6 py-7 rounded-2xl bg-gradient-to-br from-cyan-500/20 to-emerald-500/20 border border-cyan-400/30 hover:border-cyan-300 transition-all duration-300 shadow-xl hover:shadow-cyan-500/40 backdrop-blur-sm overflow-hidden">
@@ -7844,7 +7855,7 @@ export default function App() {
 
   // ----- FUEL MANAGEMENT FULL PAGE -----
   if (viewMode === "fuel") {
-    return <FuelDashboard data={fuelHistory} deviationData={fuelDeviation} tPrimeData={fuelTPrime} sheet1Data={fuelOwnership} monthlyFuelData={monthlyFuelData} onBack={goHome} />;
+    return <><FuelDashboard data={fuelHistory} deviationData={fuelDeviation} tPrimeData={fuelTPrime} sheet1Data={fuelOwnership} monthlyFuelData={monthlyFuelData} onBack={goHome} /><div className="fixed bottom-4 right-4 z-50 rounded-lg bg-slate-900 px-3 py-2 text-xs text-white shadow-lg">Offline snapshot {lastSync ? `· ${new Date(lastSync).toLocaleString()}` : ""} · <button onClick={goHome} className="font-bold text-cyan-300">Home / Sync Data</button></div></>;
   }
 
   // ----- PRE‑VS‑POST FULL PAGE WITH SIDEBAR -----
@@ -7946,6 +7957,7 @@ export default function App() {
     <div className="light-app min-h-screen bg-[#eef0f3] text-slate-900 flex">
       
       <RainAlertWidget />
+      <div className="fixed bottom-4 right-4 z-50 rounded-lg bg-slate-900 px-3 py-2 text-xs text-white shadow-lg">Offline snapshot {lastSync ? `· ${new Date(lastSync).toLocaleString()}` : ""} · <button onClick={goHome} className="font-bold text-cyan-300">Home / Sync Data</button></div>
       <aside className={`fixed lg:sticky top-0 z-40 h-screen w-64 bg-[#e5e7eb] border-r border-slate-300 flex flex-col transition-transform ${sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}`}>
         <div className="p-5 border-b border-slate-800">
           <div className="flex items-center gap-3">
