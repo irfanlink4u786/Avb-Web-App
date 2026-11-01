@@ -1342,20 +1342,14 @@ const NAV_ITEMS = [
   { id: "overall", label: "Overall Summary", icon: LayoutDashboard },
   { id: "grid-performance", label: "Grid Performance", icon: Award },
   { id: "3-basics-kpis", label: "3 Basics KPIs", icon: Activity },
-  { id: "recurring", label: "Recurring Sites", icon: RefreshCw },
-  { id: "s2s-bb", label: "S2S BB Performance", icon: Battery },
-  { id: "revenue-lost", label: "Revenue Lost Sites", icon: CircleDollarSign },
   { id: "employees", label: "Employees", icon: Users },
   { id: "platinum-plus", label: "Platinum+", icon: Crown },
   { id: "pgs", label: "PGS Sites", icon: TrendingUp },
   { id: "sb", label: "SB Sites", icon: TrendingDown },
   { id: "nps", label: "NPS Sites", icon: Sparkles },
-  { id: "5g", label: "5G Sites", icon: Radio },
   { id: "dg", label: "DG Sites", icon: Zap },
   { id: "li-ion", label: "Li-ion BB", icon: Battery },
-  { id: "below-base", label: "Below Base", icon: AlertTriangle },
   { id: "agm", label: "AGM BB", icon: BatteryWarning },
-  { id: "rca", label: "RCA of Plat+", icon: ListChecks },
   { id: "query", label: "Site Query", icon: Search },
   { id: "weather", label: "Weather Radar", icon: CloudRain },
 ] as const;
@@ -6489,7 +6483,7 @@ function OverallSummaryWithExport({ sites, rawData, lastUpdatedDate }: { sites: 
 //  LOADING / ERROR / BANNER
 // ============================================================
 
-function LoadingScreen() {
+function LoadingScreen({ onHome }: { onHome: () => void }) {
   return (
     <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center gap-6">
       <motion.div
@@ -6499,7 +6493,8 @@ function LoadingScreen() {
       />
       <div className="text-center">
         <h2 className="text-xl font-semibold text-white">Loading Dashboard</h2>
-        <p className="text-slate-300 text-sm mt-1">Connecting to Supabase (maximum 22 seconds)…</p>
+        <p className="text-slate-300 text-sm mt-1">Reading saved data from this browser…</p>
+        <button onClick={onHome} className="mt-5 rounded-lg bg-cyan-500 px-5 py-2 font-semibold text-slate-950">Return Home / Sync Data</button>
       </div>
     </div>
   );
@@ -7569,7 +7564,7 @@ export default function App() {
     const requestId = ++monthLoadSeq.current;
 
 
-    setAppState("loading");
+    setAppState("dashboard"); // Never block navigation for a local IndexedDB read.
     setErrorMsg("");
     setSelectedMonth(month);
     setUseMock(false);
@@ -7632,7 +7627,7 @@ export default function App() {
 
 
   const loadFuelDashboard = async () => {
-    setAppState("loading");
+    setAppState("dashboard"); // IndexedDB read should not show a full-screen spinner.
     setErrorMsg("");
     try {
       const [h, d, m, own] = await Promise.all([
@@ -7689,27 +7684,6 @@ export default function App() {
     } catch (error) {
       setSyncNotice(`Sync failed; previous offline data preserved. ${error instanceof Error ? error.message : String(error)}`);
     } finally { setSyncing(false); }
-  };
-
-  const load5GPage = async () => {
-    setAppState("loading");
-    setErrorMsg("");
-    try {
-      const data = await fetchCellAvbFromSupabase();
-      setMonthData(data);
-      setMonth5G(null);
-      setMonthLastUpdated("October 2026");
-      setMonthLastColumnIndex(0);
-      setSelectedMonth("october");
-      setUseMock(false);
-      setActiveTab("5g");
-      setViewMode("month");
-      setAppState("dashboard");
-    } catch (error) {
-      console.error("Supabase 5G data load failed:", error);
-      setErrorMsg(`Unable to load 5G from Supabase: ${error instanceof Error ? error.message : String(error)}`);
-      setAppState("error");
-    }
   };
 
   const loadPreVsPost = async () => {
@@ -7776,7 +7750,7 @@ export default function App() {
   const activeLabel = NAV_ITEMS.find((item) => item.id === activeTab)?.label ?? "";
 
   if (!isAuthenticated) return <LoginScreen onLogin={handleLogin} />;
-  if (appState === "loading") return <LoadingScreen />;
+  if (appState === "loading") return <LoadingScreen onHome={goHome} />;
   if (appState === "error") return <div className="min-h-screen bg-slate-900"><div className="absolute left-5 top-5 z-50"><button onClick={goHome} className="rounded-lg bg-cyan-500 px-5 py-2 font-semibold text-slate-950">← Home / Sync Data</button></div><ErrorScreen message={errorMsg} onRetry={viewMode === "prepost" ? loadPreVsPost : viewMode === "fuel" ? loadFuelDashboard : () => loadMonthData(selectedMonth || "october")} /></div>;
 
   // ----- HOME SCREEN (four buttons) -----
@@ -7808,33 +7782,8 @@ export default function App() {
               <span className="absolute inset-0 bg-gradient-to-r from-green-400/20 to-emerald-400/20 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
               <div className="relative text-center"><Fuel className="mx-auto mb-2 h-7 w-7 text-green-300"/><span className="block text-xl sm:text-2xl font-extrabold tracking-tight text-white">Fuel</span><span className="text-slate-200 text-sm">2025 vs 2026 · Saving & Control</span></div>
             </motion.button>
-            <motion.button
-              variants={{ hidden: { opacity: 0, y: 30 }, show: { opacity: 1, y: 0 } }}
-              whileHover={{ scale: 1.03, boxShadow: "0 0 40px rgba(250, 204, 21, 0.30)" }}
-              whileTap={{ scale: 0.98 }}
-              onClick={() => { setAppState("dashboard"); setViewMode("electricity"); }}
-              className="group relative w-full min-h-[142px] px-6 py-7 rounded-2xl bg-gradient-to-br from-amber-500/25 to-orange-700/25 border border-amber-400/40 hover:border-amber-300 transition-all duration-300 shadow-xl hover:shadow-amber-500/30 backdrop-blur-sm overflow-hidden"
-            >
-              <span className="absolute inset-0 bg-gradient-to-r from-yellow-400/20 to-orange-400/20 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-              <div className="relative text-center">
-                <Zap className="mx-auto mb-2 h-7 w-7 text-amber-300" />
-                <span className="block text-xl sm:text-2xl font-extrabold tracking-tight text-white">Electricity Units</span>
-                <span className="text-slate-200 text-sm">ABS Month · Target 3,420 units/site</span>
-              </div>
-            </motion.button>
-            <motion.button
-              variants={{ hidden: { opacity: 0, y: 30 }, show: { opacity: 1, y: 0 } }}
-              whileHover={{ scale: 1.03, boxShadow: "0 0 40px rgba(14, 165, 233, 0.35)" }}
-              whileTap={{ scale: 0.98 }}
-              onClick={load5GPage}
-              className="group relative w-full min-h-[142px] px-6 py-7 rounded-2xl bg-gradient-to-br from-cyan-500/20 to-blue-500/20 border border-cyan-400/30 hover:border-cyan-300 transition-all duration-300 shadow-xl hover:shadow-cyan-500/40 backdrop-blur-sm overflow-hidden"
-            >
-              <span className="absolute inset-0 bg-gradient-to-r from-cyan-400/20 to-blue-400/20 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-              <div className="relative text-center">
-                <span className="block text-xl sm:text-2xl font-extrabold tracking-tight text-white">5G Sites</span>
-                <span className="text-slate-200 text-sm">October 2026 · KPI Dashboard</span>
-              </div>
-            </motion.button>
+
+
 
 
 
@@ -7966,17 +7915,13 @@ export default function App() {
             </div>
             <div>
               <h1 className="text-sm font-bold text-white leading-tight">C1 &amp; C6 Cell Avb Analysis</h1>
-              <p className="text-[10px] text-slate-500">{useMock ? "📊 Demo Mode" : "Google Sheets Connected"}</p>
+              <p className="text-[10px] text-slate-500">{useMock ? "📊 Demo Mode" : "Supabase · Offline Cache"}</p>
             </div>
           </div>
         </div>
         <nav className="flex-1 overflow-y-auto p-3 space-y-1">
           {NAV_ITEMS.filter((item) => {
-            if (item.id === "5g") return selectedMonth === "august" || selectedMonth === "september" || selectedMonth === "october";
             if (item.id === "3-basics-kpis") return selectedMonth === "october";
-            if (item.id === "recurring") return selectedMonth === "september" || selectedMonth === "october";
-            if (item.id === "s2s-bb") return selectedMonth === "september" || selectedMonth === "october";
-            if (item.id === "revenue-lost") return selectedMonth === "september" || selectedMonth === "october";
             return true;
           }).map((item) => {
             const Icon = item.icon;
@@ -8027,9 +7972,6 @@ export default function App() {
                 {activeTab === "overall" && <div className="overall-vibrant"><OverallSummaryWithExport sites={sites} rawData={monthData} lastUpdatedDate={monthLastUpdated} /></div>}
                 {activeTab === "grid-performance" && <div className="grid-vibrant"><GridPerformanceScorecard rawData={monthData} lastUpdatedDate={monthLastUpdated} /></div>}
                 {activeTab === "3-basics-kpis" && <div className="basics-vibrant"><ThreeBasicsKpiPage kpiData={month3Basics} sites={sites} lastUpdatedDate={monthLastUpdated} /></div>}
-                {activeTab === "recurring" && <RecurringSitesPage sites={sites} historyData={monthCellAvbHistory} />}
-                {activeTab === "s2s-bb" && <S2SBBPerformancePage sites={sites} s2sData={monthS2SBB} historyData={monthCellAvbHistory} rawData={monthData} lastUpdatedDate={monthLastUpdated} />}
-                {activeTab === "revenue-lost" && <RevenueLostSitesPage sites={sites} revenueLostData={monthRevenueLost} lastUpdatedDate={monthLastUpdated} />}
                 {activeTab === "employees" && <><SectionBanner icon={<Users className="w-6 h-6 text-indigo-400" />} title="Employee Performance Analysis" subtitle={`${sites.filter((s) => s.currentAvb > 0).length} active sites`} gradient="from-indigo-500/10 to-purple-500/10 border-indigo-500/20" /><div className="employee-performance-light"><style>{`
   .employee-performance-light .employee-all-sites-header,
   .employee-performance-light .employee-all-sites-header tr,
@@ -8061,19 +8003,16 @@ export default function App() {
                 {activeTab === "pgs" && <CategoryPage sites={sites} title="PGS Sites" description={`${pgsRows.length} high-priority revenue sites`} threshold={98.1} filterFn={(s) => PGS_GROUP.includes(s.revenueCategory)} lastUpdatedDate={monthLastUpdated} lastColumnIndex={monthLastColumnIndex} />}
                 {activeTab === "sb" && <CategoryPage sites={sites} title="SB Sites" description={`${sbRows.length} standard-tier revenue sites`} threshold={95} filterFn={(s) => SB_GROUP.includes(s.revenueCategory)} lastUpdatedDate={monthLastUpdated} lastColumnIndex={monthLastColumnIndex} />}
                 {activeTab === "nps" && <CategoryPage sites={sites} title="NPS Sites (New Physical Sites)" description={`${npsRows.length} NPS Y26 sites`} threshold={95} filterFn={(s) => isNPSSite(s)} lastUpdatedDate={monthLastUpdated} lastColumnIndex={monthLastColumnIndex} />}
-                {activeTab === "5g" && <FiveGPage data={month5G} lastUpdatedDate={monthLastUpdated} lastColumnIndex={monthLastColumnIndex} />}
                 {activeTab === "dg" && <CategoryPage sites={sites} title="DG Sites (Diesel Generator Backup)" description={`${dgRows.length} sites with diesel generators`} threshold={98.5} filterFn={(s) => hasDG(s)} lastUpdatedDate={monthLastUpdated} lastColumnIndex={monthLastColumnIndex} />}
                 {activeTab === "li-ion" && <CategoryPage sites={sites} title="Li-ion Battery Backup Sites" description={`${liIonRows.length} sites with Li-ion batteries installed`} threshold={98} filterFn={(s) => hasLiIon(s)} lastUpdatedDate={monthLastUpdated} lastColumnIndex={monthLastColumnIndex} />}
-                {activeTab === "below-base" && <CategoryPage sites={sites} title="Below Base Sites" description={`${belowBaseRows.length} sites flagged below base threshold`} threshold={95} filterFn={(s) => isBelowBase(s)} lastUpdatedDate={monthLastUpdated} lastColumnIndex={monthLastColumnIndex} />}
                 {activeTab === "agm" && <CategoryPage sites={sites} title="AGM Battery Backup Sites" description={`${agmRows.length} sites with AGM battery banks`} threshold={95} filterFn={(s) => hasAGM(s)} lastUpdatedDate={monthLastUpdated} lastColumnIndex={monthLastColumnIndex} />}
-                {activeTab === "rca" && <RcaSummary rcaData={rcaData} />}
                 {activeTab === "query" && <SiteQuery sites={sites} rawData={monthData} historyData={(selectedMonth === "september" || selectedMonth === "october") ? monthCellAvbHistory : null} />}
                 {activeTab === "weather" && <WeatherRadar />}
               </motion.div>
             </AnimatePresence>
           </ErrorBoundary>
           <footer className="text-center text-xs text-slate-600 py-4">
-            {useMock ? "📊 Demo Mode - Using sample data" : `Live data from Google Sheets (${monthLabel})`} · {sites.length} sites · C1 & C6 Cell Avb Analysis
+            {useMock ? "📊 Demo Mode - Using sample data" : `Supabase cached data (${monthLabel})`} · {sites.length} sites · C1 & C6 Cell Avb Analysis
           </footer>
         </main>
       </div>
