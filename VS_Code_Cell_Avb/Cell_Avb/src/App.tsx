@@ -1,7 +1,6 @@
 import "./overall-summary-readability.css";
 import "./enterprise-polish.css";
 import FuelDashboard from "./FuelDashboard";
-import ElectricityDashboard from "./ElectricityDashboard";
 import React, { useState, useEffect, useMemo, Fragment, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -61,7 +60,6 @@ import OverallSummaryComponent from "./components/OverallSummary";
 import ExportButton from "./components/ExportButton";
 import WeatherRadar from "./components/WeatherRadar";
 import RainAlertWidget from "./components/RainAlertWidget";
-import { fetchGoogleSheet } from "./services/googleSheets";
 import { type SheetPayload } from "./types";
 import {
   type SiteData,
@@ -1229,7 +1227,7 @@ function ThreeBasicsKpiPage({
 
 // ============================================================
 //  CELL AVB SUPABASE DATA LAYER (C-1 / C-6 ONLY)
-//  Google Sheets remains connected for Fuel, Electricity and supporting tabs.
+//  Supabase is the only external data source.
 // ============================================================
 const CELL_MASTER_TABLE = "cell_avb_c1_c6_site_master";
 const CELL_CA_TABLE = "ca_tracker_oct2026";
@@ -1237,7 +1235,7 @@ const CELL_CA_TABLE = "ca_tracker_oct2026";
 /**
  * October CA and technology availability come exclusively from Supabase.
  * The 27-field C-1/C-6 master is the site population; supporting Google
- * Sheets modules are intentionally untouched.
+ * All available data comes from Supabase.
  *
  * Access: the site master requires an authenticated Supabase session.
  * Never put a service-role key in a browser application.
@@ -1338,15 +1336,6 @@ async function fetchCellAvbFromSupabase(): Promise<SheetPayload> {
 // ============================================================
 //  CONSTANTS
 // ============================================================
-
-const SHEET_IDS = {
-  // Legacy month keys are intentionally redirected to October.
-  // No request from this application should reach July–September workbooks.
-  july: "1po40LvnGZL8Nnd4BBk-P6uC_tL4Fi9Q8PuMQZ7aQSdc",
-  august: "1po40LvnGZL8Nnd4BBk-P6uC_tL4Fi9Q8PuMQZ7aQSdc",
-  september: "1po40LvnGZL8Nnd4BBk-P6uC_tL4Fi9Q8PuMQZ7aQSdc",
-  october: "1po40LvnGZL8Nnd4BBk-P6uC_tL4Fi9Q8PuMQZ7aQSdc",
-} as const;
 
 // Month dashboard navigation
 const NAV_ITEMS = [
@@ -7530,7 +7519,7 @@ export default function App() {
     // The sequence guard prevents an older request (for example August)
     // from finishing later and overwriting a newer September selection.
     const requestId = ++monthLoadSeq.current;
-    const sheetId = SHEET_IDS[month];
+
 
     setAppState("loading");
     setErrorMsg("");
@@ -7562,7 +7551,7 @@ export default function App() {
       if (requestId !== monthLoadSeq.current) return;
 
       if (!data || !Array.isArray(data.rows) || data.rows.length === 0) {
-        throw new Error(`No AVB rows returned from ${month} workbook (${sheetId})`);
+        throw new Error(`No AVB rows returned from Supabase for ${month}`);
       }
 
       mainSheetReady = true;
@@ -7574,15 +7563,17 @@ export default function App() {
 
       // Supporting tabs are optional. A missing supporting tab must NOT cause
       // the whole dashboard to fall back to old/mock data.
-      const [dateResult, rcaResult, fiveGResult, historyResult, s2sResult, revenueLostResult, threeBasicsResult] = await Promise.allSettled([
-        fetchGoogleSheet(sheetId, "Updated Date"),
-        fetchGoogleSheet(sheetId, "RCA of Plat +"),
-        fetchGoogleSheet(sheetId, "5G"),
-        Promise.resolve(null as SheetPayload | null),
-        fetchGoogleSheet(sheetId, "S2S BB installed"),
-        fetchGoogleSheet(sheetId, "Revenue Lost sites"),
-        fetchArchivedSheet("3 Basics KPIs"),
-      ].map((request, index) => withSheetTimeout(Promise.resolve(request), `${month} supporting sheet #${index + 1}`, 60000)));
+      // The only migrated supporting tab is 3 Basics KPIs.
+      // Unmigrated tabs are intentionally not fetched from Google Sheets.
+      const [threeBasicsResult] = await Promise.allSettled([
+        withSheetTimeout(fetchArchivedSheet("3 Basics KPIs"), "3 Basics KPIs", 30000),
+      ]);
+      const dateResult = { status: "fulfilled" as const, value: null as SheetPayload | null };
+      const rcaResult = { status: "fulfilled" as const, value: null as SheetPayload | null };
+      const fiveGResult = { status: "fulfilled" as const, value: null as SheetPayload | null };
+      const historyResult = { status: "fulfilled" as const, value: null as SheetPayload | null };
+      const s2sResult = { status: "fulfilled" as const, value: null as SheetPayload | null };
+      const revenueLostResult = { status: "fulfilled" as const, value: null as SheetPayload | null };
 
       if (requestId !== monthLoadSeq.current) return;
 
@@ -7620,7 +7611,7 @@ export default function App() {
     } catch (error) {
       if (requestId !== monthLoadSeq.current) return;
 
-      console.error(`[Cell AVB] Error loading ${month} workbook ${sheetId}:`, error);
+      console.error(`[Cell AVB] Error loading ${month} from Supabase:`, error);
       if (mainSheetReady) {
         // Optional tab processing failure must not hide the already loaded dashboard.
         return;
@@ -7650,8 +7641,8 @@ export default function App() {
   const loadFuelDashboard = async () => {
     setAppState("loading");
     setErrorMsg("");
-    // Four fuel-related worksheets are now loaded from Supabase, not Google Sheets.
-    // Fetch concurrently; keep T-Prime on Google Sheets because it is not archived.
+    // Fuel datasets are loaded from Supabase only.
+    // Fetch all available fuel datasets from Supabase only; T-Prime is not migrated.
     let history: SheetPayload;
     let deviation: SheetPayload | null = null;
     let monthlyHistory: SheetPayload | null = null;
@@ -7676,7 +7667,7 @@ export default function App() {
       return;
     }
     // Render fuel dashboard immediately after its three Supabase datasets arrive.
-    // Optional T-Prime and site ownership are loaded independently in background.
+    // Site ownership is loaded independently from Supabase in the background.
     setMonthlyFuelData(monthlyHistory);
     setFuelTPrime(null);
     setFuelOwnership(null);
@@ -7685,14 +7676,6 @@ export default function App() {
     setViewMode("fuel");
     setAppState("dashboard");
 
-    void (async () => {
-      for (const sheetName of ["T-Prime", "T_prime", "T Prime", "T_Prime"]) {
-        try {
-          const candidate = await withSheetTimeout(fetchGoogleSheet(SHEET_IDS.october, sheetName), `T-Prime ${sheetName}`, 2500);
-          if (candidate?.rows?.length) { setFuelTPrime(candidate); break; }
-        } catch { /* Optional sheet is unavailable; do not block fuel dashboard. */ }
-      }
-    })();
     void (async () => {
       try {
         const source = await fetchCellAvbFromSupabase();
@@ -7714,77 +7697,32 @@ export default function App() {
   const load5GPage = async () => {
     setAppState("loading");
     setErrorMsg("");
-
     try {
-      const sheetId = SHEET_IDS.october;
-
-      const [data, fiveGSheet, dateData] = await Promise.all([
-        fetchCellAvbFromSupabase(),
-        Promise.resolve(null as SheetPayload | null),
-        fetchGoogleSheet(sheetId, "Updated Date"),
-      ]);
-
+      const data = await fetchCellAvbFromSupabase();
       setMonthData(data);
-      setMonth5G(fiveGSheet);
+      setMonth5G(null);
+      setMonthLastUpdated("October 2026");
+      setMonthLastColumnIndex(0);
       setSelectedMonth("october");
       setUseMock(false);
-
-      if (dateData && dateData.rows && dateData.rows.length > 0) {
-        const row = dateData.rows[0];
-        setMonthLastUpdated(
-          row["Last Updated"] ||
-          row["Date"] ||
-          row["Last Date"] ||
-          ""
-        );
-        setMonthLastColumnIndex(
-          parseInt(
-            row["Column Index"] ||
-            row["Column"] ||
-            row["Index"] ||
-            "0"
-          )
-        );
-      }
-
       setActiveTab("5g");
       setViewMode("month");
       setAppState("dashboard");
     } catch (error) {
-      console.error("Error loading 5G data:", error);
-      setErrorMsg("Failed to load 5G data. Please try again.");
+      console.error("Supabase 5G data load failed:", error);
+      setErrorMsg(`Unable to load 5G from Supabase: ${error instanceof Error ? error.message : String(error)}`);
       setAppState("error");
     }
   };
 
   const loadPreVsPost = async () => {
-    setAppState("loading");
-    setErrorMsg("");
-    try {
-      const sheetId = SHEET_IDS.october;
-      const data = await fetchGoogleSheet(
-        sheetId,
-        "Plat+ and DG sites Pre vs Post"
-      );
-      if (data && data.rows) {
-        const parsed = parsePrePostRows(data.rows);
-        setPrePostSites(parsed);
-        setPreVsPostData(data);
-      }
-      const dateData = await fetchGoogleSheet(sheetId, "Updated Date");
-      let updated = "October 2026";
-      if (dateData && dateData.rows && dateData.rows.length > 0) {
-        const row = dateData.rows[0];
-        updated = row["Last Updated"] || row["Date"] || row["Last Date"] || "October 2026";
-      }
-      setPrePostLastUpdated(updated);
-      setViewMode("prepost");
-      setAppState("dashboard");
-    } catch (error) {
-      console.error("Error loading Pre Vs Post:", error);
-      setErrorMsg("Failed to load Pre Vs Post data. Please try again.");
-      setAppState("error");
-    }
+    // This source tab was excluded from the agreed Supabase migration.
+    setPrePostSites([]);
+    setPreVsPostData(null);
+    setPrePostLastUpdated("Not migrated");
+    setErrorMsg("Pre vs Post data has not been migrated to Supabase. Google Sheets is fully disconnected. Import this dataset into Supabase to enable the page.");
+    setViewMode("prepost");
+    setAppState("error");
   };
 
   const goHome = () => {
@@ -7898,7 +7836,7 @@ export default function App() {
           </motion.div>
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.6 }} className="mt-12 text-slate-300 text-sm flex items-center justify-center gap-2">
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            <span>Real-time data from Google Sheets</span>
+            <span>Data powered by Supabase</span>
           </motion.div>
         </motion.div>
       </div>
@@ -7907,7 +7845,7 @@ export default function App() {
 
   // ----- ELECTRICITY UNIT CONSUMPTION (ABS MONTH REFERENCE) -----
   if (viewMode === "electricity") {
-    return <div className="electricity-polished"><ElectricityDashboard sheetId={SHEET_IDS.october} sheetName="ABS" onBack={goHome} /></div>;
+    return <div className="electricity-polished min-h-screen bg-slate-50 p-8"><button className="rounded-lg bg-slate-900 px-5 py-3 text-white" onClick={goHome}>Back to dashboard</button><div className="mx-auto mt-16 max-w-2xl rounded-xl bg-white p-8 text-center shadow"><h2 className="text-2xl font-bold text-slate-900">Electricity data not migrated</h2><p className="mt-4 text-slate-600">ABS Electricity was excluded from the selected Supabase datasets. This page will be available once its data is imported into Supabase. No Google Sheets connection is used.</p></div></div>;
   }
 
   // ----- FUEL MANAGEMENT FULL PAGE -----
