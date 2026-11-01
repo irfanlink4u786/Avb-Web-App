@@ -7585,12 +7585,6 @@ export default function App() {
       const revenueLostData = revenueLostResult.status === "fulfilled" ? revenueLostResult.value : null;
       const threeBasicsData = threeBasicsResult.status === "fulfilled" ? threeBasicsResult.value : null;
 
-      if (dateResult.status === "rejected") console.warn(`[Cell AVB] ${month}: Updated Date tab unavailable`, dateResult.reason);
-      if (rcaResult.status === "rejected") console.warn(`[Cell AVB] ${month}: RCA of Plat + tab unavailable`, rcaResult.reason);
-      if (fiveGResult.status === "rejected") console.warn(`[Cell AVB] ${month}: 5G tab unavailable`, fiveGResult.reason);
-      if (historyResult.status === "rejected") console.warn(`[Cell AVB] ${month}: Cell Avb history tab unavailable`, historyResult.reason);
-      if (s2sResult.status === "rejected") console.error(`[Cell AVB] ${month}: S2S BB installed loading failed`, s2sResult.reason);
-      if (revenueLostResult.status === "rejected") console.error(`[Cell AVB] ${month}: Revenue Lost sites loading failed`, revenueLostResult.reason);
       if (threeBasicsResult.status === "rejected") console.error(`[Cell AVB] ${month}: 3 Basics KPIs loading failed (tab verified to exist)`, threeBasicsResult.reason);
 
       setMonthRca(rcaSheet);
