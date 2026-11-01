@@ -62,7 +62,6 @@ import ExportButton from "./components/ExportButton";
 import WeatherRadar from "./components/WeatherRadar";
 import RainAlertWidget from "./components/RainAlertWidget";
 import { fetchGoogleSheet } from "./services/googleSheets";
-import { fetchSupabaseMonthCA, mergeSheetWithSupabaseCA } from "./services/supabaseCA";
 import { type SheetPayload } from "./types";
 import {
   type SiteData,
@@ -77,6 +76,7 @@ import {
   isBelowBase,
   isNPSSite,
 } from "./types";
+
 
 // Current-month CA bands; missing/zero CA is excluded from these bands.
 type CaBand = "all" | "below95" | "95to98" | "above98";
@@ -1050,7 +1050,7 @@ function ThreeBasicsKpiPage({
 
   if (!kpiData) return (
     <div className="rounded-xl border border-amber-300 bg-amber-50 p-8 text-center font-bold text-amber-900">
-      "3 Basics KPIs" Google Sheet tab is not available. Confirm the tab name is exactly <b>3 Basics KPIs</b>.
+      3 Basics KPIs data has not loaded. The tab exists in the October workbook. Please refresh; if the issue continues, inspect the Google Sheets request error in the browser console.
     </div>
   );
 
@@ -1228,6 +1228,114 @@ function ThreeBasicsKpiPage({
 }
 
 // ============================================================
+//  CELL AVB SUPABASE DATA LAYER (C-1 / C-6 ONLY)
+//  Google Sheets remains connected for Fuel, Electricity and supporting tabs.
+// ============================================================
+const CELL_MASTER_TABLE = "cell_avb_c1_c6_site_master";
+const CELL_CA_TABLE = "ca_tracker_oct2026";
+
+/**
+ * October CA and technology availability come exclusively from Supabase.
+ * The 27-field C-1/C-6 master is the site population; supporting Google
+ * Sheets modules are intentionally untouched.
+ *
+ * Access: the site master requires an authenticated Supabase session.
+ * Never put a service-role key in a browser application.
+ */
+async function fetchCellAvbFromSupabase(): Promise<SheetPayload> {
+  const env = (import.meta as any).env || {};
+  const base = String(env.VITE_SUPABASE_URL || "").replace(/\/$/, "");
+  const key = String(env.VITE_SUPABASE_PUBLISHABLE_KEY || env.VITE_SUPABASE_ANON_KEY || "");
+  if (!base || !key) throw new Error("Missing Supabase URL or publishable key in Vite configuration");
+
+  // Dashboard login must be a real Supabase Auth session, not a local UI flag.
+  const sessionRaw = sessionStorage.getItem("cell_avb_supabase_session");
+  const session = sessionRaw ? JSON.parse(sessionRaw) : null;
+  if (!session?.access_token) throw new Error("Supabase authentication required. Please sign in using your Supabase Auth email and password.");
+  let token = String(session.access_token);
+  if (Number(session.expires_at || 0) * 1000 < Date.now() + 60000) {
+    if (!session.refresh_token) throw new Error("Supabase session expired. Please sign in again.");
+    const refreshed = await fetch(`${base}/auth/v1/token?grant_type=refresh_token`, {
+      method: "POST", headers: { apikey: key, "Content-Type": "application/json" },
+      body: JSON.stringify({ refresh_token: session.refresh_token })
+    });
+    if (!refreshed.ok) { sessionStorage.removeItem("cell_avb_supabase_session"); throw new Error("Supabase session expired. Please sign in again."); }
+    const next = await refreshed.json();
+    next.expires_at = Math.floor(Date.now() / 1000) + Number(next.expires_in || 3600);
+    sessionStorage.setItem("cell_avb_supabase_session", JSON.stringify(next));
+    token = next.access_token;
+  }
+  const headers = { apikey: key, Authorization: `Bearer ${token}`, Accept: "application/json" };
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 45000);
+
+  const fetchPages = async (table: string, columns: string, filter = "") => {
+    const rows: Record<string, any>[] = [];
+    for (let offset = 0; offset < 9000; offset += 1000) {
+      const url = `${base}/rest/v1/${table}?select=${encodeURIComponent(columns)}${filter}&limit=1000&offset=${offset}`;
+      const response = await fetch(url, { headers, cache: "no-store", signal: controller.signal });
+      if (!response.ok) {
+        const details = (await response.text()).slice(0, 240);
+        throw new Error(`Supabase ${table}: HTTP ${response.status}: ${details}`);
+      }
+      const page = await response.json() as Record<string, any>[];
+      rows.push(...page);
+      if (page.length < 1000) break;
+    }
+    return rows;
+  };
+
+  try {
+    const master = await fetchPages(CELL_MASTER_TABLE, "*");
+    if (!master.length) {
+      throw new Error("C-1/C-6 Site Master returned no records. Sign in with an authorized Supabase account; the table has 1,866 imported sites and its RLS does not permit anonymous access.");
+    }
+    const dayNames = Array.from({ length: 31 }, (_, i) => `${i + 1}-Oct`);
+    const caFields = ["SITE_ID", "OCT'26 Cell A", "OCT'26 LS", "OCT'26 TCH", "OCT'26 Utran", "OCT'26 Eutran", "OCT'26 NR Cell", ...dayNames];
+    const columns = caFields.map(name => `"${name.replace(/"/g, '\"')}"`).join(",");
+    const caRows = await fetchPages(CELL_CA_TABLE, columns, `&${encodeURIComponent("Sub-Region")}=in.(Central-1,Central-6)`);
+    if (!caRows.length) throw new Error("No CA records found for Central-1 and Central-6. Check the Supabase CA table and sub-region values.");
+    const byId = new Map(caRows.map(r => [String(r.SITE_ID ?? "").trim().replace(/\.0+$/, ""), r]));
+    const matchedCount = master.filter(site => byId.has(String(site["Site ID"] ?? "").trim().replace(/\.0+$/, ""))).length;
+    if (!matchedCount) throw new Error("Site Master and CA tracker have no matching Site IDs; cannot display zero-valued KPIs as valid data.");
+    console.info(`[Cell AVB] Supabase matched ${matchedCount}/${master.length} Site Master records with ${caRows.length} CA tracker records`);
+
+    const result = master.map(site => {
+      const id = String(site["Site ID"] ?? "").trim().replace(/\.0+$/, "");
+      const ca = byId.get(id) || {};
+      const monthly = ca["OCT'26 Cell A"] ?? "";
+      const merged: Record<string, any> = {
+        ...site,
+        "Site ID": id,
+        "Current Month": monthly,
+        "Oct'26 Cell A": monthly,
+        "OCT'26 Cell A": monthly,
+        "OCT'26 LS": ca["OCT'26 LS"] ?? "",
+        "OCT'26 TCH": ca["OCT'26 TCH"] ?? "",
+        "OCT'26 Utran": ca["OCT'26 Utran"] ?? "",
+        "OCT'26 Eutran": ca["OCT'26 Eutran"] ?? "",
+        "OCT'26 NR Cell": ca["OCT'26 NR Cell"] ?? "",
+        "TCH": ca["OCT'26 TCH"] ?? "",
+        "Cell_U": ca["OCT'26 Utran"] ?? "",
+        "Cell_EU": ca["OCT'26 Eutran"] ?? "",
+        "NR Cell": ca["OCT'26 NR Cell"] ?? "",
+      };
+      for (let i = 1; i <= 31; i++) {
+        const value = ca[`${i}-Oct`] ?? "";
+        merged[`${i}-Oct`] = value;
+        merged[`${i}-Oct-26`] = value;
+        merged[`${String(i).padStart(2, "0")}-Oct-26`] = value;
+      }
+      return merged;
+    });
+    const headersOut = Array.from(new Set(result.flatMap(row => Object.keys(row))));
+    return { headers: headersOut, rows: result } as SheetPayload;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// ============================================================
 //  CONSTANTS
 // ============================================================
 
@@ -1238,7 +1346,6 @@ const SHEET_IDS = {
   august: "1po40LvnGZL8Nnd4BBk-P6uC_tL4Fi9Q8PuMQZ7aQSdc",
   september: "1po40LvnGZL8Nnd4BBk-P6uC_tL4Fi9Q8PuMQZ7aQSdc",
   october: "1po40LvnGZL8Nnd4BBk-P6uC_tL4Fi9Q8PuMQZ7aQSdc",
-  november: "1po40LvnGZL8Nnd4BBk-P6uC_tL4Fi9Q8PuMQZ7aQSdc",
 } as const;
 
 // Month dashboard navigation
@@ -1264,7 +1371,7 @@ const NAV_ITEMS = [
   { id: "weather", label: "Weather Radar", icon: CloudRain },
 ] as const;
 
-type Month = "july" | "august" | "september" | "october" | "november";
+type Month = "july" | "august" | "september" | "october";
 type AppState = "loading" | "dashboard" | "error";
 type ViewMode = "home" | "month" | "prepost" | "fuel" | "electricity";
 type PrePostSubView = "analysis" | "query";
@@ -3393,7 +3500,7 @@ function SiteQuery({ sites, historyData = null, rawData = null }: { sites: SiteD
   }, [selectedSite]);
 
 
-  // October technology-wise Cell AVB from Sheet1.
+  // October technology-wise Cell AVB from Supabase CA.
   // TCH = 2G, Cell_U / U Cell = 3G, Cell_EU / EU Cell / LTE = 4G.
   const technologyWiseAvb = useMemo(() => {
     if (!selectedSite) return null;
@@ -3605,7 +3712,7 @@ function SiteQuery({ sites, historyData = null, rawData = null }: { sites: SiteD
     };
 
     return {
-      month: (rawData?.rows?.[0]?.["__selectedMonth"] === "november" ? "Nov'26" : "Oct'26"),
+      month: "Oct'26",
       g2,
       g3,
       g4,
@@ -3629,7 +3736,7 @@ function SiteQuery({ sites, historyData = null, rawData = null }: { sites: SiteD
         <div className="flex items-start justify-between gap-3 flex-wrap mb-4">
           <div>
             <h3 className="text-white font-semibold text-sm">Technology-wise Cell AVB — {data.month}</h3>
-            <p className="text-xs text-slate-500 mt-1">Source: Sheet1 · TCH = 2G · Cell_U = 3G · Cell_EU = 4G</p>
+            <p className="text-xs text-slate-500 mt-1">Source: Supabase October CA · TCH = 2G · Utran = 3G · Eutran = 4G</p>
           </div>
           <span className="text-[10px] px-2 py-1 rounded bg-cyan-500/10 text-cyan-300 border border-cyan-500/20">Telco Diagnostic View</span>
         </div>
@@ -5555,9 +5662,11 @@ function GridPerformanceScorecard({
 
 function EnhancedOverallSummary({
   sites,
+  rawData,
   lastUpdatedDate,
 }: {
   sites: SiteData[];
+  rawData?: SheetPayload | null;
   lastUpdatedDate?: string;
 }) {
   const hostRef = useRef<HTMLDivElement>(null);
@@ -5754,14 +5863,11 @@ function EnhancedOverallSummary({
       });
     };
 
-    enhance();
-
-    const observer = new MutationObserver(() => {
-      window.requestAnimationFrame(enhance);
-    });
-
-    observer.observe(root, { childList: true, subtree: true });
-    return () => observer.disconnect();
+    // IMPORTANT: Do not observe all subtree mutations while mutating table cells.
+    // That creates an unbounded MutationObserver -> RAF -> DOM mutation loop,
+    // freezing the browser during dashboard startup.
+    const frame = window.requestAnimationFrame(enhance);
+    return () => window.cancelAnimationFrame(frame);
   }, [siteMap, latest3Dates]);
 
   return (
@@ -5828,6 +5934,7 @@ function EnhancedOverallSummary({
           </div>;
         })()}
       </div>
+      <DailyRegionalCaLsChart rawData={rawData} sites={sites} />
       <OverallSummaryComponent sites={sites} />
     </div>
   );
@@ -5836,6 +5943,80 @@ function EnhancedOverallSummary({
 // ============================================================
 //  OVERALL SUMMARY WITH EXPORT (unchanged)
 // ============================================================
+
+
+// LS values are not inferred from CA and are never hardcoded as current data.
+// A secure LS aggregate API can be connected independently when available.
+// Daily C-1 / C-6 availability and load-shedding comparison, using actual workbook values.
+function DailyRegionalCaLsChart({ rawData, sites }: { rawData?: SheetPayload | null; sites: SiteData[] }) {
+  const [region, setRegion] = useState<"all" | "C-1" | "C-6">("all");
+  const [showLs, setShowLs] = useState(true);
+  const chartData = useMemo(() => {
+    if (!rawData?.rows?.length) return [];
+    const normalize = (v: unknown) => String(v ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
+    const validSites = new Map(sites.map(s => [String(s.siteName).trim(), s]));
+    const buckets = Array.from({ length: 31 }, (_, i) => ({ day: i + 1, date: `${i + 1} Oct`, c1Sum: 0, c1N: 0, c6Sum: 0, c6N: 0, ls1Sum: 0, ls1N: 0, ls6Sum: 0, ls6N: 0 }));
+    for (const row of rawData.rows as Record<string, unknown>[]) {
+      const idKey = Object.keys(row).find(k => ["siteid", "sitename", "site"].includes(normalize(k)));
+      if (!idKey) continue;
+      const site = validSites.get(String(row[idKey] ?? "").trim());
+      if (!site || site.currentAvb <= 0) continue;
+      const r = normalize(site.subRegion);
+      if (r !== "c1" && r !== "c6") continue;
+      for (const [key, rawValue] of Object.entries(row)) {
+        const isLs = /(?:^|\W)(?:ls|load\s*shedding)(?:\W|$)/i.test(key);
+        const datePart = isLs ? key.replace(/load\s*shedding(?:\s*\(hrs?\))?|\bLS\b/gi, "").replace(/^[-:_\s]+|[-:_\s]+$/g, "") : key;
+        const date = normalizeDailyDateKey(datePart);
+        if (!date || !/^\d{1,2}-Oct-26$/.test(date)) continue;
+        if (rawValue == null || String(rawValue).trim() === "") continue;
+        const value = Number(String(rawValue).replace(/[% ,]/g, ""));
+        if (!Number.isFinite(value)) continue;
+        const b = buckets[Number(date.split("-")[0]) - 1];
+        if (isLs) {
+          if (value < 0) continue;
+          if (r === "c1") { b.ls1Sum += value; b.ls1N++; }
+          else { b.ls6Sum += value; b.ls6N++; }
+        } else {
+          const ca = value > 0 && value <= 1 ? value * 100 : value;
+          if (ca < 0 || ca > 100) continue;
+          if (r === "c1") { b.c1Sum += ca; b.c1N++; }
+          else { b.c6Sum += ca; b.c6N++; }
+        }
+      }
+    }
+    return buckets.map(b => ({ date: b.date,
+      c1: b.c1N ? +(b.c1Sum / b.c1N).toFixed(2) : null,
+      c6: b.c6N ? +(b.c6Sum / b.c6N).toFixed(2) : null,
+      ls1: b.day <= 0 ? null : (b.ls1N ? +(b.ls1Sum / b.ls1N).toFixed(2) : null),
+      ls6: b.day <= 0 ? null : (b.ls6N ? +(b.ls6Sum / b.ls6N).toFixed(2) : null),
+    }));
+  }, [rawData, sites]);
+  const hasCa = chartData.some(d => d.c1 !== null || d.c6 !== null);
+  const hasLs = chartData.some(d => d.ls1 !== null || d.ls6 !== null);
+  return <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+    <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+      <div><h3 className="text-xl font-bold text-slate-900">Daily Cell AVB vs Load Shedding — C-1 &amp; C-6</h3>
+        <p className="text-xs text-slate-500">October 2026 · Daily site-average CA (%) and LS (hours) · 98% target · LS shown only where available from the current data source</p></div>
+      <div className="flex gap-2">{(["all", "C-1", "C-6"] as const).map(v => <button key={v} type="button" onClick={() => setRegion(v)} className={`rounded-lg px-3 py-2 text-sm font-semibold ${region === v ? "bg-emerald-700 text-white" : "bg-slate-100 text-slate-700"}`}>{v === "all" ? "Both" : v}</button>)}</div>
+    </div>
+    {hasCa ? <>
+      <div className="h-[460px] w-full"><ResponsiveContainer width="100%" height="100%"><ComposedChart data={chartData} margin={{ top: 24, right: 25, bottom: 8, left: 0 }}>
+        <CartesianGrid strokeDasharray="3 5" stroke="#e2e8f0" /><XAxis dataKey="date" tick={{ fontSize: 11 }} interval={2} />
+        <YAxis yAxisId="ca" domain={[93, 100]} tickFormatter={v => `${v}%`} tick={{ fontSize: 11 }} />
+        <YAxis yAxisId="ls" orientation="right" domain={[0, "auto"]} tickFormatter={v => `${v}h`} tick={{ fontSize: 11 }} />
+        <Tooltip formatter={(v: any, name: any) => [v == null ? "—" : `${v}${String(name).includes("LS") ? "h" : "%"}`, name]} />
+        <Legend />
+        <Line yAxisId="ca" dataKey={() => 98} name="98% Target" stroke="#ea580c" strokeDasharray="6 4" dot={false} strokeWidth={1.5} legendType="none" />
+        {(region === "all" || region === "C-1") && <Line yAxisId="ca" type="monotone" dataKey="c1" name="C-1 CA" stroke="#059669" strokeWidth={3} connectNulls dot={{ r: 2 }} label={{ position: "top", fontSize: 9, formatter: (v: unknown) => v == null || !Number.isFinite(Number(v)) ? "" : `${Number(v).toFixed(2)}%` }} />}
+        {(region === "all" || region === "C-6") && <Line yAxisId="ca" type="monotone" dataKey="c6" name="C-6 CA" stroke="#2563eb" strokeWidth={3} connectNulls dot={{ r: 2 }} label={{ position: "top", fontSize: 9, formatter: (v: unknown) => v == null || !Number.isFinite(Number(v)) ? "" : `${Number(v).toFixed(2)}%` }} />}
+        {showLs && (region === "all" || region === "C-1") && <Line yAxisId="ls" type="monotone" dataKey="ls1" name="C-1 LS" stroke="#a21caf" strokeWidth={2.5} connectNulls dot={{ r: 2 }} label={{ position: "top", fontSize: 9, formatter: (v: unknown) => v == null || !Number.isFinite(Number(v)) ? "" : `${Number(v).toFixed(1)}h` }} />}
+        {showLs && (region === "all" || region === "C-6") && <Line yAxisId="ls" type="monotone" dataKey="ls6" name="C-6 LS" stroke="#f59e0b" strokeWidth={2.5} connectNulls dot={{ r: 2 }} label={{ position: "bottom", fontSize: 9, formatter: (v: unknown) => v == null || !Number.isFinite(Number(v)) ? "" : `${Number(v).toFixed(1)}h` }} />}
+      </ComposedChart></ResponsiveContainer></div>
+      <label className="mt-2 flex items-center gap-2 text-xs text-slate-600"><input type="checkbox" checked={showLs} onChange={e => setShowLs(e.target.checked)} /> Show LS lines</label>
+      {!hasLs && <p className="mt-2 text-sm text-amber-700">LS is not present in the loaded data. The protected central_ls_daily table requires a dedicated authorized aggregate endpoint.</p>}
+    </> : <p className="py-12 text-center text-sm text-slate-600">No October daily CA columns were found in the loaded workbook.</p>}
+  </section>;
+}
 
 function OverallSummaryWithExport({ sites, rawData, lastUpdatedDate }: { sites: SiteData[]; rawData?: SheetPayload | null; lastUpdatedDate?: string }) {
   const [expandedOmo, setExpandedOmo] = useState<string | null>(null);
@@ -6094,7 +6275,8 @@ function OverallSummaryWithExport({ sites, rawData, lastUpdatedDate }: { sites: 
       </div>
 
       <div className="overall-summary-light">
-        <EnhancedOverallSummary sites={sites} lastUpdatedDate={lastUpdatedDate} />
+        <EnhancedOverallSummary sites={sites} rawData={rawData} lastUpdatedDate={lastUpdatedDate} />
+
       </div>
 
       {/* Grid-wise drilldown within Overall Summary */}
@@ -7091,22 +7273,27 @@ function LoginScreen({ onLogin }: { onLogin: (success: boolean) => void }) {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
-    if (username.trim() === "" || password.trim() === "") {
-      setError("Please fill in all fields");
-      return;
-    }
+    const env = (import.meta as any).env || {};
+    const base = String(env.VITE_SUPABASE_URL || "").replace(/\/$/, "");
+    const key = String(env.VITE_SUPABASE_PUBLISHABLE_KEY || env.VITE_SUPABASE_ANON_KEY || "");
+    if (!base || !key) { setError("Missing Supabase environment configuration (URL / publishable key)."); return; }
+    if (!username.trim() || !password) { setError("Enter your username or email and password."); return; }
     setLoading(true);
-    setTimeout(() => {
-      if (username === "c1nar" && password === "irfan123") {
-        onLogin(true);
-      } else {
-        setError("Invalid username or password");
-        setLoading(false);
-      }
-    }, 600);
+    try {
+      const res = await fetch(`${base}/auth/v1/token?grant_type=password`, {
+        method: "POST", headers: { apikey: key, "Content-Type": "application/json" },
+        body: JSON.stringify({ email: username.trim().toLowerCase() === "c1nar" ? "irfanlink4u@gmail.com" : username.trim(), password })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.access_token) throw new Error(res.status === 400 ? "Supabase password is incorrect for this account. Use the password set in Supabase Authentication, or reset it." : (data.msg || data.error_description || data.message || `Login failed (HTTP ${res.status})`));
+      data.expires_at = Math.floor(Date.now() / 1000) + Number(data.expires_in || 3600);
+      sessionStorage.setItem("cell_avb_supabase_session", JSON.stringify(data));
+      onLogin(true);
+    } catch (err) { setError(err instanceof Error ? err.message : "Unable to sign in to Supabase"); }
+    finally { setLoading(false); }
   };
 
   return (
@@ -7122,7 +7309,7 @@ function LoginScreen({ onLogin }: { onLogin: (success: boolean) => void }) {
           <form onSubmit={handleSubmit} className="space-y-5">
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-1.5">Username</label>
-              <input type="text" value={username} onChange={(e) => setUsername(e.target.value)} placeholder="Enter your username" className="w-full px-4 py-3 rounded-lg bg-slate-900/60 border border-slate-700 focus:border-cyan-500 outline-none text-white placeholder:text-slate-500 transition-colors" />
+              <input type="text" value={username} onChange={(e) => setUsername(e.target.value)} placeholder="c1nar or Supabase email" className="w-full px-4 py-3 rounded-lg bg-slate-900/60 border border-slate-700 focus:border-cyan-500 outline-none text-white placeholder:text-slate-500 transition-colors" />
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-1.5">Password</label>
@@ -7165,13 +7352,12 @@ const normalizeDateLabel = (value: string): string => {
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   useEffect(() => {
-    const auth = sessionStorage.getItem("c1_auth");
-    if (auth === "true") setIsAuthenticated(true);
+    const auth = sessionStorage.getItem("cell_avb_supabase_session");
+    if (auth) { try { if (JSON.parse(auth)?.access_token) setIsAuthenticated(true); } catch { sessionStorage.removeItem("cell_avb_supabase_session"); } }
   }, []);
 
   const handleLogin = (success: boolean) => {
     if (success) {
-      sessionStorage.setItem("c1_auth", "true");
       setIsAuthenticated(true);
     }
   };
@@ -7181,8 +7367,12 @@ export default function App() {
   const [appState, setAppState] = useState<AppState>("dashboard");
   const [errorMsg, setErrorMsg] = useState("");
 
+
+
+
+
   const [monthData, setMonthData] = useState<SheetPayload | null>(null);
-  const [caSyncStatus, setCaSyncStatus] = useState<string>("Not loaded");
+
   const [monthRca, setMonthRca] = useState<SheetPayload | null>(null);
   const [month5G, setMonth5G] = useState<SheetPayload | null>(null);
   const [monthCellAvbHistory, setMonthCellAvbHistory] = useState<SheetPayload | null>(null);
@@ -7270,9 +7460,72 @@ export default function App() {
     });
   };
 
+  // Supabase archive retains the original worksheet header order, including
+  // duplicate headings (e.g. Fuel History has two columns named "Month").
+  // Map rows by position exactly as the original Google Sheet parser does.
+  const fetchArchivedSheet = async (sheetName: string): Promise<SheetPayload> => {
+    const env = (import.meta as any).env || {};
+    const base = String(env.VITE_SUPABASE_URL || "").replace(/\/$/, "");
+    const key = String(env.VITE_SUPABASE_PUBLISHABLE_KEY || env.VITE_SUPABASE_ANON_KEY || "");
+    if (!base || !key) throw new Error("Supabase configuration missing");
+    const saved = sessionStorage.getItem("cell_avb_supabase_session");
+    const session = saved ? JSON.parse(saved) : null;
+    if (!session?.access_token) throw new Error("Please sign in to load Supabase archive data");
+    const headers = { apikey: key, Authorization: `Bearer ${session.access_token}`, Accept: "application/json" };
+    const pageSize = 1000;
+    const knownCounts: Record<string, number> = {
+      "Fuel History": 19876,
+      "Deviation Fuel": 292,
+      "Monthly Fuel History": 373,
+      "3 Basics KPIs": 182,
+    };
+    const all: Array<{ headers: string[]; row_values: unknown[]; source_row: number }> = [];
+    const loadPage = async (offset: number) => {
+      const params = new URLSearchParams({ select: "headers,row_values,source_row", sheet_name: `eq.${sheetName}`, order: "source_row.asc", limit: String(pageSize), offset: String(offset) });
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 15000);
+      try {
+        const response = await fetch(`${base}/rest/v1/cell_avb_sheet_archive?${params}`, { headers, signal: controller.signal });
+        if (!response.ok) throw new Error(`Supabase ${sheetName}: HTTP ${response.status} ${(await response.text()).slice(0, 160)}`);
+        return await response.json() as typeof all;
+      } finally { clearTimeout(timer); }
+    };
+    // Fetch batches concurrently instead of waiting for each 1,000-row request.
+    // A first-page check also supports any future changes in archive size.
+    const first = await loadPage(0);
+    all.push(...first);
+    const expected = knownCounts[sheetName];
+    if (first.length === pageSize) {
+      if (expected) {
+        const offsets = Array.from({ length: Math.ceil(expected / pageSize) - 1 }, (_, i) => (i + 1) * pageSize);
+        for (let i = 0; i < offsets.length; i += 6) {
+          const pages = await Promise.all(offsets.slice(i, i + 6).map(loadPage));
+          pages.forEach(page => all.push(...page));
+        }
+      } else {
+        for (let offset = pageSize; ; offset += pageSize) {
+          const page = await loadPage(offset);
+          all.push(...page);
+          if (page.length < pageSize) break;
+        }
+      }
+    }
+
+    if (!all.length) throw new Error(`No archived records for ${sheetName}`);
+    const columnNames = all[0].headers.map(String);
+    return {
+      headers: columnNames,
+      rows: all.map(item => {
+        const result: Record<string, any> = {};
+        columnNames.forEach((name, i) => { result[name] = item.row_values?.[i] ?? ""; });
+        return result;
+      }),
+    } as SheetPayload;
+  };
+
   const loadMonthData = async (month: Month) => {
     // October-only mode: prevent requests to archived monthly workbooks.
-    if (month !== "october" && month !== "november") return loadMonthData("october");
+    if (month !== "october") return loadMonthData("october");
     // Every month must load strictly from its own workbook.
     // The sequence guard prevents an older request (for example August)
     // from finishing later and overwriting a newer September selection.
@@ -7300,25 +7553,24 @@ export default function App() {
 
     let mainSheetReady = false;
     try {
-      console.info(`[Cell AVB] Loading ${month} Cell AVB CA from Supabase; supporting KPIs from Google Sheets workbook: ${sheetId}`);
+      console.info(`[Cell AVB] Loading ${month} CA and site master from Supabase`);
 
-      // Google Sheet-1 is always the master. Supabase supplies ONLY the selected
-      // month's day-wise CA, derived monthly CA and available technology CA.
-      // Never build a new site master from Supabase rows.
-      const master = await withSheetTimeout(fetchGoogleSheet(sheetId), 'Google Sheet-1 master', 30000);
+      // Main AVB sheet is the source for ALL C1 & C6 dashboard analysis tabs.
+      // Load it first and fail clearly if it is not available.
+      const data = await withSheetTimeout(fetchCellAvbFromSupabase(), `${month} Supabase AVB`, 30000);
+
       if (requestId !== monthLoadSeq.current) return;
-      if (!master.rows.length) throw new Error('Google Sheet-1 returned no site master records');
-      const snapshot = await withSheetTimeout(fetchSupabaseMonthCA(month), `${month} Supabase CA`, 30000);
-      if (requestId !== monthLoadSeq.current) return;
-      if (!snapshot.bySite.size) throw new Error(`Supabase ${month} CA table returned no sites`);
-      const merged = mergeSheetWithSupabaseCA(master, snapshot);
-      merged.sheet.rows.forEach(r => { r["__selectedMonth"] = month; });
+
+      if (!data || !Array.isArray(data.rows) || data.rows.length === 0) {
+        throw new Error(`No AVB rows returned from ${month} workbook (${sheetId})`);
+      }
+
       mainSheetReady = true;
-      setMonthData(merged.sheet);
-      setMonthLastUpdated(snapshot.latestDate || '');
-      setCaSyncStatus(`Google Sheet-1 master: ${master.rows.length} sites · Supabase ${month} CA matched: ${merged.caCoverage.matched} · Latest: ${snapshot.latestDate || 'no populated day'}`);
-      setViewMode('month');
-      setAppState('dashboard');
+      setMonthData(data);
+      // Show October dashboard as soon as its main AVB data is ready.
+      // Supporting tabs continue in the background and populate their own views.
+      setViewMode("month");
+      setAppState("dashboard");
 
       // Supporting tabs are optional. A missing supporting tab must NOT cause
       // the whole dashboard to fall back to old/mock data.
@@ -7326,11 +7578,11 @@ export default function App() {
         fetchGoogleSheet(sheetId, "Updated Date"),
         fetchGoogleSheet(sheetId, "RCA of Plat +"),
         fetchGoogleSheet(sheetId, "5G"),
-        fetchGoogleSheet(sheetId, "Cell Avb history"),
+        Promise.resolve(null as SheetPayload | null),
         fetchGoogleSheet(sheetId, "S2S BB installed"),
         fetchGoogleSheet(sheetId, "Revenue Lost sites"),
-        fetchGoogleSheet(sheetId, "3 Basics KPIs"),
-      ].map((request, index) => withSheetTimeout(Promise.resolve(request), `${month} supporting sheet #${index + 1}`, 12000)));
+        fetchArchivedSheet("3 Basics KPIs"),
+      ].map((request, index) => withSheetTimeout(Promise.resolve(request), `${month} supporting sheet #${index + 1}`, 60000)));
 
       if (requestId !== monthLoadSeq.current) return;
 
@@ -7346,9 +7598,9 @@ export default function App() {
       if (rcaResult.status === "rejected") console.warn(`[Cell AVB] ${month}: RCA of Plat + tab unavailable`, rcaResult.reason);
       if (fiveGResult.status === "rejected") console.warn(`[Cell AVB] ${month}: 5G tab unavailable`, fiveGResult.reason);
       if (historyResult.status === "rejected") console.warn(`[Cell AVB] ${month}: Cell Avb history tab unavailable`, historyResult.reason);
-      if (s2sResult.status === "rejected") console.warn(`[Cell AVB] ${month}: S2S BB installed tab unavailable`, s2sResult.reason);
-      if (revenueLostResult.status === "rejected") console.warn(`[Cell AVB] ${month}: Revenue Lost sites tab unavailable`, revenueLostResult.reason);
-      if (threeBasicsResult.status === "rejected") console.warn(`[Cell AVB] ${month}: 3 Basics KPIs tab unavailable`, threeBasicsResult.reason);
+      if (s2sResult.status === "rejected") console.error(`[Cell AVB] ${month}: S2S BB installed loading failed`, s2sResult.reason);
+      if (revenueLostResult.status === "rejected") console.error(`[Cell AVB] ${month}: Revenue Lost sites loading failed`, revenueLostResult.reason);
+      if (threeBasicsResult.status === "rejected") console.error(`[Cell AVB] ${month}: 3 Basics KPIs loading failed (tab verified to exist)`, threeBasicsResult.reason);
 
       setMonthRca(rcaSheet);
       setMonth5G(fiveGSheet);
@@ -7359,7 +7611,7 @@ export default function App() {
 
       if (dateData && Array.isArray(dateData.rows) && dateData.rows.length > 0) {
         const row = dateData.rows[0];
-        // Date in the Google workbook is not the CA date; Supabase CA sets monthLastUpdated.
+        setMonthLastUpdated(row["Last Updated"] || row["Date"] || row["Last Date"] || "");
 
         const parsedIndex = parseInt(row["Column Index"] || row["Column"] || row["Index"] || "0", 10);
         setMonthLastColumnIndex(Number.isFinite(parsedIndex) ? parsedIndex : 0);
@@ -7387,8 +7639,8 @@ export default function App() {
       setUseMock(false);
       setViewMode("month");
       setErrorMsg(
-        `Failed to load Google Sheet-1 master or ${month.charAt(0).toUpperCase() + month.slice(1)} CA data from Supabase. ` +
-        `Previous month data has been cleared to avoid showing stale values.`
+        `Failed to load ${month.charAt(0).toUpperCase() + month.slice(1)} AVB data from Supabase. ` +
+        `Previous month data has been cleared to avoid showing stale values. ${error instanceof Error ? error.message : String(error)}`
       );
       setAppState("error");
     }
@@ -7398,107 +7650,65 @@ export default function App() {
   const loadFuelDashboard = async () => {
     setAppState("loading");
     setErrorMsg("");
-    // Fuel History and Deviation Fuel may live in a workbook other than the
-    // active Cell AVB month. Search configured workbooks, newest first.
-    const workbooks = [SHEET_IDS.october];
-    const attempts: string[] = [];
-    let history: SheetPayload | null = null;
+    // Four fuel-related worksheets are now loaded from Supabase, not Google Sheets.
+    // Fetch concurrently; keep T-Prime on Google Sheets because it is not archived.
+    let history: SheetPayload;
     let deviation: SheetPayload | null = null;
-    let historyWorkbook: string | null = null;
-    for (const workbook of workbooks) {
-      try {
-        const result = await fetchGoogleSheet(workbook, "Fuel History");
-        if (result && Array.isArray(result.rows) && result.rows.length > 0) {
-          history = result;
-          historyWorkbook = workbook;
-          break;
-        }
-        attempts.push(`${workbook.slice(0, 8)}…: no Fuel History rows`);
-      } catch (error) {
-        attempts.push(`${workbook.slice(0, 8)}…: ${error instanceof Error ? error.message : String(error)}`);
-      }
-    }
-    if (!history) {
-      console.error("Fuel History lookup failed:", attempts);
+    let monthlyHistory: SheetPayload | null = null;
+    try {
+      const [h, d, m] = await Promise.all([
+        fetchArchivedSheet("Fuel History"),
+        fetchArchivedSheet("Deviation Fuel"),
+        fetchArchivedSheet("Monthly Fuel History"),
+      ]);
+      history = h;
+      deviation = d;
+      monthlyHistory = m;
+    } catch (error) {
+      console.error("Supabase fuel archive loading failed", error);
       setFuelHistory(null);
       setMonthlyFuelData(null);
       setFuelDeviation(null);
       setFuelTPrime(null);
       setViewMode("fuel");
-      setErrorMsg("Fuel History could not be retrieved from the configured workbooks. Check Google Sheet access, the 'Fuel History' tab name and the browser console for the actual request errors. " + attempts[0]);
+      setErrorMsg(`Fuel archive could not be loaded from Supabase: ${error instanceof Error ? error.message : String(error)}`);
       setAppState("error");
       return;
     }
-    // Prefer the same workbook as Fuel History, but permit the new
-    // Deviation Fuel tab to be in another configured workbook.
-    const deviationWorkbooks = [historyWorkbook!, ...workbooks.filter(id => id !== historyWorkbook)];
-    for (const workbook of deviationWorkbooks) {
-      try {
-        const result = await fetchGoogleSheet(workbook, "Deviation Fuel");
-        if (result && Array.isArray(result.rows) && result.rows.length > 0) {
-          deviation = result;
-          break;
-        }
-      } catch (error) {
-        console.warn("Deviation Fuel not available in workbook", workbook, error);
-      }
-    }
-    // T-Prime worksheet may be in a different configured workbook.
-    let tPrime: SheetPayload | null = null;
-    for (const workbook of deviationWorkbooks) {
-      for (const sheetName of ["T_prime", "T-Prime", "T Prime", "T_Prime"]) {
-        try {
-          const candidate = await fetchGoogleSheet(workbook, sheetName);
-          if (candidate && Array.isArray(candidate.rows) && candidate.rows.length > 0) {
-            tPrime = candidate;
-            break;
-          }
-        } catch (error) {
-          // Continue checking other supported worksheet names.
-        }
-      }
-      if (tPrime) break;
-    }
-    // Monthly Fuel History is an independent optional sheet.
-    // Check the Fuel History workbook first, then other configured workbooks.
-    let monthlyHistory: SheetPayload | null = null;
-    for (const workbook of deviationWorkbooks) {
-      try {
-        const candidate = await fetchGoogleSheet(workbook, "Monthly Fuel History");
-        if (candidate?.rows?.length) {
-          monthlyHistory = candidate;
-          break;
-        }
-      } catch (err) {
-        console.warn("Monthly Fuel History unavailable in workbook", workbook, err);
-      }
-    }
+    // Render fuel dashboard immediately after its three Supabase datasets arrive.
+    // Optional T-Prime and site ownership are loaded independently in background.
     setMonthlyFuelData(monthlyHistory);
-    // Load Sheet1 independently: Fuel page can open without first opening Cell AVB.
-    // normalizeRow is the same tested mapping used throughout the Cell AVB application.
-    let ownershipSheet: SheetPayload | null = null;
-    try {
-      const source = await fetchGoogleSheet(SHEET_IDS.october);
-      if (source?.rows?.length) {
-        ownershipSheet = { ...source, rows: source.rows.map(raw => {
-          const site = normalizeRow(raw);
-          return {
-            "Site ID": String(site.siteName ?? "").trim(),
-            "Cluster Owner": String(site.clusterOwner ?? "").trim(),
-            "MS GTL": String(site.msGtl ?? "").trim(),
-            "Zone Lead": String(site.zongLead ?? "").trim(),
-          };
-        }) };
-      }
-    } catch (err) {
-      console.error("Fuel ownership Sheet1 loading failed", err);
-    }
-    setFuelOwnership(ownershipSheet);
-    setFuelTPrime(tPrime);
+    setFuelTPrime(null);
+    setFuelOwnership(null);
     setFuelHistory(history);
     setFuelDeviation(deviation);
     setViewMode("fuel");
     setAppState("dashboard");
+
+    void (async () => {
+      for (const sheetName of ["T-Prime", "T_prime", "T Prime", "T_Prime"]) {
+        try {
+          const candidate = await withSheetTimeout(fetchGoogleSheet(SHEET_IDS.october, sheetName), `T-Prime ${sheetName}`, 2500);
+          if (candidate?.rows?.length) { setFuelTPrime(candidate); break; }
+        } catch { /* Optional sheet is unavailable; do not block fuel dashboard. */ }
+      }
+    })();
+    void (async () => {
+      try {
+        const source = await fetchCellAvbFromSupabase();
+        if (source?.rows?.length) {
+          setFuelOwnership({ ...source, rows: source.rows.map(raw => {
+            const site = normalizeRow(raw);
+            return {
+              "Site ID": String(site.siteName ?? "").trim(),
+              "Cluster Owner": String(site.clusterOwner ?? "").trim(),
+              "MS GTL": String(site.msGtl ?? "").trim(),
+              "Zone Lead": String(site.zongLead ?? "").trim(),
+            };
+          }) });
+        }
+      } catch (err) { console.warn("Optional fuel ownership lookup failed", err); }
+    })();
   };
 
   const load5GPage = async () => {
@@ -7509,13 +7719,11 @@ export default function App() {
       const sheetId = SHEET_IDS.october;
 
       const [data, fiveGSheet, dateData] = await Promise.all([
-        fetchGoogleSheet(sheetId),
-        fetchGoogleSheet(sheetId, "5G"),
+        fetchCellAvbFromSupabase(),
+        Promise.resolve(null as SheetPayload | null),
         fetchGoogleSheet(sheetId, "Updated Date"),
       ]);
 
-      // The standalone 5G dashboard is Google Sheets-backed.
-      // Only the October Cell AVB CA dashboard uses Supabase.
       setMonthData(data);
       setMonth5G(fiveGSheet);
       setSelectedMonth("october");
@@ -7595,30 +7803,6 @@ export default function App() {
     setAppState("dashboard");
   };
 
-  // While the C1/C6 dashboard stays open, refresh only CA every 15 minutes.
-  // Other Google Sheets data is kept in memory and is not re-downloaded.
-  useEffect(() => {
-    if (viewMode !== "month" || (selectedMonth !== "october" && selectedMonth !== "november") || !monthData) return;
-    let alive = true;
-    const timer = setInterval(async () => {
-      try {
-        const snapshot = await fetchSupabaseMonthCA(selectedMonth);
-        if (!alive) return;
-        setMonthData(previous => {
-          if (!previous) return previous;
-          const updated = mergeSheetWithSupabaseCA(previous, snapshot).sheet;
-          updated.rows.forEach(r => { r["__selectedMonth"] = selectedMonth; });
-          return updated;
-        });
-        setMonthLastUpdated(snapshot.latestDate || "");
-        setCaSyncStatus(`Google Sheet-1 master preserved · Supabase ${selectedMonth} CA · ${snapshot.latestDate || "no populated day"} · ${snapshot.total} source records`);
-      } catch (error) {
-        if (alive) { console.warn("Supabase CA background refresh failed; last verified data retained", error); setCaSyncStatus(`CA refresh error: ${error instanceof Error ? error.message : String(error)}`); }
-      }
-    }, 15 * 60 * 1000);
-    return () => { alive = false; clearInterval(timer); };
-  }, [viewMode, selectedMonth, Boolean(monthData)]);
-
   const sites: SiteData[] = useMemo(() => {
     if (useMock) return MOCK_SITES;
     if (!monthData?.rows?.length) return [];
@@ -7629,14 +7813,8 @@ export default function App() {
 
       // Prefer the raw active-workbook daily columns. Fall back to normalizeRow only
       // if no dynamic daily columns were found in the current row.
-      // The already-merged Supabase October CA always overrides Sheet1's CA.
-      // Do not let normalizeRow choose an older Google Sheets monthly value.
-      const liveMonthly = rawRow["Current Month"] === "" || rawRow["Current Month"] == null
-        ? 0 : parseFloatSafe(rawRow["Current Month"]);
       return {
         ...normalized,
-        currentAvb: liveMonthly,
-        monthlyAvb: liveMonthly,
         dailyData:
           Object.keys(extracted.dailyData).length > 0
             ? extracted.dailyData
@@ -7682,9 +7860,6 @@ export default function App() {
             <motion.button variants={{ hidden: { opacity: 0, y: 30 }, show: { opacity: 1, y: 0 } }} whileHover={{ scale: 1.03, boxShadow: "0 0 40px rgba(34, 211, 238, 0.35)" }} whileTap={{ scale: 0.98 }} onClick={() => loadMonthData("october")} className="group relative w-full min-h-[142px] px-6 py-7 rounded-2xl bg-gradient-to-br from-cyan-500/20 to-emerald-500/20 border border-cyan-400/30 hover:border-cyan-300 transition-all duration-300 shadow-xl hover:shadow-cyan-500/40 backdrop-blur-sm overflow-hidden">
               <span className="absolute inset-0 bg-gradient-to-r from-cyan-400/20 to-emerald-400/20 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
               <div className="relative text-center"><span className="block text-xl sm:text-2xl font-extrabold tracking-tight text-white">October 2026</span><span className="text-cyan-200 text-sm">LIVE · Active data</span></div>
-            </motion.button>
-            <motion.button variants={{ hidden: { opacity: 0, y: 30 }, show: { opacity: 1, y: 0 } }} whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.98 }} onClick={() => loadMonthData("november")} className="group relative w-full min-h-[142px] px-6 py-7 rounded-2xl bg-gradient-to-br from-blue-500/20 to-violet-500/20 border border-blue-400/30 hover:border-blue-300 transition-all duration-300 shadow-xl backdrop-blur-sm overflow-hidden">
-              <div className="relative text-center"><span className="block text-xl sm:text-2xl font-extrabold tracking-tight text-white">November 2026</span><span className="text-blue-200 text-sm">LIVE · Independent monthly CA</span></div>
             </motion.button>
             <motion.button variants={{ hidden: { opacity: 0, y: 30 }, show: { opacity: 1, y: 0 } }} whileHover={{ scale: 1.03, boxShadow: "0 0 40px rgba(34, 197, 94, 0.35)" }} whileTap={{ scale: 0.98 }} onClick={loadFuelDashboard} className="group relative w-full min-h-[142px] px-6 py-7 rounded-2xl bg-gradient-to-br from-green-500/25 to-emerald-700/25 border border-green-400/40 hover:border-green-300 transition-all duration-300 shadow-xl hover:shadow-green-500/40 backdrop-blur-sm overflow-hidden">
               <span className="absolute inset-0 bg-gradient-to-r from-green-400/20 to-emerald-400/20 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
@@ -7832,8 +8007,8 @@ export default function App() {
           ? "August 2026"
           : selectedMonth === "september"
             ? "September 2026"
-            : selectedMonth === "november" ? "November 2026" : "October 2026";
-  const isLive = selectedMonth === "october" || selectedMonth === "november";
+            : "October 2026";
+  const isLive = selectedMonth === "october";
 
   return (
     <div className="light-app min-h-screen bg-[#eef0f3] text-slate-900 flex">
@@ -7853,11 +8028,11 @@ export default function App() {
         </div>
         <nav className="flex-1 overflow-y-auto p-3 space-y-1">
           {NAV_ITEMS.filter((item) => {
-            if (item.id === "5g") return selectedMonth === "august" || selectedMonth === "september" || selectedMonth === "october" || selectedMonth === "november";
+            if (item.id === "5g") return selectedMonth === "august" || selectedMonth === "september" || selectedMonth === "october";
             if (item.id === "3-basics-kpis") return selectedMonth === "october";
-            if (item.id === "recurring") return selectedMonth === "september" || selectedMonth === "october" || selectedMonth === "november";
-            if (item.id === "s2s-bb") return selectedMonth === "september" || selectedMonth === "october" || selectedMonth === "november";
-            if (item.id === "revenue-lost") return selectedMonth === "september" || selectedMonth === "october" || selectedMonth === "november";
+            if (item.id === "recurring") return selectedMonth === "september" || selectedMonth === "october";
+            if (item.id === "s2s-bb") return selectedMonth === "september" || selectedMonth === "october";
+            if (item.id === "revenue-lost") return selectedMonth === "september" || selectedMonth === "october";
             return true;
           }).map((item) => {
             const Icon = item.icon;
@@ -7896,7 +8071,7 @@ export default function App() {
             </div>
             <div className="flex items-center gap-2">
               <button onClick={goHome} className="flex items-center gap-2 px-3.5 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm font-medium transition-colors shrink-0"><span className="text-slate-400">←</span> Switch Month</button>
-              <button onClick={() => loadMonthData(selectedMonth as Month)} className="flex items-center gap-2 px-3.5 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm font-medium transition-colors shrink-0"><RefreshCw className="w-4 h-4" /> Refresh</button>
+
             </div>
           </div>
         </header>
@@ -7905,8 +8080,7 @@ export default function App() {
           <ErrorBoundary key={activeTab + selectedMonth}>
             <AnimatePresence mode="wait">
               <motion.div key={activeTab + selectedMonth} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.2 }} className="space-y-6">
-                {activeTab === "overall" && <div className="overall-summary-light"><OverallSummaryComponent sites={sites} /></div>}
-                <div className="mb-2 text-xs font-semibold text-emerald-800" aria-live="polite">{caSyncStatus}</div>
+                {activeTab === "overall" && <div className="overall-vibrant"><OverallSummaryWithExport sites={sites} rawData={monthData} lastUpdatedDate={monthLastUpdated} /></div>}
                 {activeTab === "grid-performance" && <div className="grid-vibrant"><GridPerformanceScorecard rawData={monthData} lastUpdatedDate={monthLastUpdated} /></div>}
                 {activeTab === "3-basics-kpis" && <div className="basics-vibrant"><ThreeBasicsKpiPage kpiData={month3Basics} sites={sites} lastUpdatedDate={monthLastUpdated} /></div>}
                 {activeTab === "recurring" && <RecurringSitesPage sites={sites} historyData={monthCellAvbHistory} />}
@@ -7949,13 +8123,13 @@ export default function App() {
                 {activeTab === "below-base" && <CategoryPage sites={sites} title="Below Base Sites" description={`${belowBaseRows.length} sites flagged below base threshold`} threshold={95} filterFn={(s) => isBelowBase(s)} lastUpdatedDate={monthLastUpdated} lastColumnIndex={monthLastColumnIndex} />}
                 {activeTab === "agm" && <CategoryPage sites={sites} title="AGM Battery Backup Sites" description={`${agmRows.length} sites with AGM battery banks`} threshold={95} filterFn={(s) => hasAGM(s)} lastUpdatedDate={monthLastUpdated} lastColumnIndex={monthLastColumnIndex} />}
                 {activeTab === "rca" && <RcaSummary rcaData={rcaData} />}
-                {activeTab === "query" && <SiteQuery sites={sites} rawData={monthData} historyData={(selectedMonth === "september" || selectedMonth === "october" || selectedMonth === "november") ? monthCellAvbHistory : null} />}
+                {activeTab === "query" && <SiteQuery sites={sites} rawData={monthData} historyData={(selectedMonth === "september" || selectedMonth === "october") ? monthCellAvbHistory : null} />}
                 {activeTab === "weather" && <WeatherRadar />}
               </motion.div>
             </AnimatePresence>
           </ErrorBoundary>
           <footer className="text-center text-xs text-slate-600 py-4">
-            {useMock ? "📊 Demo Mode - Using sample data" : `Google Sheet-1 master + Supabase daily CA (${monthLabel})`} · {sites.length} sites · C1 & C6 Cell Avb Analysis
+            {useMock ? "📊 Demo Mode - Using sample data" : `Live data from Google Sheets (${monthLabel})`} · {sites.length} sites · C1 & C6 Cell Avb Analysis
           </footer>
         </main>
       </div>
