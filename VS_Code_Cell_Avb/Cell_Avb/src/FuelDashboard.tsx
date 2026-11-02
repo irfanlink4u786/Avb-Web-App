@@ -183,26 +183,43 @@ function YesterdayFuelPage({rows, deviationData}:{rows:FuelRow[]; deviationData:
     return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
   });
   const localDay=(d:Date)=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
-  const daily=useMemo(()=>{
-    const valid=rows.filter(r=>r.siteId && r.date && r.filledQty>0).sort((a,b)=>a.date!.getTime()-b.date!.getTime());
-    const bySite=new Map<string,FuelRow[]>();
-    valid.forEach(r=>{const id=r.siteId.trim().toUpperCase();if(!bySite.has(id))bySite.set(id,[]);bySite.get(id)!.push(r);});
-    const grouped=new Map<string,{siteId:string;grid:string;events:number;filled:number;before:number;after:number;previousDate:string;previousTotal:number|null;consumption:number|null;days:number|null;dailyConsumption:number|null;lastDate:Date}>();
-    for(const [siteId,history] of bySite) {
-      const tickets=history.filter(r=>r.date && localDay(r.date)===selectedDate);
-      if(!tickets.length)continue;
-      const first=tickets[0],last=tickets[tickets.length-1];
-      const prior=history.filter(r=>r.date!.getTime()<first.date!.getTime()).slice(-1)[0];
-      const days=prior?.date ? (first.date!.getTime()-prior.date.getTime())/86400000 : null;
-      const previousTotal=prior?prior.beforeQty+prior.filledQty:null;
-      const consumption=previousTotal===null?null:previousTotal-first.beforeQty;
-      grouped.set(siteId,{siteId,grid:last.grid,events:tickets.length,filled:tickets.reduce((n,r)=>n+r.filledQty,0),
-        before:first.beforeQty,after:last.beforeQty+last.filledQty,
-        previousDate:prior?.date?.toLocaleString("en-GB")||"—",previousTotal,consumption,
-        days,dailyConsumption:consumption!==null&&days!==null&&days>0?consumption/days:null,lastDate:last.date!});
-    }
-    return [...grouped.values()].sort((a,b)=>b.filled-a.filled);
-  },[rows,selectedDate]);
+  // This tab reads the backend ticket reconciliation view directly.
+  const [backendRows,setBackendRows]=useState<any[]>([]);
+  const [backendError,setBackendError]=useState("");
+  const [backendLoading,setBackendLoading]=useState(false);
+  useEffect(()=>{
+    let active=true;
+    const run=async()=>{
+      setBackendLoading(true);
+      setBackendError("");
+      try {
+        const env=(import.meta as any).env || {};
+        const base=String(env.VITE_SUPABASE_URL||"").replace(/\/$/,"");
+        const key=String(env.VITE_SUPABASE_PUBLISHABLE_KEY||env.VITE_SUPABASE_ANON_KEY||"");
+        const raw=sessionStorage.getItem("cell_avb_supabase_session");
+        const session=raw?JSON.parse(raw):null;
+        if(!base||!key||!session?.access_token)throw new Error("Supabase session unavailable");
+        const params=new URLSearchParams({select:"*",fuel_date:`eq.${selectedDate}`,limit:"10000"});
+        const response=await fetch(`${base}/rest/v1/v_fuel_ticket_consumption?${params}`,{headers:{apikey:key,Authorization:`Bearer ${session.access_token}`}});
+        if(!response.ok)throw new Error(`Fuel reconciliation HTTP ${response.status}`);
+        const data=await response.json();
+        if(active)setBackendRows(data);
+      }catch(e){if(active){setBackendRows([]);setBackendError(e instanceof Error?e.message:String(e));}}
+      finally{if(active)setBackendLoading(false);}
+    };
+    run();
+    return()=>{active=false;};
+  },[selectedDate]);
+  const daily=useMemo(()=>backendRows.map(r=>({
+    siteId:String(r.site_id),grid:String(r.grid||""),events:Number(r.fill_events||0),filled:Number(r.fuel_filled_liters||0),
+    before:Number(r.before_first_fill_liters||0),after:Number(r.latest_after_fill_liters||0),
+    previousDate:r.previous_fuel_date?String(r.previous_fuel_date):"—",
+    previousTotal:r.previous_total_liters==null?null:Number(r.previous_total_liters),
+    consumption:r.consumption_liters==null?null:Number(r.consumption_liters),
+    days:r.elapsed_days==null?null:Number(r.elapsed_days),
+    dailyConsumption:r.consumption_per_day_liters==null?null:Number(r.consumption_per_day_liters),
+    lastDate:new Date(`${r.fuel_date}T12:00:00`)
+  })).sort((a,b)=>b.filled-a.filled),[backendRows]);
   const grids=[...new Set(daily.map(r=>r.grid))].sort();
   const filtered=daily.filter(r=>(gridFilter==="__all"||r.grid===gridFilter)&&(!search||`${r.siteId} ${r.grid}`.toLowerCase().includes(search.toLowerCase())));
   const total=filtered.reduce((n,r)=>n+r.filled,0);
@@ -228,6 +245,8 @@ function YesterdayFuelPage({rows, deviationData}:{rows:FuelRow[]; deviationData:
       <select value={grids.includes(gridFilter)?gridFilter:"__all"} onChange={e=>setGridFilter(e.target.value)} className="rounded-lg border border-emerald-200 px-3 py-2 text-sm"><option value="__all">All Grids</option>{grids.map(g=><option key={g} value={g}>{g}</option>)}</select>
       <input type="search" placeholder="Search site / grid" value={search} onChange={e=>setSearch(e.target.value)} className="rounded-lg border border-emerald-200 px-3 py-2 text-sm"/></div>
     </section>
+    {backendLoading&&<p className="text-sm text-emerald-800">Loading selected day from Supabase…</p>}
+    {backendError&&<p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">Unable to load live fueling: {backendError}</p>}
     <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">{[
       ["Fueled Sites",fmt(filtered.length),"Unique sites"],
       ["Fuel Filled",`${fmt(total)} L`,"All fill events"],
@@ -1086,7 +1105,7 @@ function TPrimePenaltyPage({fuelRows,primeData,deviationData}:{fuelRows:FuelRow[
   return <div className="space-y-5"><div className="rounded-xl border border-blue-200 bg-white p-5"><h2 className="text-xl font-black text-blue-950">T-Prime Fuel Penalty · Vendor Control · Sep–Oct 2026</h2><p className="mt-1 text-xs text-slate-600">Policy: four calendar days from incident start. Consecutive daily T-Prime records are grouped into one incident; a gap starts a new incident. Fuel Filled is read directly from the T_prime sheet. Only entries within the documented incident period are assessed. Confirm closure dates before imposing deductions.</p><div className="mt-3 grid gap-3 sm:grid-cols-2"><select className="rounded-lg border border-blue-200 p-2 text-sm" value={gridFilter} onChange={e=>setGridFilter(e.target.value)}><option value="__all">All Grids</option>{grids.map(g=><option key={g}>{g}</option>)}</select><select className="rounded-lg border border-blue-200 p-2 text-sm" value={ownerFilter} onChange={e=>setOwnerFilter(e.target.value)}><option value="__all">All Cluster Owners</option>{owners.map(o=><option key={o}>{o}</option>)}</select></div></div><div className="grid gap-3 sm:grid-cols-4">{[{label:"T-Prime Sites",value:String(new Set(filtered.map(r=>r.siteId)).size)},{label:"T-Prime Events",value:String(filtered.length)},{label:"Justified Fuel",value:`${fmt(filtered.reduce((s,r)=>s+r.allowed,0))} L`},{label:"Penalty Fuel",value:`${fmt(filtered.reduce((s,r)=>s+r.penalty,0))} L`}].map(c=><div key={c.label} className="rounded-xl border border-blue-200 bg-white p-4"><div className="text-xs font-semibold text-slate-600">{c.label}</div><div className="mt-2 text-2xl font-black text-blue-950">{c.value}</div></div>)}</div><section className="rounded-xl border border-blue-200 bg-white p-4"><div className="mb-3 flex flex-wrap items-center justify-between gap-3"><div><h3 className="text-lg font-black text-blue-950">Worst Sites · T-Prime Fuel Penalty · Sep–Oct 2026</h3><p className="text-xs text-slate-600">Sites with penalty litres only, ranked highest first. Select View to inspect each incident and fueling history.</p></div><div className="flex flex-wrap items-center gap-2"><select aria-label="Worst T-Prime sites count" value={worstLimit} onChange={e=>setWorstLimit(Number(e.target.value))} className="rounded-lg border border-blue-200 bg-white px-3 py-2 text-sm">{[10,20,50,100].map(n=><option key={n} value={n}>Top {n}</option>)}</select><ExportButtonComponent data={worstSites.map((r,i)=>({Rank:i+1,"Site ID":r.siteId,Grid:r.grid,"Cluster Owner":r.owner,Incidents:r.events,"Penalty Incidents":r.penaltyEvents,"Justified Fuel (L)":r.allowed,"Penalty Fuel (L)":r.penalty}))} filename="TPrime_Worst_Penalty_Sites_Sep_Oct_2026" label="Export Worst Sites" format="csv"/></div></div><div className="overflow-x-auto"><table className="w-full min-w-[800px] border-collapse"><thead><tr>{["Rank","Site ID","Grid","Cluster Owner","Incidents","Penalty Incidents","Justified (L)","Penalty (L)","Action"].map(h=><th key={h} className={header}>{h}</th>)}</tr></thead><tbody>{worstSites.slice(0,worstLimit).map((r,i)=><Fragment key={r.siteId}><tr className="even:bg-slate-50"><td className={cell}>{i+1}</td><td className={cell+" font-bold"}>{r.siteId}</td><td className={cell}>{r.grid}</td><td className={cell}>{r.owner}</td><td className={cell}>{r.events}</td><td className={cell}>{r.penaltyEvents}</td><td className={cell}>{fmt(r.allowed)}</td><td className={cell+" font-bold text-red-700"}>{fmt(r.penalty)}</td><td className={cell}><button className="rounded border border-blue-300 px-2 py-1 font-bold text-blue-800" onClick={()=>setExpanded(expanded===`worst-${r.siteId}`?null:`worst-${r.siteId}`)}>{expanded===`worst-${r.siteId}`?"Hide":"View"}</button></td></tr>{expanded===`worst-${r.siteId}`&&<tr><td colSpan={9} className="bg-blue-50 p-3">{renderHistory(r.incidents)}</td></tr>}</Fragment>)}{worstSites.length===0&&<tr><td colSpan={9} className="p-6 text-center text-sm font-semibold text-emerald-800">No penalty sites found for the selected filters.</td></tr>}</tbody></table></div></section>{([ ["Grid-wise Penalty · Worst First",gridSummary],["Cluster Owner-wise Penalty · Worst First",ownerSummary] ] as const).map(([title,items])=><section key={title} className="rounded-xl border border-blue-200 bg-white p-4"><div className="mb-3 flex flex-wrap items-center justify-between gap-2"><h3 className="font-black text-blue-950">{title}</h3><ExportButtonComponent data={items.map(x=>({Name:x.name,Sites:x.sites,Events:x.events,"Penalty Sites":x.affected,"Justified L":x.allowed,"Penalty L":x.penalty}))} filename={title.startsWith("Grid")?"TPrime_Grid":"TPrime_CO"} label="Export Summary" format="csv"/></div><div className="overflow-x-auto"><table className="w-full border-collapse"><thead><tr>{[title.startsWith("Grid")?"Grid":"Cluster Owner","Sites","Events","Penalty Sites","Justified (L)","Penalty (L)","Action"].map(h=><th key={h} className={header}>{h}</th>)}</tr></thead><tbody>{items.map(x=><Fragment key={x.name}><tr><td className={cell+" font-bold"}>{x.name}</td><td className={cell}>{x.sites}</td><td className={cell}>{x.events}</td><td className={cell}>{x.affected}</td><td className={cell}>{fmt(x.allowed)}</td><td className={cell+" font-bold text-red-700"}>{fmt(x.penalty)}</td><td className={cell}><button className="rounded border border-blue-300 px-2 py-1 font-bold text-blue-800" onClick={()=>setExpanded(expanded===`${title}-${x.name}`?null:`${title}-${x.name}`)}>View Sites</button></td></tr>{expanded===`${title}-${x.name}`&&<tr><td colSpan={7} className="bg-blue-50 p-3"><div className="mb-2 flex justify-end"><ExportButtonComponent data={exportData(x.rows)} filename={`TPrime_${x.name}`} label="Export Sites" format="csv"/></div>{renderHistory(x.rows)}</td></tr>}</Fragment>)}</tbody></table></div></section>)}<section className="rounded-xl border border-blue-200 bg-white p-4"><h3 className="text-lg font-black text-blue-950">Site Query · T-Prime Fuel History</h3><p className="mb-3 text-xs text-slate-600">Search all T-Prime sites regardless of grid and CO filters.</p><div className="flex flex-wrap gap-2"><input aria-label="T-Prime site ID" className="min-w-[230px] flex-1 rounded-lg border border-blue-300 px-3 py-2" value={siteQuery} onChange={e=>setSiteQuery(e.target.value)} placeholder="Enter exact Site ID (e.g. 4130)"/><button className="rounded-lg border border-blue-300 px-3 py-2 text-sm font-bold text-blue-800" onClick={()=>setSiteQuery("")}>Clear</button>{queried.length>0&&<ExportButtonComponent data={exportData(queried)} filename={`TPrime_Site_${siteQuery.trim()}`} label="Export Fuel History" format="csv"/>}</div>{siteQuery.trim()&&<div className="mt-4">{queried.length?renderHistory(queried):<p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-800">No T-Prime event found for this Site ID.</p>}</div>}</section></div>;
 }
 
-export default function FuelDashboard({ data, deviationData, tPrimeData, sheet1Data, monthlyFuelData = null, onBack }: { data: SheetPayload | null; deviationData: SheetPayload | null; tPrimeData: SheetPayload | null; sheet1Data: SheetPayload | null; monthlyFuelData?: SheetPayload | null; onBack: () => void }) {
+function FuelDashboardLegacy({ data, deviationData, tPrimeData, sheet1Data, monthlyFuelData = null, onBack }: { data: SheetPayload | null; deviationData: SheetPayload | null; tPrimeData: SheetPayload | null; sheet1Data: SheetPayload | null; monthlyFuelData?: SheetPayload | null; onBack: () => void }) {
   const [tab, setTab] = useState<FuelSubTab>("summary");
   const [view, setView] = useState<FuelView>("overall");
   const [gridFilter, setGridFilter] = useState("__all");
@@ -1302,8 +1321,15 @@ export default function FuelDashboard({ data, deviationData, tPrimeData, sheet1D
     return [...siteSummary].filter(x => prevTop.has(x.siteId)).sort((a,b) => b.current - a.current).slice(0,20);
   }, [siteSummary]);
 
-  // Current month fuel summary — latest available month in current year
-  const currentMonthName = FUEL_MONTH_ORDER[latestMonthIndex] || "Sep";
+  // Default to the actual calendar month even when the latest imported Fuel History
+  // has not yet received records for that month. Allow historical month review.
+  const [selectedFuelMonth, setSelectedFuelMonth] = useState<string | null>(null);
+  const calendarMonthIndex = currentYear === new Date().getFullYear()
+    ? new Date().getMonth()
+    : latestMonthIndex;
+  const availableFuelMonthIndex = Math.max(latestMonthIndex, calendarMonthIndex);
+  // Current month fuel summary — calendar month by default, historical selection optional.
+  const currentMonthName = selectedFuelMonth || FUEL_MONTH_ORDER[calendarMonthIndex] || "Nov";
   const currentMonthLabel = `${currentMonthName}-${String(currentYear).slice(-2)}`;
 
   // Ownership mapping from Deviation Fuel site master; current-month filters cascade.
@@ -1850,7 +1876,7 @@ export default function FuelDashboard({ data, deviationData, tPrimeData, sheet1D
         </>}
 
         {tab==="currentMonth" && <section className="rounded-xl border border-emerald-200 bg-white p-4 shadow-sm">
-          <div className="mb-3"><h3 className="font-black text-[#075B39]">Current Month · Ownership Filters</h3><p className="text-xs text-slate-500">Filter fuel filling, rankings, DG category and daily consumption by Cluster Owner, MS GTL or Zone Lead. Mapping: Cell AVB Sheet1 (Cluster Owner / MS GTL / CMPAK GTL as Zone Lead).</p></div>
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-3"><div><h3 className="font-black text-[#075B39]">{selectedFuelMonth ? "Historical Month" : "Current Month"} · Ownership Filters</h3><p className="text-xs text-slate-500">Select November for current fueling or October for the closed month.</p></div><select aria-label="Fuel reporting month" value={currentMonthName} onChange={e=>{setSelectedFuelMonth(e.target.value);setSelectedFuelDay(null);setMonthDrillGrid(null);setCategoryDrillGrid(null);}} className="rounded-lg border border-emerald-300 bg-white px-3 py-2 text-sm font-bold text-emerald-900">{FUEL_MONTH_ORDER.slice(0,availableFuelMonthIndex+1).reverse().map(m=><option key={m} value={m}>{m}-{String(currentYear).slice(-2)}{m===FUEL_MONTH_ORDER[calendarMonthIndex]?" · Current":""}</option>)}</select></div><div className="mb-3"><h3 className="font-black text-[#075B39]">Ownership Filters</h3><p className="text-xs text-slate-500">Filter fuel filling, rankings, DG category and daily consumption by Cluster Owner, MS GTL or Zone Lead. Mapping: Cell AVB Sheet1 (Cluster Owner / MS GTL / CMPAK GTL as Zone Lead).</p></div>
           <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
             <select aria-label="Cluster Owner" value={monthCOOptions.includes(monthCO)?monthCO:"__all"} onChange={e=>{setMonthCO(e.target.value);setMonthGTL("__all");setMonthLead("__all");}} className="rounded-lg border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold"><option value="__all">All Cluster Owners</option>{monthCOOptions.map(x=><option key={x} value={x}>{x}</option>)}</select>
             <select aria-label="MS GTL" value={monthGTLOptions.includes(monthGTL)?monthGTL:"__all"} onChange={e=>{setMonthGTL(e.target.value);setMonthLead("__all");}} className="rounded-lg border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold"><option value="__all">All MS GTLs</option>{monthGTLOptions.map(x=><option key={x} value={x}>{x}</option>)}</select>
@@ -2037,4 +2063,135 @@ export default function FuelDashboard({ data, deviationData, tPrimeData, sheet1D
       </div>
     </div>
   );
+}
+// Supabase-backed Fuel dashboard: PostgreSQL calculates KPIs, daily/grid/site totals.
+type BackendFuelProps = Parameters<typeof FuelDashboardLegacy>[0];
+type BackendMonth = { fuel_year: number; fuel_month: number; region: string; grid: string; fuel_liters: number; fill_events: number; dg_fueled_sites: number; active_days: number; avg_liters_active_day: number };
+type BackendDaily = { fuel_date: string; region: string; grid: string; fuel_liters: number; fill_events: number; dg_fueled_sites: number };
+type BackendSite = { site_id: string; region: string; grid: string; fuel_liters: number; fill_events: number; latest_fuel_date: string; is_mobile_dg: boolean };
+function BackendFuelDashboard({onBack, onAdvanced}:{onBack:()=>void;onAdvanced:()=>void}) {
+  const [month,setMonth]=useState('2026-11');
+  const [region,setRegion]=useState('overall');
+  const [grid,setGrid]=useState('all');
+  const [siteQuery,setSiteQuery]=useState('');
+  const [data,setData]=useState<{monthly:BackendMonth[];daily:BackendDaily[];sites:BackendSite[]}>({monthly:[],daily:[],sites:[]});
+  const [loading,setLoading]=useState(true);
+  const [error,setError]=useState('');
+  const [refresh,setRefresh]=useState(0);
+  const [year,mon]=month.split('-').map(Number);
+  useEffect(()=>{
+    let active=true;
+    const load=async()=>{
+      setLoading(true);setError('');
+      try {
+        const env=(import.meta as any).env||{};
+        const base=String(env.VITE_SUPABASE_URL||'').replace(/\/$/,'');
+        const key=String(env.VITE_SUPABASE_PUBLISHABLE_KEY||env.VITE_SUPABASE_ANON_KEY||'');
+        const saved=sessionStorage.getItem('cell_avb_supabase_session');
+        const session=saved?JSON.parse(saved):null;
+        if(!base||!key||!session?.access_token) throw new Error('Supabase sign-in required');
+        const query=(table:string)=>{
+          const params=new URLSearchParams({select:'*',fuel_year:`eq.${year}`,fuel_month:`eq.${mon}`,limit:'10000'});
+          return fetch(`${base}/rest/v1/${table}?${params}`,{headers:{apikey:key,Authorization:`Bearer ${session.access_token}`}}).then(async r=>{
+            if(!r.ok) throw new Error(`${table}: HTTP ${r.status}: ${(await r.text()).slice(0,120)}`);
+            return r.json();
+          });
+        };
+        const [monthly,daily,sites]=await Promise.all([query('v_fuel_monthly'),query('v_fuel_daily'),query('v_fuel_site_month')]);
+        if(active) setData({monthly,daily,sites});
+      }catch(e){if(active)setError(e instanceof Error?e.message:String(e));}
+      finally{if(active)setLoading(false);}
+    };
+    load();return()=>{active=false;};
+  },[year,mon,refresh]);
+  const grids=useMemo(()=>Array.from(new Set(data.monthly.filter(r=>region==='overall'||r.region===region).map(r=>r.grid))).sort(),[data.monthly,region]);
+  useEffect(()=>{if(grid!=='all'&&!grids.includes(grid))setGrid('all');},[grid,grids]);
+  const match=(r:{region:string;grid:string})=>(region==='overall'||r.region===region)&&(grid==='all'||r.grid===grid);
+  const monthly=data.monthly.filter(match);
+  const sites=data.sites.filter(match);
+  const daily=data.daily.filter(match);
+  const liters=monthly.reduce((a,r)=>a+Number(r.fuel_liters),0);
+  const events=monthly.reduce((a,r)=>a+Number(r.fill_events),0);
+  const uniqueSites=new Set(sites.filter(s=>!s.is_mobile_dg&&Number(s.fuel_liters)>0).map(s=>s.site_id)).size;
+  const dayRows=Array.from(daily.reduce((m,r)=>{const v=m.get(r.fuel_date)||{date:r.fuel_date,liters:0,events:0};v.liters+=Number(r.fuel_liters);v.events+=Number(r.fill_events);m.set(r.fuel_date,v);return m;},new Map<string,{date:string;liters:number;events:number}>()).values()).sort((a,b)=>a.date.localeCompare(b.date));
+  const avg=dayRows.length?liters/dayRows.length:0;
+  const siteRows=sites.filter(s=>s.site_id.toLowerCase().includes(siteQuery.toLowerCase())).sort((a,b)=>Number(b.fuel_liters)-Number(a.fuel_liters));
+  const gridRows=Array.from(monthly.reduce((m,r)=>{const v=m.get(r.grid)||{grid:r.grid,liters:0,events:0,sites:0};v.liters+=Number(r.fuel_liters);v.events+=Number(r.fill_events);v.sites+=Number(r.dg_fueled_sites);m.set(r.grid,v);return m;},new Map<string,{grid:string;liters:number;events:number;sites:number}>()).values()).sort((a,b)=>b.liters-a.liters);
+  const fmt=(v:number)=>v.toLocaleString(undefined,{maximumFractionDigits:1});
+  const download=(name:string,rows:Record<string,unknown>[])=>{
+    if(!rows.length)return;
+    const cols=Object.keys(rows[0]);
+    const escape=(v:unknown)=>`"${String(v??'').replace(/"/g,'""')}"`;
+    const csv=[cols.map(escape).join(','),...rows.map(r=>cols.map(c=>escape(r[c])).join(','))].join('\n');
+    const a=document.createElement('a');const u=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));a.href=u;a.download=`Fuel_${name}_${month}.csv`;a.click();URL.revokeObjectURL(u);
+  };
+  const boxStyle='rounded-xl border border-emerald-200 bg-white p-4 shadow-sm';
+  return <div className="min-h-screen bg-sky-50 p-4 text-slate-800 md:p-6">
+    <div className="mb-5 flex flex-wrap items-center justify-between gap-3"><div><h1 className="text-2xl font-black text-emerald-900">Fuel Management · {month}</h1><p className="text-xs text-slate-500">Live Supabase reporting views · calculations run in PostgreSQL</p></div><div className="flex flex-wrap gap-2"><button onClick={onBack} className="rounded-lg bg-slate-700 px-4 py-2 text-white">← Home</button><button onClick={onAdvanced} className="rounded-lg bg-emerald-800 px-4 py-2 text-white">Historical & Advanced Analysis</button></div></div>
+    <div className={`${boxStyle} mb-4 flex flex-wrap gap-3`}>
+      <label className="text-sm font-semibold">Month <select className="ml-2 rounded border p-2" value={month} onChange={e=>setMonth(e.target.value)}>{Array.from({length:12},(_,i)=>12-i).map(n=><option key={n} value={`2026-${String(n).padStart(2,'0')}`}>{new Date(2026,n-1,1).toLocaleDateString('en-GB',{month:'long',year:'numeric'})}</option>)}<option value="2025-11">November 2025</option><option value="2025-10">October 2025</option></select></label>
+      <label className="text-sm font-semibold">Region <select className="ml-2 rounded border p-2" value={region} onChange={e=>{setRegion(e.target.value);setGrid('all');}}><option value="overall">Overall</option><option value="C-1">C-1</option><option value="C-6">C-6</option></select></label>
+      <label className="text-sm font-semibold">Grid <select className="ml-2 rounded border p-2" value={grid} onChange={e=>setGrid(e.target.value)}><option value="all">All Grids</option>{grids.map(g=><option key={g} value={g}>{g}</option>)}</select></label>
+      <button onClick={()=>setRefresh(x=>x+1)} className="rounded-lg border border-emerald-600 px-4 py-2 text-sm font-bold text-emerald-800">Refresh live data</button>
+    </div>
+    {error&&<div className="mb-4 rounded-lg border border-red-300 bg-red-50 p-4 text-red-800">{error}</div>}
+    {loading?<p className="p-6">Loading calculated fuel views…</p>:<>
+    <div className="mb-4 grid gap-3 md:grid-cols-4">{[['Fuel Filled MTD',`${fmt(liters)} L`],['DG Fueled Sites',fmt(uniqueSites)],['Fill Events',fmt(events)],['Average / Active Day',`${fmt(avg)} L`]].map(([label,value])=><div className={boxStyle} key={label}><div className="text-xs font-bold uppercase text-slate-500">{label}</div><div className="mt-2 text-2xl font-black text-emerald-800">{value}</div></div>)}</div>
+    <section className={`${boxStyle} mb-4`}><div className="mb-3 flex items-center justify-between"><h2 className="font-bold text-emerald-900">Daily Fuel Trend</h2><button onClick={()=>download('Daily',dayRows)} className="text-sm font-bold text-emerald-700">Export CSV</button></div>{dayRows.length?<div className="h-64"><ResponsiveContainer width="100%" height="100%"><BarChart data={dayRows}><CartesianGrid strokeDasharray="3 3"/><XAxis dataKey="date"/><YAxis/><Tooltip/><Bar dataKey="liters" name="Fuel (L)" fill="#d59b24"/></BarChart></ResponsiveContainer></div>:<p>No dated fuel entries found for this month.</p>}</section>
+    <section className={`${boxStyle} mb-4`}><div className="mb-3 flex justify-between"><h2 className="font-bold text-emerald-900">Grid Fuel Summary</h2><button onClick={()=>download('Grid',gridRows)} className="text-sm font-bold text-emerald-700">Export CSV</button></div><div className="overflow-x-auto"><table className="w-full text-sm"><thead className="bg-emerald-800 text-white"><tr>{['Grid','Fuel (L)','Fill Events','DG Fueled Sites'].map(h=><th key={h} className="p-2 text-left">{h}</th>)}</tr></thead><tbody>{gridRows.map(r=><tr key={r.grid} className="border-b"><td className="p-2">{r.grid}</td><td>{fmt(r.liters)}</td><td>{r.events}</td><td>{r.sites}</td></tr>)}</tbody></table></div></section>
+    <section className={boxStyle}><div className="mb-3 flex flex-wrap justify-between gap-2"><h2 className="font-bold text-emerald-900">Site-wise Fuel History · Selected Month</h2><div className="flex gap-2"><input className="rounded border p-2 text-sm" placeholder="Search Site ID" value={siteQuery} onChange={e=>setSiteQuery(e.target.value)}/><button onClick={()=>download('Sites',siteRows)} className="text-sm font-bold text-emerald-700">Export CSV</button></div></div><div className="max-h-[420px] overflow-auto"><table className="w-full text-sm"><thead className="sticky top-0 bg-emerald-800 text-white"><tr>{['Site ID','Grid','Fuel (L)','Fill Events','Last Fuel Date'].map(h=><th key={h} className="p-2 text-left">{h}</th>)}</tr></thead><tbody>{siteRows.map((r,i)=><tr key={`${r.grid}-${r.site_id}-${i}`} className="border-b"><td className="p-2">{r.site_id}</td><td>{r.grid}</td><td>{fmt(Number(r.fuel_liters))}</td><td>{r.fill_events}</td><td>{r.latest_fuel_date||'—'}</td></tr>)}</tbody></table></div></section>
+    </>}
+  </div>;
+}
+// The original Fuel Management presentation is the primary screen.
+// Supabase remains the source of truth for new fueling events. The detailed
+// dashboard receives only the latest event rows; PostgreSQL reporting views
+// remain available for aggregated reports without a full browser-side scan.
+export default function FuelDashboard(props: BackendFuelProps) {
+  const [liveRows, setLiveRows] = useState<Record<string, any>[]>([]);
+  const [liveError, setLiveError] = useState("");
+  useEffect(() => {
+    let active = true;
+    const fetchLive = async () => {
+      try {
+        const env = (import.meta as any).env || {};
+        const base = String(env.VITE_SUPABASE_URL || "").replace(/\/$/, "");
+        const key = String(env.VITE_SUPABASE_PUBLISHABLE_KEY || env.VITE_SUPABASE_ANON_KEY || "");
+        const raw = sessionStorage.getItem("cell_avb_supabase_session");
+        const session = raw ? JSON.parse(raw) : null;
+        if (!base || !key || !session?.access_token) throw new Error("Supabase session unavailable");
+        const params = new URLSearchParams({ select: "site_id,grid,month_label,refueling_time,before_qty,filled_qty,fuel_year,fuel_month,source_row", fuel_year: "eq.2026", fuel_month: "eq.11", limit: "1000" });
+        const response = await fetch(`${base}/rest/v1/v_fuel_events?${params}`, { headers: { apikey: key, Authorization: `Bearer ${session.access_token}` } });
+        if (!response.ok) throw new Error(`Supabase fuel events: HTTP ${response.status}`);
+        const events = await response.json();
+        if (active) {
+          setLiveRows(events.map((r: any) => ({
+            "Site ID Name": r.site_id, "Grid": r.grid, "Month": r.month_label,
+            "Refueling Time": r.refueling_time, "Before Filling Fuel Quantity": r.before_qty,
+            "Fuel Quantity Filled": r.filled_qty, "Year": r.fuel_year,
+            "Month_1": "November", "Sub Region": String(r.grid || "").startsWith("C1") ? "C1" : "C6",
+          })));
+          setLiveError("");
+        }
+      } catch (err) {
+        if (active) setLiveError(err instanceof Error ? err.message : String(err));
+      }
+    };
+    fetchLive();
+    return () => { active = false; };
+  }, []);
+  const merged = useMemo<SheetPayload | null>(() => {
+    const old = props.data?.rows || [];
+    if (!old.length && !liveRows.length) return props.data;
+    // Match by the actual event content; avoid double-counting when the
+    // offline October archive eventually includes November records.
+    const key = (r: Record<string, any>) => [r["Site ID Name"] ?? r["Site ID"], r["Grid"], r["Refueling Time"], r["Fuel Quantity Filled"], r["Before Filling Fuel Quantity"]].map(x => String(x ?? "").trim()).join("|");
+    const seen = new Set<string>();
+    const rows = [...old, ...liveRows].filter(r => { const k = key(r); if (seen.has(k)) return false; seen.add(k); return true; });
+    return { headers: props.data?.headers || Object.keys(rows[0] || {}), rows } as SheetPayload;
+  }, [props.data, liveRows]);
+  return <>
+    {liveError && <div className="border-b border-amber-200 bg-amber-50 px-5 py-2 text-xs text-amber-900">Live November Fuel History unavailable: {liveError}. Showing available archived records.</div>}
+    <FuelDashboardLegacy {...props} data={merged} />
+  </>;
 }

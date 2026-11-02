@@ -7753,19 +7753,21 @@ export default function App() {
 
 
   const loadFuelDashboard = async () => {
-    setAppState("dashboard"); // IndexedDB read should not show a full-screen spinner.
+    // Fuel reporting now reads PostgreSQL views directly. No manual sync or
+    // IndexedDB dependency for the live November/October reporting screen.
     setErrorMsg("");
+    setViewMode("fuel");
+    setAppState("dashboard");
+    // Optional historical snapshots are loaded only for the advanced legacy page.
     try {
       const [h, d, m, own] = await Promise.all([
         readAvbCache("Fuel History"), readAvbCache("Deviation Fuel"),
         readAvbCache("Monthly Fuel History"), readAvbCache("october-ca")
       ]);
-      if (!h?.payload?.rows?.length) throw new Error("Fuel data is not cached. The offline snapshot is not available.");
-      setFuelHistory(h.payload);
+      setFuelHistory(h?.payload || null);
       setFuelDeviation(d?.payload || null);
       setMonthlyFuelData(m?.payload || null);
       setFuelTPrime(null);
-      setLastSync(h.syncedAt);
       setFuelOwnership(own?.payload ? {
         ...own.payload,
         rows: own.payload.rows.map(raw => {
@@ -7773,12 +7775,8 @@ export default function App() {
           return { "Site ID": String(site.siteName ?? "").trim(), "Cluster Owner": String(site.clusterOwner ?? "").trim(), "MS GTL": String(site.msGtl ?? "").trim(), "Zone Lead": String(site.zongLead ?? "").trim() };
         })
       } : null);
-      setViewMode("fuel");
-      setAppState("dashboard");
-    } catch (error) {
-      setViewMode("fuel");
-      setErrorMsg(error instanceof Error ? error.message : String(error));
-      setAppState("error");
+    } catch (e) {
+      console.warn("Optional historical Fuel cache unavailable; live Supabase views remain active", e);
     }
   };
 
@@ -7926,7 +7924,7 @@ export default function App() {
 
   // ----- FUEL MANAGEMENT FULL PAGE -----
   if (viewMode === "fuel") {
-    return <><FuelDashboard data={fuelHistory} deviationData={fuelDeviation} tPrimeData={fuelTPrime} sheet1Data={fuelOwnership} monthlyFuelData={monthlyFuelData} onBack={goHome} /><div className="fixed bottom-4 right-4 z-50 rounded-lg bg-slate-900 px-3 py-2 text-xs text-white shadow-lg">Offline snapshot {lastSync ? `· ${new Date(lastSync).toLocaleString()}` : ""} · <button onClick={goHome} className="font-bold text-cyan-300">Home</button></div></>;
+    return <FuelDashboard data={fuelHistory} deviationData={fuelDeviation} tPrimeData={fuelTPrime} sheet1Data={fuelOwnership} monthlyFuelData={monthlyFuelData} onBack={goHome} />;
   }
 
   // ----- PRE‑VS‑POST FULL PAGE WITH SIDEBAR -----
