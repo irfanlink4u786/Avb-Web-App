@@ -4536,7 +4536,7 @@ function SiteQuery({ sites, historyData = null, rawData = null }: { sites: SiteD
                   <Line yAxisId="ls" type="monotone" dataKey="ls" name="Load Shedding" stroke="#ad42a1" strokeWidth={3} connectNulls={false} isAnimationActive={false} dot={{ r: 3 }} label={{ position: "top", fontSize: 9, fill: "#ad42a1", formatter: (v: any) => v == null ? "" : `${Number(v).toFixed(1)}h` }} />
                 </ComposedChart>
               </ResponsiveContainer>
-            </div> : <div className="p-12 text-center text-slate-500">No daily CA or LS data found for this site in the local cache. Run Manual Sync to update available records.</div>}
+            </div> : <div className="p-12 text-center text-slate-500">No daily CA or LS data found for this site in the local cache. No cached records are available for this site.</div>}
           </div>
           {technologyWiseAvb && <TechnologyWiseSection data={technologyWiseAvb} />}
           {historyData && <Year26HistoryTable data={year26History} siteName={selectedSite.siteName} />}
@@ -6620,7 +6620,7 @@ function LoadingScreen({ onHome }: { onHome: () => void }) {
       <div className="text-center">
         <h2 className="text-xl font-semibold text-white">Loading Dashboard</h2>
         <p className="text-slate-300 text-sm mt-1">Reading saved data from this browser…</p>
-        <button onClick={onHome} className="mt-5 rounded-lg bg-cyan-500 px-5 py-2 font-semibold text-slate-950">Return Home / Sync Data</button>
+        <button onClick={onHome} className="mt-5 rounded-lg bg-cyan-500 px-5 py-2 font-semibold text-slate-950">Return Home</button>
       </div>
     </div>
   );
@@ -7715,7 +7715,7 @@ export default function App() {
       if (!cached?.payload?.rows?.length) {
         setViewMode("month");
         setAppState("error");
-        setErrorMsg(`No offline ${month === "november" ? "November" : "October"} CA snapshot found. Go Home and press Sync Data once while online.`);
+        setErrorMsg(`No offline ${month === "november" ? "November" : "October"} CA snapshot found. The offline snapshot is not available.`);
         return;
       }
       setMonthData(cached.payload);
@@ -7760,7 +7760,7 @@ export default function App() {
         readAvbCache("Fuel History"), readAvbCache("Deviation Fuel"),
         readAvbCache("Monthly Fuel History"), readAvbCache("october-ca")
       ]);
-      if (!h?.payload?.rows?.length) throw new Error("Fuel data is not cached. Return Home and press Sync Data once.");
+      if (!h?.payload?.rows?.length) throw new Error("Fuel data is not cached. The offline snapshot is not available.");
       setFuelHistory(h.payload);
       setFuelDeviation(d?.payload || null);
       setMonthlyFuelData(m?.payload || null);
@@ -7878,7 +7878,7 @@ export default function App() {
 
   if (!isAuthenticated) return <LoginScreen onLogin={handleLogin} />;
   if (appState === "loading") return <LoadingScreen onHome={goHome} />;
-  if (appState === "error") return <div className="min-h-screen bg-slate-900"><div className="absolute left-5 top-5 z-50"><button onClick={goHome} className="rounded-lg bg-cyan-500 px-5 py-2 font-semibold text-slate-950">← Home / Sync Data</button></div><ErrorScreen message={errorMsg} onRetry={viewMode === "prepost" ? loadPreVsPost : viewMode === "fuel" ? loadFuelDashboard : () => loadMonthData(selectedMonth || "november")} /></div>;
+  if (appState === "error") return <div className="min-h-screen bg-slate-900"><div className="absolute left-5 top-5 z-50"><button onClick={goHome} className="rounded-lg bg-cyan-500 px-5 py-2 font-semibold text-slate-950">← Home</button></div><ErrorScreen message={errorMsg} onRetry={viewMode === "prepost" ? loadPreVsPost : viewMode === "fuel" ? loadFuelDashboard : () => loadMonthData(selectedMonth || "november")} /></div>;
 
   // ----- HOME SCREEN (four buttons) -----
   if (viewMode === "home") {
@@ -7892,10 +7892,7 @@ export default function App() {
           </motion.div>
           <h1 className="text-5xl md:text-7xl font-extrabold text-white leading-tight mb-6 drop-shadow-lg">C1 & C6 <br /><span className="bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">Cell Avb Analysis</span></h1>
           <div className="mx-auto mt-5 max-w-3xl rounded-xl border border-cyan-400/30 bg-slate-950/80 px-5 py-4 text-white">
-            <div className="flex flex-wrap items-center justify-center gap-3">
-              <button disabled={syncing} onClick={() => { void syncAllData(); }} className="rounded-lg bg-cyan-500 px-5 py-2 font-bold text-slate-950 disabled:opacity-60">{syncing ? "Syncing…" : "↻ Sync Data (Manual)"}</button>
-              <span className="text-xs text-slate-300">Offline-first · IndexedDB · No automatic refresh</span>
-            </div>
+            <p className="text-xs text-slate-300">Offline snapshot · IndexedDB</p>
             {lastSync && <p className="mt-2 text-xs text-emerald-300">Last sync: {new Date(lastSync).toLocaleString()}</p>}
             {syncNotice && <p role="status" className="mt-2 break-words text-sm text-cyan-100">{syncNotice}</p>}
           </div>
@@ -7934,7 +7931,7 @@ export default function App() {
 
   // ----- FUEL MANAGEMENT FULL PAGE -----
   if (viewMode === "fuel") {
-    return <><FuelDashboard data={fuelHistory} deviationData={fuelDeviation} tPrimeData={fuelTPrime} sheet1Data={fuelOwnership} monthlyFuelData={monthlyFuelData} onBack={goHome} /><div className="fixed bottom-4 right-4 z-50 rounded-lg bg-slate-900 px-3 py-2 text-xs text-white shadow-lg">Offline snapshot {lastSync ? `· ${new Date(lastSync).toLocaleString()}` : ""} · <button onClick={goHome} className="font-bold text-cyan-300">Home / Sync Data</button></div></>;
+    return <><FuelDashboard data={fuelHistory} deviationData={fuelDeviation} tPrimeData={fuelTPrime} sheet1Data={fuelOwnership} monthlyFuelData={monthlyFuelData} onBack={goHome} /><div className="fixed bottom-4 right-4 z-50 rounded-lg bg-slate-900 px-3 py-2 text-xs text-white shadow-lg">Offline snapshot {lastSync ? `· ${new Date(lastSync).toLocaleString()}` : ""} · <button onClick={goHome} className="font-bold text-cyan-300">Home</button></div></>;
   }
 
   // ----- PRE‑VS‑POST FULL PAGE WITH SIDEBAR -----
@@ -8036,7 +8033,7 @@ export default function App() {
     <div className="light-app min-h-screen bg-[#eef0f3] text-slate-900 flex">
       
       <RainAlertWidget />
-      <div className="fixed bottom-4 right-4 z-50 rounded-lg bg-slate-900 px-3 py-2 text-xs text-white shadow-lg">Offline snapshot {lastSync ? `· ${new Date(lastSync).toLocaleString()}` : ""} · <button onClick={goHome} className="font-bold text-cyan-300">Home / Sync Data</button></div>
+      <div className="fixed bottom-4 right-4 z-50 rounded-lg bg-slate-900 px-3 py-2 text-xs text-white shadow-lg">Offline snapshot {lastSync ? `· ${new Date(lastSync).toLocaleString()}` : ""} · <button onClick={goHome} className="font-bold text-cyan-300">Home</button></div>
       <aside className={`fixed lg:sticky top-0 z-40 h-screen w-64 bg-[#e5e7eb] border-r border-slate-300 flex flex-col transition-transform ${sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}`}>
         <div className="p-5 border-b border-slate-800">
           <div className="flex items-center gap-3">
