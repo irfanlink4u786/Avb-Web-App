@@ -1,11 +1,6 @@
 import "./overall-summary-readability.css";
 import "./enterprise-polish.css";
 import FuelDashboard from "./FuelDashboard";
-import { EmployeePerformance, matchesCaBand, caBandOptions, type CaBand, empNormalizeDailyDateKey, empDateKeyToTime, empFormatDailyDateHeader, empGetDailyAvb, empCaTextClass, AvailabilityBadge } from "./EmployeePerformance";
-import { ThreeBasicsKpiPage } from "./ThreeBasicsKpiPage";
-import { SectionBanner, ExportButtonComponent } from "./SharedDashboardUI";
-import { fetchCellAvbFromSupabase } from "./cellAvbData";
-import { readAvbCache, saveAvbCaches } from "./offlineCache";
 import React, { useState, useEffect, useMemo, Fragment, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -80,6 +75,555 @@ import {
   isNPSSite,
 } from "./types";
 
+
+// Current-month CA bands; missing/zero CA is excluded from these bands.
+type CaBand = "all" | "below95" | "95to98" | "above98";
+const matchesCaBand = (value: number, band: CaBand) => {
+  if (band === "all") return true;
+  if (!Number.isFinite(value) || value <= 0) return false;
+  if (band === "below95") return value < 95;
+  if (band === "95to98") return value >= 95 && value < 98;
+  return value >= 98;
+};
+const caBandOptions: { value: CaBand; label: string }[] = [
+  { value: "all", label: "All CA" },
+  { value: "below95", label: "Below 95%" },
+  { value: "95to98", label: "95% to <98%" },
+  { value: "above98", label: "98% & Above" },
+];
+
+// ============================================================
+//  EMPLOYEE PERFORMANCE — INLINE / SELF-CONTAINED
+//  Expanded All Sites includes latest 3 actual populated Cell AVB days.
+// ============================================================
+
+type EmployeePerformanceProps = {
+  sites: SiteData[];
+  lastUpdatedDate?: string;
+};
+
+type EmployeePerformanceLevel = "zongLead" | "msGtl" | "clusterOwner";
+
+const EMP_MONTHS: Record<string, number> = {
+  Jan: 0,
+  Feb: 1,
+  Mar: 2,
+  Apr: 3,
+  May: 4,
+  Jun: 5,
+  Jul: 6,
+  Aug: 7,
+  Sep: 8,
+  Oct: 9,
+  Nov: 10,
+  Dec: 11,
+};
+
+const MONTH_LABELS: Record<string, string> = {
+  Jan: "Jan",
+  Feb: "Feb",
+  Mar: "Mar",
+  Apr: "Apr",
+  May: "May",
+  Jun: "Jun",
+  Jul: "Jul",
+  Aug: "Aug",
+  Sep: "Sep",
+  Oct: "Oct",
+  Nov: "Nov",
+  Dec: "Dec",
+};
+
+/**
+ * Normalize supported sheet date headers such as:
+ * 18-Sep-26
+ * 18 Sep 26
+ * 18/SEP/2026
+ *
+ * Returns D-Mmm-YY, e.g. 18-Sep-26.
+ */
+function empNormalizeDailyDateKey(raw: string): string | null {
+  const text = String(raw ?? "").trim();
+  if (!text) return null;
+
+  const match = text.match(
+    /^(\d{1,2})[-\s/]([A-Za-z]{3,9})[-\s/](\d{2,4})$/
+  );
+  if (!match) return null;
+
+  const day = Number(match[1]);
+  const rawMonth = match[2].slice(0, 3);
+  const month =
+    rawMonth.charAt(0).toUpperCase() + rawMonth.slice(1).toLowerCase();
+
+  if (
+    !Number.isFinite(day) ||
+    day < 1 ||
+    day > 31 ||
+    EMP_MONTHS[month] === undefined
+  ) {
+    return null;
+  }
+
+  const year =
+    match[3].length === 4 ? match[3].slice(-2) : match[3].padStart(2, "0");
+
+  return `${day}-${month}-${year}`;
+}
+
+function empDateKeyToTime(key: string): number {
+  const normalized = empNormalizeDailyDateKey(key);
+  if (!normalized) return Number.NaN;
+
+  const [dayText, month, yearText] = normalized.split("-");
+  return new Date(
+    2000 + Number(yearText),
+    EMP_MONTHS[month],
+    Number(dayText)
+  ).getTime();
+}
+
+function empFormatDailyDateHeader(key: string): string {
+  const normalized = empNormalizeDailyDateKey(key);
+  if (!normalized) return key;
+
+  const [day, month] = normalized.split("-");
+  return `${day}-${MONTH_LABELS[month] ?? month}`;
+}
+
+/**
+ * dailyData may contain the same logical date in a slightly different format
+ * than the normalized key. This helper makes the lookup robust.
+ */
+function empGetDailyAvb(site: SiteData, normalizedDate: string): number {
+  const dailyData = site.dailyData ?? {};
+
+  if (
+    Object.prototype.hasOwnProperty.call(dailyData, normalizedDate) &&
+    Number.isFinite(Number(dailyData[normalizedDate]))
+  ) {
+    return Number(dailyData[normalizedDate]);
+  }
+
+  for (const [rawKey, rawValue] of Object.entries(dailyData)) {
+    const normalized = empNormalizeDailyDateKey(rawKey);
+    const value = Number(rawValue);
+
+    if (
+      normalized === normalizedDate &&
+      Number.isFinite(value)
+    ) {
+      return value;
+    }
+  }
+
+  return 0;
+}
+
+function empCaTextClass(value: number): string {
+  if (value <= 0) return "text-slate-400";
+  if (value < 98) return "text-red-600";
+  if (value < 99) return "text-amber-700";
+  return "text-emerald-700";
+}
+
+// Shared enterprise-style availability badge; visual-only, no KPI logic changes.
+function AvailabilityBadge({ value, digits = 2 }: { value: number; digits?: number }) {
+  const valid = Number.isFinite(value) && value > 0;
+  const tone = !valid
+    ? "bg-slate-100 text-slate-500 ring-slate-200"
+    : value < 98
+      ? "bg-rose-50 text-rose-700 ring-rose-200"
+      : value < 99
+        ? "bg-amber-50 text-amber-800 ring-amber-200"
+        : "bg-emerald-50 text-emerald-800 ring-emerald-200";
+  return <span className={`inline-flex min-w-[74px] justify-center rounded-full px-2.5 py-1 text-xs font-bold tabular-nums ring-1 ring-inset ${tone}`}>{valid ? `${value.toFixed(digits)}%` : "–"}</span>;
+}
+
+function EmployeePerformance({
+  sites,
+  lastUpdatedDate = "",
+}: EmployeePerformanceProps) {
+  const [level, setLevel] = useState<EmployeePerformanceLevel>("zongLead");
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const [caBand, setCaBand] = useState<CaBand>("all");
+
+  const activeSites = useMemo(
+    () => sites.filter((site) => Number(site.currentAvb) > 0 && matchesCaBand(Number(site.currentAvb), caBand)),
+    [sites, caBand]
+  );
+
+  /**
+   * Latest 3 ACTUAL populated Cell AVB dates.
+   *
+   * Rules:
+   * 1. Date must exist in dailyData.
+   * 2. At least one site must contain a valid >0 value for that date.
+   * 3. Date cannot be later than lastUpdatedDate.
+   * 4. When lastUpdatedDate is supplied, only the same month/year is used.
+   * 5. Return the latest three dates in chronological order.
+   */
+  const latest3Dates = useMemo(() => {
+    const availableDates = new Set<string>();
+    const cutoff = empNormalizeDailyDateKey(lastUpdatedDate);
+
+    const cutoffParts = cutoff?.split("-") ?? [];
+    const cutoffMonth = cutoffParts[1] ?? "";
+    const cutoffYear = cutoffParts[2] ?? "";
+    const cutoffTime = cutoff ? empDateKeyToTime(cutoff) : Number.POSITIVE_INFINITY;
+
+    activeSites.forEach((site) => {
+      Object.entries(site.dailyData ?? {}).forEach(([rawKey, rawValue]) => {
+        const normalized = empNormalizeDailyDateKey(rawKey);
+        const value = Number(rawValue);
+
+        if (!normalized) return;
+        if (!Number.isFinite(value) || value <= 0) return;
+
+        const currentTime = empDateKeyToTime(normalized);
+        if (!Number.isFinite(currentTime)) return;
+        if (currentTime > cutoffTime) return;
+
+        if (cutoff) {
+          const [, month, year] = normalized.split("-");
+          if (month !== cutoffMonth || year !== cutoffYear) return;
+        }
+
+        availableDates.add(normalized);
+      });
+    });
+
+    return Array.from(availableDates)
+      .sort((a, b) => empDateKeyToTime(a) - empDateKeyToTime(b))
+      .slice(-3);
+  }, [activeSites, lastUpdatedDate]);
+
+  const employeeRows = useMemo(() => {
+    const employeeMap = new Map<string, SiteData[]>();
+
+    activeSites.forEach((site) => {
+      const employee =
+        String(site[level] ?? "Unassigned").trim() || "Unassigned";
+
+      if (!employeeMap.has(employee)) {
+        employeeMap.set(employee, []);
+      }
+
+      employeeMap.get(employee)!.push(site);
+    });
+
+    return Array.from(employeeMap.entries())
+      .map(([name, employeeSites]) => {
+        const avg =
+          employeeSites.length > 0
+            ? employeeSites.reduce(
+                (sum, site) => sum + Number(site.currentAvb || 0),
+                0
+              ) / employeeSites.length
+            : 0;
+
+        return {
+          name,
+          sites: employeeSites,
+          avg,
+        };
+      })
+      .sort((a, b) => a.avg - b.avg);
+  }, [activeSites, level]);
+
+  const employeeSummaryExport = employeeRows.map(row => ({
+    Employee: row.name, "Total Sites": row.sites.length,
+    "Current CA (%)": Number(row.avg.toFixed(2)), "Employee Level": level,
+  }));
+  const employeeSiteExport = (employeeSites: SiteData[], employeeName: string) =>
+    employeeSites.map(site => {
+      const result: Record<string, string | number> = {
+        Employee: employeeName, "Site ID": site.siteName,
+        "Revenue Category": site.revenueCategory || "-",
+        "Current Month CA (%)": Number(site.currentAvb || 0),
+        "Sub-Region": site.subRegion || "-", Grid: site.grid || "-",
+        DG: site.dgStatus || site.dgInstalled || "-",
+        "Li-ion": site.liIonInstalled || "-", "BB Status": site.bbStatus || "-",
+      };
+      latest3Dates.forEach(date => {
+        result[`${empFormatDailyDateHeader(date)} Cell AVB (%)`] = empGetDailyAvb(site, date);
+      });
+      return result;
+    });
+
+  const levelButtons: { id: EmployeePerformanceLevel; label: string }[] = [
+    { id: "zongLead", label: "CMPAK GTL" },
+    { id: "msGtl", label: "MPL GTL" },
+    { id: "clusterOwner", label: "Cluster Owner" },
+  ];
+
+  return (
+    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      {/* Header */}
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 p-5">
+        <div>
+          <h3 className="text-lg font-extrabold text-slate-950">
+            Employee Performance
+          </h3>
+          <p className="mt-1 text-xs font-medium text-slate-600">
+            Open an employee to view all sites with latest 3 days Cell AVB.
+          </p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <ExportButtonComponent data={employeeSummaryExport} filename={`employees_${level}_summary`} label="Export Summary" format="excel" variant="primary" />
+          <ExportButtonComponent data={employeeRows.flatMap(row => employeeSiteExport(row.sites, row.name))} filename={`employees_${level}_all_sites`} label="Export All Sites" format="excel" variant="success" />
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <label htmlFor="employee-ca-band" className="text-xs font-bold text-slate-700">Current CA</label>
+          <select id="employee-ca-band" value={caBand} onChange={e => { setCaBand(e.target.value as CaBand); setExpanded(null); }} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-bold text-slate-900">
+            {caBandOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+        </div>
+        <div className="flex gap-1 rounded-lg bg-slate-100 p-1">
+          {levelButtons.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => {
+                setLevel(item.id);
+                setExpanded(null);
+              }}
+              className={`rounded-md px-3 py-1.5 text-xs font-extrabold transition-colors ${
+                level === item.id
+                  ? "bg-blue-600 text-white shadow-sm"
+                  : "text-slate-800 hover:bg-white"
+              }`}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Employee summary */}
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="bg-slate-900 text-white">
+            <tr>
+              <th className="px-4 py-3 text-left font-extrabold uppercase tracking-wide text-white">
+                Employee
+              </th>
+              <th className="px-4 py-3 text-center font-extrabold uppercase tracking-wide text-white">
+                Sites
+              </th>
+              <th className="px-4 py-3 text-center font-extrabold uppercase tracking-wide text-white">
+                Current CA
+              </th>
+              <th className="px-4 py-3 text-center font-extrabold uppercase tracking-wide text-white">
+                View Sites
+              </th>
+            </tr>
+          </thead>
+
+          <tbody>
+            {employeeRows.map((row) => {
+              const isExpanded = expanded === row.name;
+
+              return (
+                <React.Fragment key={row.name}>
+                  <tr className="border-t border-slate-100 even:bg-slate-50/60 transition-colors duration-200 hover:bg-emerald-50/50">
+                    <td className="px-4 py-3 font-bold text-slate-950">
+                      {row.name}
+                    </td>
+
+                    <td className="px-4 py-3 text-center font-extrabold text-slate-950">
+                      {row.sites.length}
+                    </td>
+
+                    <td
+                      className={`px-4 py-3 text-center text-base font-black ${empCaTextClass(
+                        row.avg
+                      )}`}
+                    >
+                      <AvailabilityBadge value={row.avg} />
+                    </td>
+
+                    <td className="px-4 py-3 text-center">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setExpanded(isExpanded ? null : row.name)
+                        }
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 font-extrabold text-emerald-800 transition-all duration-200 hover:bg-emerald-100 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                      >
+                        View
+                        {isExpanded ? (
+                          <ChevronUp size={15} />
+                        ) : (
+                          <ChevronDown size={15} />
+                        )}
+                      </button>
+                    </td>
+                  </tr>
+
+                  {/* Expanded All Sites */}
+                  {isExpanded && (
+                    <tr>
+                      <td colSpan={4} className="bg-slate-50 p-4">
+                        <div className="overflow-hidden rounded-xl border border-slate-300 bg-white shadow-sm">
+                          <div className="border-b border-slate-200 bg-white px-4 py-3">
+                            <h4 className="text-sm font-black text-black">
+                              All Sites ({row.sites.length})
+                            </h4>
+
+                            <div className="mt-2">
+                              <ExportButtonComponent data={employeeSiteExport(row.sites, row.name)} filename={`employee_${row.name.replace(/[^a-z0-9]+/gi, "_")}_sites`} label="Export Employee Sites" format="excel" variant="success" />
+                            </div>
+                            <p className="mt-1 text-xs font-semibold text-slate-700">
+                              Latest 3 days Cell AVB:
+                              {latest3Dates.length > 0 ? (
+                                <span className="ml-1 font-extrabold text-black">
+                                  {latest3Dates
+                                    .map(empFormatDailyDateHeader)
+                                    .join(" | ")}
+                                </span>
+                              ) : (
+                                <span className="ml-1 text-red-600">
+                                  No populated daily AVB dates found
+                                </span>
+                              )}
+                            </p>
+                          </div>
+
+                          <div className="overflow-x-auto">
+                            <table className="min-w-[1350px] w-full text-sm">
+                              <thead
+                                className="employee-all-sites-header bg-emerald-900 text-white"
+                              >
+                                <tr className="border-b border-sky-200">
+                                  <th className="px-3 py-3 text-left text-[12px] font-black !text-white whitespace-nowrap">
+                                    Site ID
+                                  </th>
+                                  <th className="px-3 py-3 text-left text-[12px] font-black !text-white whitespace-nowrap">
+                                    Revenue Category
+                                  </th>
+                                  <th className="px-3 py-3 text-center text-[12px] font-black !text-white whitespace-nowrap">
+                                    Current Month
+                                  </th>
+                                  <th className="px-3 py-3 text-center text-[12px] font-black !text-white whitespace-nowrap">
+                                    Sub-Region
+                                  </th>
+                                  <th className="px-3 py-3 text-center text-[12px] font-black !text-white whitespace-nowrap">
+                                    DG
+                                  </th>
+                                  <th className="px-3 py-3 text-center text-[12px] font-black !text-white whitespace-nowrap">
+                                    Li-ion
+                                  </th>
+                                  <th className="px-3 py-3 text-center text-[12px] font-black !text-white whitespace-nowrap">
+                                    BB Status
+                                  </th>
+
+                                  {latest3Dates.map((date) => (
+                                    <th
+                                      key={date}
+                                      className="min-w-[120px] px-3 py-3 text-center text-[12px] font-black !text-white whitespace-nowrap"
+                                    >
+                                      <div>
+                                        {empFormatDailyDateHeader(date)}
+                                      </div>
+                                      <div className="mt-0.5 text-[10px] font-black uppercase tracking-wide !text-white">
+                                        Cell AVB
+                                      </div>
+                                    </th>
+                                  ))}
+                                </tr>
+                              </thead>
+
+                              <tbody>
+                                {[...row.sites]
+                                  .sort(
+                                    (a, b) =>
+                                      Number(a.currentAvb || 0) -
+                                      Number(b.currentAvb || 0)
+                                  )
+                                  .map((site) => (
+                                    <tr
+                                      key={site.siteName}
+                                      className="border-t border-slate-100 even:bg-slate-50/60 transition-colors duration-200 hover:bg-emerald-50/60"
+                                    >
+                                      <td className="px-3 py-3 font-extrabold text-blue-700 whitespace-nowrap">
+                                        {site.siteName}
+                                      </td>
+
+                                      <td className="px-3 py-3 font-bold text-slate-950 whitespace-nowrap">
+                                        {site.revenueCategory || "-"}
+                                      </td>
+
+                                      <td
+                                        className={`px-3 py-3 text-center text-[15px] font-black whitespace-nowrap ${empCaTextClass(
+                                          Number(site.currentAvb || 0)
+                                        )}`}
+                                      >
+                                        <AvailabilityBadge value={Number(site.currentAvb || 0)} />
+                                      </td>
+
+                                      <td className="px-3 py-3 text-center font-bold text-slate-950 whitespace-nowrap">
+                                        {site.subRegion || "-"}
+                                      </td>
+
+                                      <td className="px-3 py-3 text-center font-semibold text-slate-900 whitespace-nowrap">
+                                        {site.dgStatus ||
+                                          site.dgInstalled ||
+                                          "-"}
+                                      </td>
+
+                                      <td className="px-3 py-3 text-center font-semibold text-slate-900 whitespace-nowrap">
+                                        {site.liIonInstalled || "-"}
+                                      </td>
+
+                                      <td className="px-3 py-3 text-center font-semibold text-slate-900 whitespace-nowrap">
+                                        {site.bbStatus || "-"}
+                                      </td>
+
+                                      {latest3Dates.map((date) => {
+                                        const value = empGetDailyAvb(site, date);
+
+                                        return (
+                                          <td
+                                            key={`${site.siteName}-${date}`}
+                                            className={`px-3 py-3 text-center text-[15px] font-black whitespace-nowrap ${empCaTextClass(
+                                              value
+                                            )}`}
+                                          >
+                                            <AvailabilityBadge value={value} />
+                                          </td>
+                                        );
+                                      })}
+                                    </tr>
+                                  ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
+              );
+            })}
+
+            {employeeRows.length === 0 && (
+              <tr>
+                <td
+                  colSpan={4}
+                  className="px-4 py-12 text-center font-semibold text-slate-500"
+                >
+                  No employee/site data available.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
 
 // ============================================================
 //  REVENUE LOST SITES — SEPTEMBER DAILY CELL AVB MONITORING
@@ -271,6 +815,605 @@ function RevenueLostSitesPage({
 
 
 // ============================================================
+//  3 BASICS KPIs — OCTOBER 2026
+//  Joins "3 Basics KPIs" with Sheet1 by SID and shows current CA + latest 3 days.
+// ============================================================
+const THREE_BASIC_KPIS = [
+  "Below Base",
+  "Down Cells",
+  "Zero Traffic",
+  "High Fluctuation Sites",
+  "VSWR",
+  "High Temp",
+  "Phase Missing Cases",
+] as const;
+
+function ThreeBasicsKpiPage({
+  kpiData,
+  sites,
+  lastUpdatedDate,
+}: {
+  kpiData: SheetPayload | null;
+  sites: SiteData[];
+  lastUpdatedDate?: string;
+}) {
+  const [expandedGrid, setExpandedGrid] = useState<string | null>(null);
+  const [kpiFilter, setKpiFilter] = useState<string>("All");
+  const [revenueFilter, setRevenueFilter] = useState<string>("All");
+  const [statusFilter, setStatusFilter] = useState<string>("All");
+  const [coFilter, setCoFilter] = useState<string>("All");
+  const [gtlFilter, setGtlFilter] = useState<string>("All");
+  const [zoneLeadFilter, setZoneLeadFilter] = useState<string>("All");
+  const [search, setSearch] = useState("");
+
+  const norm = (v: any) => String(v ?? "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+  const get = (row: Record<string, any>, names: string[]) => {
+    const keys = Object.keys(row ?? {});
+    for (const name of names) {
+      const exact = keys.find(k => norm(k) === norm(name));
+      if (exact) return row[exact];
+    }
+    return "";
+  };
+
+  const siteMap = useMemo(() => {
+    const m = new Map<string, SiteData>();
+    sites.forEach(site => m.set(String(site.siteName ?? "").trim(), site));
+    return m;
+  }, [sites]);
+
+  const latest3Dates = useMemo(() => {
+    const available = new Set<string>();
+    const cutoff = empNormalizeDailyDateKey(lastUpdatedDate || "");
+    const cutoffTime = cutoff ? empDateKeyToTime(cutoff) : Number.POSITIVE_INFINITY;
+    const cutoffParts = cutoff?.split("-") ?? [];
+    sites.forEach(site => {
+      Object.entries(site.dailyData ?? {}).forEach(([raw, rawValue]) => {
+        const key = empNormalizeDailyDateKey(raw);
+        const value = Number(rawValue);
+        if (!key || !Number.isFinite(value) || value <= 0) return;
+        if (empDateKeyToTime(key) > cutoffTime) return;
+        if (cutoff) {
+          const [, month, year] = key.split("-");
+          if (month !== cutoffParts[1] || year !== cutoffParts[2]) return;
+        }
+        available.add(key);
+      });
+    });
+    return Array.from(available)
+      .sort((a,b) => empDateKeyToTime(a) - empDateKeyToTime(b))
+      .slice(-3);
+  }, [sites, lastUpdatedDate]);
+
+  const rows = useMemo(() => (kpiData?.rows ?? []).map((raw: Record<string, any>, idx: number) => {
+    const sid = String(get(raw, ["SID","Site ID","SiteID","Site"]) ?? "").trim();
+    const site = siteMap.get(sid);
+    const rawKpi = String(get(raw, ["KPI","3 Basic KPI","3 Basics KPI"]) ?? "").trim();
+    const kpiAliases: Record<string, string> = {
+      [norm("Fluctuated Sites")]: "High Fluctuation Sites",
+      [norm("High TempAlm")]: "High Temp",
+    };
+    const canonicalKpi = kpiAliases[norm(rawKpi)] || THREE_BASIC_KPIS.find(k => norm(k) === norm(rawKpi)) || rawKpi || "Unspecified";
+    const subRegion = String(get(raw, ["SubRegion","Sub-Region","Sub Region"]) || site?.subRegion || "").trim();
+    const grid = String(get(raw, ["Grid"]) || site?.grid || "").trim();
+    return {
+      key: `${sid}-${canonicalKpi}-${idx}`,
+      sid,
+      site,
+      subRegion,
+      grid,
+      revenue: String(get(raw, ["Revenue","Revenue Category","Category"]) || site?.revenueCategory || "").trim(),
+      kpi: canonicalKpi,
+      co: String(get(raw, ["CO","Cluster Owner"]) || site?.clusterOwner || "").trim(),
+      gtl: String(get(raw, ["GTL","MS GTL","MPL GTL"]) || site?.msGtl || "").trim(),
+      cmpak: String(get(raw, ["CMPAK","CMPAK GTL","Zone Lead","Zong Lead"]) || site?.zongLead || "").trim(),
+      status: String(get(raw, ["Open/Close","Open Close","Status"]) || "Open").trim(),
+      category: String(get(raw, ["Category","Issue Category"]) || "").trim(),
+      rca: String(get(raw, ["RCA","Root Cause"]) || "").trim(),
+      action: String(get(raw, ["Action","Action Required","Plan"]) || "").trim(),
+      currentCa: Number(site?.currentAvb || 0),
+    };
+  }).filter(r => r.sid), [kpiData, siteMap]);
+
+  const regionKey = (r: any) => {
+    const sr = String(r.subRegion || "").toUpperCase().replace(/\s+/g,"");
+    const g = String(r.grid || "").toUpperCase();
+    if (sr.includes("CENTRAL-1") || sr === "C-1" || sr === "C1" || g.startsWith("C1")) return "C-1";
+    if (sr.includes("CENTRAL-6") || sr === "C-6" || sr === "C6" || g.startsWith("C6")) return "C-6";
+    return r.subRegion || "Other";
+  };
+
+  const statusIsOpen = (v: string) => !/clos|resolv|done/i.test(v);
+
+  const revenueLabel = (value: string) => {
+    const n = norm(value);
+    if (n === "platinum" && /\+/.test(value)) return "Plat+";
+    if (n === "platinumplus") return "Plat+";
+    if (n === "platinum") return "Plat";
+    return value;
+  };
+
+  const revenueOptions = useMemo(() => {
+    const preferred = ["platinumplus", "platinum", "gold", "silver", "bronze"];
+    const values = Array.from(new Set(rows.map(r => r.revenue).filter(Boolean)));
+    return values.sort((a, b) => {
+      const key = (v: string) => /\+/.test(v) && norm(v) === "platinum" ? "platinumplus" : norm(v);
+      const ai = preferred.indexOf(key(a));
+      const bi = preferred.indexOf(key(b));
+      if (ai >= 0 && bi >= 0) return ai - bi;
+      if (ai >= 0) return -1;
+      if (bi >= 0) return 1;
+      return a.localeCompare(b);
+    });
+  }, [rows]);
+
+  const ownerFilteredRows = useMemo(() => rows.filter(r =>
+    (revenueFilter === "All" || norm(r.revenue) === norm(revenueFilter)) &&
+    (coFilter === "All" || r.co === coFilter) &&
+    (gtlFilter === "All" || r.gtl === gtlFilter) &&
+    (zoneLeadFilter === "All" || r.cmpak === zoneLeadFilter)
+  ), [rows, revenueFilter, coFilter, gtlFilter, zoneLeadFilter]);
+
+  const regionSummary = useMemo(() => ["C-1","C-6"].map(region => {
+    const rr = ownerFilteredRows.filter(r => regionKey(r) === region);
+    const counts: Record<string, number> = {};
+    THREE_BASIC_KPIS.forEach(k => counts[k] = rr.filter(r => r.kpi === k).length);
+    return {
+      region,
+      total: rr.length,
+      open: rr.filter(r => statusIsOpen(r.status)).length,
+      closed: rr.filter(r => !statusIsOpen(r.status)).length,
+      counts,
+    };
+  }), [ownerFilteredRows]);
+
+  const gridSummary = useMemo(() => {
+    const map = new Map<string, any>();
+    ownerFilteredRows.forEach(r => {
+      const grid = r.grid || "Unassigned";
+      if (!map.has(grid)) {
+        const counts: Record<string, number> = {};
+        THREE_BASIC_KPIS.forEach(k => counts[k] = 0);
+        map.set(grid, { grid, region: regionKey(r), total: 0, open: 0, closed: 0, counts });
+      }
+      const x = map.get(grid);
+      x.total += 1;
+      if (statusIsOpen(r.status)) x.open += 1; else x.closed += 1;
+      if (x.counts[r.kpi] !== undefined) x.counts[r.kpi] += 1;
+    });
+    return Array.from(map.values()).sort((a,b) => b.open - a.open || b.total - a.total || a.grid.localeCompare(b.grid));
+  }, [ownerFilteredRows]);
+
+  // Ownership dropdowns cascade from Revenue Category -> CO -> GTL -> Zone Lead.
+  const coOptions = useMemo(() => Array.from(new Set(
+    rows.filter(r => revenueFilter === "All" || norm(r.revenue) === norm(revenueFilter))
+      .map(r => r.co).filter(Boolean)
+  )).sort(), [rows, revenueFilter]);
+
+  const gtlOptions = useMemo(() => Array.from(new Set(
+    rows.filter(r =>
+      (revenueFilter === "All" || norm(r.revenue) === norm(revenueFilter)) &&
+      (coFilter === "All" || r.co === coFilter)
+    ).map(r => r.gtl).filter(Boolean)
+  )).sort(), [rows, revenueFilter, coFilter]);
+
+  const zoneLeadOptions = useMemo(() => Array.from(new Set(
+    rows.filter(r =>
+      (revenueFilter === "All" || norm(r.revenue) === norm(revenueFilter)) &&
+      (coFilter === "All" || r.co === coFilter) &&
+      (gtlFilter === "All" || r.gtl === gtlFilter)
+    ).map(r => r.cmpak).filter(Boolean)
+  )).sort(), [rows, revenueFilter, coFilter, gtlFilter]);
+
+  useEffect(() => {
+    if (coFilter !== "All" && !coOptions.includes(coFilter)) setCoFilter("All");
+  }, [revenueFilter, coOptions, coFilter]);
+
+  useEffect(() => {
+    if (gtlFilter !== "All" && !gtlOptions.includes(gtlFilter)) setGtlFilter("All");
+  }, [revenueFilter, coFilter, gtlOptions, gtlFilter]);
+
+  useEffect(() => {
+    if (zoneLeadFilter !== "All" && !zoneLeadOptions.includes(zoneLeadFilter)) setZoneLeadFilter("All");
+  }, [revenueFilter, coFilter, gtlFilter, zoneLeadOptions, zoneLeadFilter]);
+
+  const visibleRows = useMemo(() => rows.filter(r => {
+    if (expandedGrid && r.grid !== expandedGrid) return false;
+    if (kpiFilter !== "All" && r.kpi !== kpiFilter) return false;
+    if (revenueFilter !== "All" && norm(r.revenue) !== norm(revenueFilter)) return false;
+    if (statusFilter === "Open" && !statusIsOpen(r.status)) return false;
+    if (statusFilter === "Closed" && statusIsOpen(r.status)) return false;
+    if (coFilter !== "All" && r.co !== coFilter) return false;
+    if (gtlFilter !== "All" && r.gtl !== gtlFilter) return false;
+    if (zoneLeadFilter !== "All" && r.cmpak !== zoneLeadFilter) return false;
+    const q = search.trim().toLowerCase();
+    if (q && ![r.sid,r.grid,r.subRegion,r.revenue,r.kpi,r.co,r.gtl,r.cmpak,r.category,r.rca,r.action]
+      .some(v => String(v ?? "").toLowerCase().includes(q))) return false;
+    return true;
+  }), [rows, expandedGrid, kpiFilter, revenueFilter, statusFilter, coFilter, gtlFilter, zoneLeadFilter, search]);
+
+  const exportRows = visibleRows.map(r => {
+    const out: Record<string, any> = {
+      SID: r.sid, SubRegion: r.subRegion, Revenue: r.revenue, Grid: r.grid, KPI: r.kpi,
+      "Current Month CA": r.currentCa > 0 ? `${r.currentCa.toFixed(2)}%` : "-",
+      CO: r.co, GTL: r.gtl, CMPAK: r.cmpak, Status: r.status,
+      Category: r.category, RCA: r.rca, Action: r.action,
+    };
+    latest3Dates.forEach(d => {
+      const v = r.site ? empGetDailyAvb(r.site, d) : 0;
+      out[`${empFormatDailyDateHeader(d)} AVB`] = v > 0 ? `${v.toFixed(2)}%` : "-";
+    });
+    return out;
+  });
+
+  if (!kpiData) return (
+    <div className="rounded-xl border border-amber-300 bg-amber-50 p-8 text-center font-bold text-amber-900">
+      3 Basics KPIs data has not loaded. The tab exists in the October workbook. Please refresh; if the issue continues, inspect the Google Sheets request error in the browser console.
+    </div>
+  );
+
+  return (
+    <div className="space-y-6">
+      <SectionBanner
+        icon={<Activity className="w-6 h-6 text-blue-600" />}
+        title="3 Basics KPIs — October 2026"
+        subtitle={`${rows.length} KPI cases · Joined with Sheet1 Cell AVB by SID · Current month + latest 3 days`}
+        gradient="from-blue-500/10 to-cyan-500/10"
+      />
+
+      {/* Revenue Category — top-level 3 Basics filter */}
+      <div className="rounded-xl border border-emerald-200 bg-white p-4 shadow-sm">
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <div className="text-[11px] font-black uppercase tracking-wide text-slate-500">Revenue Category</div>
+            <div className="text-xs font-semibold text-slate-600">Filter all 3 Basics KPI cards, sub-region, grid and site detail.</div>
+          </div>
+          <div className="rounded-lg bg-emerald-50 px-3 py-1.5 text-xs font-black text-emerald-800">
+            {revenueFilter === "All" ? "All Revenue Categories" : revenueLabel(revenueFilter)}
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {["All", ...revenueOptions].map(category => (
+            <button key={category} type="button" onClick={() => { setRevenueFilter(category); setExpandedGrid(null); }}
+              className={`rounded-lg border px-4 py-2 text-sm font-black transition ${revenueFilter === category ? "border-emerald-600 bg-[#006B3C] text-white shadow-sm" : "border-slate-300 bg-white text-slate-800 hover:bg-emerald-50"}`}>
+              {category === "All" ? "All Categories" : revenueLabel(category)}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* CO / GTL / Zone Lead ownership filters — selection updates KPI cards + grid view */}
+      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="flex flex-wrap items-end gap-3">
+          <div>
+            <label className="mb-1 block text-[11px] font-black uppercase tracking-wide text-slate-500">CO</label>
+            <select value={coFilter} onChange={e => { setCoFilter(e.target.value); setExpandedGrid(null); }}
+              className="min-w-[220px] rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-bold text-slate-900">
+              <option value="All">All COs</option>
+              {coOptions.map(v => <option key={v} value={v}>{v}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="mb-1 block text-[11px] font-black uppercase tracking-wide text-slate-500">GTL</label>
+            <select value={gtlFilter} onChange={e => { setGtlFilter(e.target.value); setExpandedGrid(null); }}
+              className="min-w-[220px] rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-bold text-slate-900">
+              <option value="All">All GTLs</option>
+              {gtlOptions.map(v => <option key={v} value={v}>{v}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="mb-1 block text-[11px] font-black uppercase tracking-wide text-slate-500">Zone Lead</label>
+            <select value={zoneLeadFilter} onChange={e => { setZoneLeadFilter(e.target.value); setExpandedGrid(null); }}
+              className="min-w-[220px] rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-bold text-slate-900">
+              <option value="All">All Zone Leads</option>
+              {zoneLeadOptions.map(v => <option key={v} value={v}>{v}</option>)}
+            </select>
+          </div>
+          <button onClick={() => { setCoFilter("All"); setGtlFilter("All"); setZoneLeadFilter("All"); setKpiFilter("All"); setRevenueFilter("All"); setStatusFilter("All"); setSearch(""); setExpandedGrid(null); }}
+            className="rounded-lg border border-slate-300 bg-slate-50 px-4 py-2 text-sm font-black text-slate-700 hover:bg-slate-100">
+            Clear Filters
+          </button>
+          <div className="ml-auto rounded-lg bg-blue-50 px-4 py-2 text-xs font-bold text-blue-900">
+            Showing KPIs for: {revenueFilter === "All" ? "All Revenue" : revenueLabel(revenueFilter)} · {coFilter === "All" ? "All COs" : coFilter} · {gtlFilter === "All" ? "All GTLs" : gtlFilter} · {zoneLeadFilter === "All" ? "All Zone Leads" : zoneLeadFilter}
+          </div>
+        </div>
+      </div>
+
+      {/* KPI visibility cards */}
+      <div className="basics-kpi-color-grid grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
+        {THREE_BASIC_KPIS.map(k => {
+          const total = ownerFilteredRows.filter(r => r.kpi === k).length;
+          const open = ownerFilteredRows.filter(r => r.kpi === k && statusIsOpen(r.status)).length;
+          return <button key={k} onClick={() => setKpiFilter(kpiFilter === k ? "All" : k)}
+            className={`rounded-xl border p-4 text-left shadow-sm transition ${kpiFilter===k?"border-blue-500 bg-blue-50 ring-2 ring-blue-200":"border-slate-200 bg-white hover:bg-slate-50"}`}>
+            <div className="text-[11px] font-black text-slate-600">{k}</div>
+            <div className="mt-1 text-2xl font-black text-slate-950">{total}</div>
+            <div className="text-[11px] font-bold text-red-600">{open} Open</div>
+          </button>;
+        })}
+      </div>
+
+      {/* Sub-region summary first, as requested */}
+      <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+        <div className="px-4 py-3 border-b border-slate-200">
+          <h3 className="font-black text-slate-950">Sub-Region Wise 3 Basics Summary</h3>
+          <p className="text-xs text-slate-500">C-1 vs C-6 · KPI-wise case visibility</p>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="min-w-[1200px] w-full text-sm">
+            <thead><tr>
+              <th className="px-3 py-3 text-left">Sub-Region</th>
+              {THREE_BASIC_KPIS.map(k => <th key={k} className="px-3 py-3 text-center whitespace-nowrap">{k}</th>)}
+              <th className="px-3 py-3 text-center">Open</th><th className="px-3 py-3 text-center">Closed</th><th className="px-3 py-3 text-center">Total</th>
+            </tr></thead>
+            <tbody>{regionSummary.map(r => <tr key={r.region}>
+              <td className="px-3 py-3 font-black">{r.region}</td>
+              {THREE_BASIC_KPIS.map(k => <td key={k} className="px-3 py-3 text-center font-bold">{r.counts[k]}</td>)}
+              <td className="px-3 py-3 text-center font-black text-red-600">{r.open}</td>
+              <td className="px-3 py-3 text-center font-black text-emerald-700">{r.closed}</td>
+              <td className="px-3 py-3 text-center font-black">{r.total}</td>
+            </tr>)}</tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Grid summary with View drill-down */}
+      <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+        <div className="px-4 py-3 border-b border-slate-200">
+          <h3 className="font-black text-slate-950">Grid Wise KPI Summary</h3>
+          <p className="text-xs text-slate-500">Worst/open grids first · use View for complete site-level details</p>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="min-w-[1300px] w-full text-sm">
+            <thead><tr>
+              <th className="px-3 py-3 text-left">Grid</th><th className="px-3 py-3 text-center">Region</th>
+              {THREE_BASIC_KPIS.map(k => <th key={k} className="px-3 py-3 text-center whitespace-nowrap">{k}</th>)}
+              <th className="px-3 py-3 text-center">Open</th><th className="px-3 py-3 text-center">Total</th><th className="px-3 py-3 text-center">View</th>
+            </tr></thead>
+            <tbody>{gridSummary.map(g => <Fragment key={g.grid}>
+              <tr>
+                <td className="px-3 py-3 font-black">{g.grid}</td><td className="px-3 py-3 text-center font-bold">{g.region}</td>
+                {THREE_BASIC_KPIS.map(k => <td key={k} className="px-3 py-3 text-center font-bold">{g.counts[k]}</td>)}
+                <td className="px-3 py-3 text-center font-black text-red-600">{g.open}</td>
+                <td className="px-3 py-3 text-center font-black">{g.total}</td>
+                <td className="px-3 py-3 text-center"><button onClick={() => setExpandedGrid(expandedGrid===g.grid?null:g.grid)}
+                  className="rounded-lg bg-sky-100 px-3 py-1.5 text-xs font-black text-blue-800">{expandedGrid===g.grid?"Hide":"View"}</button></td>
+              </tr>
+              {expandedGrid===g.grid && <tr><td colSpan={12} className="bg-slate-50 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+                  <div><div className="font-black text-slate-950">{g.grid} · Site KPI Detail</div>
+                    <div className="text-xs text-slate-500">Latest AVB: {latest3Dates.map(empFormatDailyDateHeader).join(" | ") || "-"}</div></div>
+                  <div className="flex flex-wrap gap-2">
+                    <select value={kpiFilter} onChange={e=>setKpiFilter(e.target.value)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-900">
+                      <option>All</option>{THREE_BASIC_KPIS.map(k=><option key={k}>{k}</option>)}
+                    </select>
+                    <select value={statusFilter} onChange={e=>setStatusFilter(e.target.value)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-900">
+                      <option>All</option><option>Open</option><option>Closed</option>
+                    </select>
+                    <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search site / owner / RCA"
+                      className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900"/>
+                    <ExportButtonComponent data={exportRows} filename={`3_Basics_${g.grid}`} label="Export" format="excel" variant="success"/>
+                  </div>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="grid-performance-detail-table min-w-[1900px] w-full text-sm">
+                    <thead><tr>
+                      {["SID","SubRegion","Revenue","Grid","KPI","Current Month CA",...latest3Dates.map(d=>`${empFormatDailyDateHeader(d)} AVB`),"CO","GTL","CMPAK","Open/Close","Category","RCA","Action"].map(h=>
+                        <th key={h} className="px-3 py-3 text-left text-xs font-black whitespace-nowrap">{h}</th>)}
+                    </tr></thead>
+                    <tbody>{visibleRows.map(r => <tr key={r.key}>
+                      <td className="px-3 py-3 font-black text-blue-700">{r.sid}</td><td className="px-3 py-3">{r.subRegion||"-"}</td>
+                      <td className="px-3 py-3">{r.revenue||"-"}</td><td className="px-3 py-3 font-bold">{r.grid||"-"}</td>
+                      <td className="px-3 py-3 font-black">{r.kpi}</td>
+                      <td className={`px-3 py-3 text-center font-black ${empCaTextClass(r.currentCa)}`}>{r.currentCa>0?`${r.currentCa.toFixed(2)}%`:"-"}</td>
+                      {latest3Dates.map(d=>{const v=r.site?empGetDailyAvb(r.site,d):0;return <td key={d} className={`px-3 py-3 text-center font-black ${empCaTextClass(v)}`}>{v>0?`${v.toFixed(2)}%`:"-"}</td>})}
+                      <td className="px-3 py-3">{r.co||"-"}</td><td className="px-3 py-3">{r.gtl||"-"}</td><td className="px-3 py-3">{r.cmpak||"-"}</td>
+                      <td className={`px-3 py-3 font-black ${statusIsOpen(r.status)?"text-red-600":"text-emerald-700"}`}>{r.status}</td>
+                      <td className="px-3 py-3">{r.category||"-"}</td><td className="px-3 py-3 max-w-[360px] whitespace-normal">{r.rca||"-"}</td>
+                      <td className="px-3 py-3 max-w-[360px] whitespace-normal">{r.action||"-"}</td>
+                    </tr>)}
+                    {visibleRows.length===0 && <tr><td colSpan={15+latest3Dates.length} className="px-4 py-10 text-center text-slate-500">No matching KPI cases.</td></tr>}
+                    </tbody>
+                  </table>
+                </div>
+              </td></tr>}
+            </Fragment>)}</tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+//  CELL AVB SUPABASE DATA LAYER (C-1 / C-6 ONLY)
+//  Supabase is the only external data source.
+// ============================================================
+const CELL_MASTER_TABLE = "cell_avb_c1_c6_site_master";
+const CELL_CA_TABLE = "ca_tracker_oct2026";
+
+/**
+ * October CA and technology availability come exclusively from Supabase.
+ * The 27-field C-1/C-6 master is the site population; supporting Google
+ * All available data comes from Supabase.
+ *
+ * Access: the site master requires an authenticated Supabase session.
+ * Never put a service-role key in a browser application.
+ */
+async function fetchCellAvbFromSupabase(): Promise<SheetPayload> {
+  const env = (import.meta as any).env || {};
+  const base = String(env.VITE_SUPABASE_URL || "").replace(/\/$/, "");
+  const key = String(env.VITE_SUPABASE_PUBLISHABLE_KEY || env.VITE_SUPABASE_ANON_KEY || "");
+  if (!base || !key) throw new Error("Missing Supabase URL or publishable key in Vite configuration");
+
+  // Dashboard login must be a real Supabase Auth session, not a local UI flag.
+  const sessionRaw = sessionStorage.getItem("cell_avb_supabase_session");
+  const session = sessionRaw ? JSON.parse(sessionRaw) : null;
+  if (!session?.access_token) throw new Error("Supabase authentication required. Please sign in using your Supabase Auth email and password.");
+  let token = String(session.access_token);
+  if (Number(session.expires_at || 0) * 1000 < Date.now() + 60000) {
+    if (!session.refresh_token) throw new Error("Supabase session expired. Please sign in again.");
+    const refreshed = await fetch(`${base}/auth/v1/token?grant_type=refresh_token`, {
+      method: "POST", headers: { apikey: key, "Content-Type": "application/json" },
+      body: JSON.stringify({ refresh_token: session.refresh_token })
+    });
+    if (!refreshed.ok) { sessionStorage.removeItem("cell_avb_supabase_session"); throw new Error("Supabase session expired. Please sign in again."); }
+    const next = await refreshed.json();
+    next.expires_at = Math.floor(Date.now() / 1000) + Number(next.expires_in || 3600);
+    sessionStorage.setItem("cell_avb_supabase_session", JSON.stringify(next));
+    token = next.access_token;
+  }
+  const headers = { apikey: key, Authorization: `Bearer ${token}`, Accept: "application/json" };
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 20000);
+
+  const fetchPages = async (table: string, columns: string, filter = "", maxRows = 8000) => {
+    const pageSize = 1000;
+    const offsets = Array.from({ length: Math.ceil(maxRows / pageSize) }, (_, i) => i * pageSize);
+    const load = async (offset: number) => {
+      const url = `${base}/rest/v1/${table}?select=${encodeURIComponent(columns)}${filter}&limit=${pageSize}&offset=${offset}`;
+      const response = await fetch(url, { headers, signal: controller.signal });
+      if (!response.ok) throw new Error(`Supabase ${table}: HTTP ${response.status}: ${(await response.text()).slice(0, 240)}`);
+      return await response.json() as Record<string, any>[];
+    };
+    // Parallel pages: master has ~1,866 records; October CA has ~1,888 for C1/C6.
+    // Do not sequentially wait for every page before starting the next.
+    const pages = await Promise.all(offsets.map(load));
+    return pages.flat();
+  };
+
+  try {
+    const masterPromise = fetchPages(CELL_MASTER_TABLE, "*", "", 2000);
+    const dayNames = Array.from({ length: 31 }, (_, i) => `${i + 1}-Oct`);
+    const caFields = ["SITE_ID", "OCT'26 Cell A", "OCT'26 LS", "OCT'26 TCH", "OCT'26 Utran", "OCT'26 Eutran", "OCT'26 NR Cell", ...dayNames];
+    const columns = caFields.map(name => `"${name.replace(/"/g, '\\"')}"`).join(",");
+    const caPromise = fetchPages(CELL_CA_TABLE, columns, `&${encodeURIComponent("Sub-Region")}=in.(Central-1,Central-6)`, 3000);
+    const [master, caRows] = await Promise.all([masterPromise, caPromise]);
+    if (!master.length) {
+      throw new Error("C-1/C-6 Site Master returned no records. Sign in with an authorized Supabase account; the table has 1,866 imported sites and its RLS does not permit anonymous access.");
+    }
+    if (!caRows.length) throw new Error("No CA records found for Central-1 and Central-6. Check the Supabase CA table and sub-region values.");
+    const byId = new Map(caRows.map(r => [String(r.SITE_ID ?? "").trim().replace(/\.0+$/, ""), r]));
+    const matchedCount = master.filter(site => byId.has(String(site["Site ID"] ?? "").trim().replace(/\.0+$/, ""))).length;
+    if (!matchedCount) throw new Error("Site Master and CA tracker have no matching Site IDs; cannot display zero-valued KPIs as valid data.");
+    console.info(`[Cell AVB] Supabase matched ${matchedCount}/${master.length} Site Master records with ${caRows.length} CA tracker records`);
+
+    const result = master.map(site => {
+      const id = String(site["Site ID"] ?? "").trim().replace(/\.0+$/, "");
+      const ca = byId.get(id) || {};
+      const monthly = ca["OCT'26 Cell A"] ?? "";
+      const merged: Record<string, any> = {
+        ...site,
+        "Site ID": id,
+        "Current Month": monthly,
+        "Oct'26 Cell A": monthly,
+        "OCT'26 Cell A": monthly,
+        "OCT'26 LS": ca["OCT'26 LS"] ?? "",
+        "OCT'26 TCH": ca["OCT'26 TCH"] ?? "",
+        "OCT'26 Utran": ca["OCT'26 Utran"] ?? "",
+        "OCT'26 Eutran": ca["OCT'26 Eutran"] ?? "",
+        "OCT'26 NR Cell": ca["OCT'26 NR Cell"] ?? "",
+        "TCH": ca["OCT'26 TCH"] ?? "",
+        "Cell_U": ca["OCT'26 Utran"] ?? "",
+        "Cell_EU": ca["OCT'26 Eutran"] ?? "",
+        "NR Cell": ca["OCT'26 NR Cell"] ?? "",
+      };
+      for (let i = 1; i <= 31; i++) {
+        const value = ca[`${i}-Oct`] ?? "";
+        merged[`${i}-Oct`] = value;
+        merged[`${i}-Oct-26`] = value;
+        merged[`${String(i).padStart(2, "0")}-Oct-26`] = value;
+      }
+      return merged;
+    });
+    const headersOut = Array.from(new Set(result.flatMap(row => Object.keys(row))));
+    return { headers: headersOut, rows: result } as SheetPayload;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// November daily CA is intentionally loaded independently from the October tracker.
+// November source has no LS/technology fields: do not invent those metrics.
+async function fetchNovemberCellAvb(): Promise<SheetPayload> {
+  const env = (import.meta as any).env || {};
+  const base = String(env.VITE_SUPABASE_URL || "").replace(/\/$/, "");
+  const key = String(env.VITE_SUPABASE_PUBLISHABLE_KEY || env.VITE_SUPABASE_ANON_KEY || "");
+  const saved = sessionStorage.getItem("cell_avb_supabase_session");
+  const session = saved ? JSON.parse(saved) : null;
+  if (!base || !key || !session?.access_token) throw new Error("Supabase login required for November sync");
+  let token = String(session.access_token);
+  if (Number(session.expires_at || 0) * 1000 < Date.now() + 60000) {
+    const response = await fetch(`${base}/auth/v1/token?grant_type=refresh_token`, {
+      method: "POST", headers: { apikey: key, "Content-Type": "application/json" },
+      body: JSON.stringify({ refresh_token: session.refresh_token })
+    });
+    if (!response.ok) throw new Error("Session expired. Sign in again to sync November.");
+    const renewed = await response.json();
+    renewed.expires_at = Math.floor(Date.now() / 1000) + Number(renewed.expires_in || 3600);
+    sessionStorage.setItem("cell_avb_supabase_session", JSON.stringify(renewed));
+    token = renewed.access_token;
+  }
+  const headers = { apikey: key, Authorization: `Bearer ${token}`, Accept: "application/json" };
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 60000);
+  const getRows = async (table: string, select: string, offset: number) => {
+    const url = `${base}/rest/v1/${table}?select=${encodeURIComponent(select)}&limit=1000&offset=${offset}`;
+    const response = await fetch(url, { headers, signal: controller.signal });
+    if (!response.ok) throw new Error(`${table}: HTTP ${response.status}: ${(await response.text()).slice(0, 160)}`);
+    return response.json() as Promise<Record<string, any>[]>;
+  };
+  try {
+    const [masterPages, dailyFirst] = await Promise.all([
+      Promise.all([0, 1000].map(n => getRows(CELL_MASTER_TABLE, "*", n))),
+      getRows("ca_daily_nov_history", "site_id,report_date,ca_pct", 0)
+    ]);
+    const master = masterPages.flat();
+    const daily = [...dailyFirst];
+    // Read only November, in bounded parallel batches, and stop at the first short page.
+    if (dailyFirst.length === 1000) {
+      for (let start = 1000; start < 30000; start += 4000) {
+        const pages = await Promise.all([start, start + 1000, start + 2000, start + 3000].map(n => getRows("ca_daily_nov_history", "site_id,report_date,ca_pct", n)));
+        pages.forEach(page => daily.push(...page));
+        if (pages.some(page => page.length < 1000)) break;
+      }
+    }
+    if (!master.length || !daily.length) throw new Error("November CA or site master is empty");
+    const normalizeId = (v: unknown) => String(v ?? "").trim().replace(/\.0+$/, "");
+    const byId = new Map<string, Record<string, any>[]>();
+    for (const record of daily) {
+      if (!String(record.report_date || "").startsWith("2026-11-")) continue;
+      const id = normalizeId(record.site_id);
+      if (!byId.has(id)) byId.set(id, []);
+      byId.get(id)!.push(record);
+    }
+    const result = master.map(site => {
+      const id = normalizeId(site["Site ID"] ?? site.site_id ?? site.SITE_ID);
+      const records = byId.get(id) || [];
+      const merged: Record<string, any> = { ...site, "Site ID": id };
+      let sum = 0, count = 0;
+      for (const record of records) {
+        const day = Number(String(record.report_date).slice(8, 10));
+        const value = record.ca_pct === null || record.ca_pct === undefined ? "" : Number(record.ca_pct);
+        if (day >= 1 && day <= 30) {
+          merged[`${day}-Nov`] = value;
+          merged[`${day}-Nov-26`] = value;
+          merged[`${String(day).padStart(2, "0")}-Nov-26`] = value;
+        }
+        if (value !== "" && Number.isFinite(value)) { sum += value; count++; }
+      }
+      const average = count ? sum / count : "";
+      merged["Current Month"] = average;
+      merged["Nov'26 Cell A"] = average;
+      merged["NOV'26 Cell A"] = average;
+      return merged;
+    });
+    if (!result.some(r => byId.has(r["Site ID"]))) throw new Error("November site IDs do not match the C1/C6 master");
+    return { headers: Array.from(new Set(result.flatMap(row => Object.keys(row)))), rows: result } as SheetPayload;
+  } finally { clearTimeout(timeout); }
+}
+
+// ============================================================
 //  CONSTANTS
 // ============================================================
 
@@ -291,7 +1434,7 @@ const NAV_ITEMS = [
   { id: "weather", label: "Weather Radar", icon: CloudRain },
 ] as const;
 
-type Month = "july" | "august" | "september" | "october";
+type Month = "july" | "august" | "september" | "october" | "november";
 type AppState = "loading" | "dashboard" | "error";
 type ViewMode = "home" | "month" | "prepost" | "fuel" | "electricity";
 type PrePostSubView = "analysis" | "query";
@@ -299,6 +1442,104 @@ type PrePostSubView = "analysis" | "query";
 // ============================================================
 //  UTILITY FUNCTIONS
 // ============================================================
+
+function exportToCSV(data: any[], filename: string) {
+  if (!data || data.length === 0) {
+    alert("No data to export");
+    return;
+  }
+  const headers = Object.keys(data[0]);
+  const csvRows = [
+    headers.join(","),
+    ...data.map((row) =>
+      headers
+        .map((header) => {
+          const value = row[header] ?? "";
+          if (typeof value === "string" && (value.includes(",") || value.includes('"') || value.includes("\n"))) {
+            return `"${value.replace(/"/g, '""')}"`;
+          }
+          return value;
+        })
+        .join(",")
+    ),
+  ];
+  const csvString = csvRows.join("\n");
+  const blob = new Blob([csvString], { type: "text/csv;charset=utf-8;" });
+  const link = document.createElement("a");
+  const url = URL.createObjectURL(blob);
+  link.setAttribute("href", url);
+  link.setAttribute("download", `${filename}_${new Date().toISOString().slice(0, 10)}.csv`);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
+function exportToExcel(data: any[], filename: string) {
+  if (!data || data.length === 0) {
+    alert("No data to export");
+    return;
+  }
+  const headers = Object.keys(data[0]);
+  let html = `
+    <html xmlns:o="urn:schemas-microsoft-com:office:office" 
+          xmlns:x="urn:schemas-microsoft-com:office:excel" 
+          xmlns="http://www.w3.org/TR/REC-html40">
+    <head>
+      <meta charset="UTF-8">
+      <!--[if gte mso 9]>
+      <xml>
+        <x:ExcelWorkbook>
+          <x:ExcelWorksheets>
+            <x:ExcelWorksheet>
+              <x:Name>Sheet1</x:Name>
+              <x:WorksheetOptions>
+                <x:DisplayGridlines/>
+              </x:WorksheetOptions>
+            </x:ExcelWorksheet>
+          </x:ExcelWorksheets>
+        </x:ExcelWorkbook>
+      </xml>
+      <![endif]-->
+      <style>
+        table { border-collapse: collapse; width: 100%; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; font-weight: bold; }
+        tr:nth-child(even) { background-color: #f9f9f9; }
+      </style>
+    </head>
+    <body>
+      <table>
+        <thead>
+          <tr>
+            ${headers.map((h) => `<th>${h}</th>`).join("")}
+          </tr>
+        </thead>
+        <tbody>
+          ${data
+            .map(
+              (row) => `
+            <tr>
+              ${headers.map((h) => `<td>${row[h] ?? ""}</td>`).join("")}
+            </tr>
+          `
+            )
+            .join("")}
+        </tbody>
+      </table>
+    </body>
+    </html>
+  `;
+  const blob = new Blob([html], { type: "application/vnd.ms-excel;charset=utf-8" });
+  const link = document.createElement("a");
+  const url = URL.createObjectURL(blob);
+  link.setAttribute("href", url);
+  link.setAttribute("download", `${filename}_${new Date().toISOString().slice(0, 10)}.xls`);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
 
 function indexToColumn(index: number): string {
   let col = "";
@@ -433,6 +1674,71 @@ function FilterSelect({
         </>
       )}
     </div>
+  );
+}
+
+function ExportButtonComponent({
+  data,
+  filename,
+  label = "Export",
+  format = "excel",
+  variant = "primary",
+}: {
+  data: any[];
+  filename: string;
+  label?: string;
+  format?: "excel" | "csv";
+  variant?: "primary" | "secondary" | "danger" | "success";
+}) {
+  const [isExporting, setIsExporting] = useState(false);
+
+  const handleExport = () => {
+    if (!data || data.length === 0) {
+      alert("No data available to export");
+      return;
+    }
+    setIsExporting(true);
+    try {
+      if (format === "csv") {
+        exportToCSV(data, filename);
+      } else {
+        exportToExcel(data, filename);
+      }
+    } catch (error) {
+      console.error("Export failed:", error);
+      alert("Failed to export data. Please try again.");
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const variantStyles = {
+    primary: "bg-cyan-500 hover:bg-cyan-400 text-slate-950",
+    secondary: "bg-slate-700 hover:bg-slate-600 text-slate-200",
+    danger: "bg-red-500 hover:bg-red-400 text-white",
+    success: "bg-emerald-500 hover:bg-emerald-400 text-white",
+  };
+
+  return (
+    <button
+      onClick={handleExport}
+      disabled={isExporting || !data || data.length === 0}
+      className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm font-medium transition-colors ${
+        variantStyles[variant]
+      } ${isExporting || !data || data.length === 0 ? "opacity-50 cursor-not-allowed" : ""}`}
+    >
+      {isExporting ? (
+        <>
+          <RefreshCw className="w-4 h-4 animate-spin" />
+          Exporting...
+        </>
+      ) : (
+        <>
+          <FileSpreadsheet className="w-4 h-4" />
+          {label}
+        </>
+      )}
+    </button>
   );
 }
 
@@ -2243,7 +3549,7 @@ function SiteQuery({ sites, historyData = null, rawData = null }: { sites: SiteD
     return keys.map(date => {
       const ca = Number(avb[date]);
       const lsValue = ls[date];
-      const lsNumber = lsValue === null || lsValue === undefined || String(lsValue).trim() === "" ? null : Number(lsValue);
+      const lsNumber = lsValue === null || lsValue === undefined || lsValue === "" ? null : Number(lsValue);
       return {
         date,
         ca: Number.isFinite(ca) && ca > 0 ? ca : null,
@@ -3701,33 +5007,49 @@ function GridPerformanceScorecard({
   // 2) it is <= Updated Date, and
   // 3) at least one row contains a real value in that column.
   // Example on 2-Sep-26: only 1-Sep-26 and 2-Sep-26 are shown.
-  // One pass through the CA rows, rather than scanning every row for every date.
   const latestDateHeaders = useMemo(() => {
-    const monthMap: Record<string, number> = { Jan: 0, Feb: 1, Mar: 2, Apr: 3, May: 4, Jun: 5, Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11 };
-    const toTime = (key: string): number => {
-      const [d, m, y] = key.split("-");
-      return monthMap[m] === undefined ? NaN : new Date(2000 + Number(y), monthMap[m], Number(d)).getTime();
+    const monthMap: Record<string, number> = {
+      Jan: 0, Feb: 1, Mar: 2, Apr: 3, May: 4, Jun: 5,
+      Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11,
     };
-    const cutoff = normalizeDailyDateKey(lastUpdatedDate || "");
-    const cutoffTime = cutoff ? toTime(cutoff) : Number.POSITIVE_INFINITY;
-    const candidates = (rawData?.headers || [])
-      .map((raw: string) => ({ raw, key: normalizeDailyDateKey(raw) }))
-      .filter((item): item is { raw: string; key: string } => Boolean(item.key))
-      .filter(item => (!cutoff || item.key.slice(3) === cutoff.slice(3)) && toTime(item.key) <= cutoffTime)
-      .sort((x, y) => toTime(y.key) - toTime(x.key));
-    // Newest three populated days only. A single pass checks all candidates.
-    const found = new Set<string>();
-    for (const row of rawData?.rows || []) {
-      for (const item of candidates) {
-        if (found.has(item.raw)) continue;
-        const value = getRawValue(row, item.raw);
-        if (value == null || String(value).trim() === "") continue;
-        const parsed = Number.parseFloat(String(value).replace(/[%,]/g, ""));
-        if (Number.isFinite(parsed)) found.add(item.raw);
-      }
-      if (found.size >= 3) break;
-    }
-    return candidates.filter(item => found.has(item.raw)).slice(0, 3).reverse().map(item => item.raw);
+
+    const toTime = (key: string): number => {
+      const [dayStr, monthStr, yearStr] = key.split("-");
+      const month = monthMap[monthStr];
+      if (month === undefined) return Number.NaN;
+      return new Date(2000 + parseInt(yearStr, 10), month, parseInt(dayStr, 10)).getTime();
+    };
+
+    const cutoffKey = normalizeDailyDateKey(lastUpdatedDate || "");
+    const cutoffParts = cutoffKey?.split("-") || [];
+    const cutoffMonth = cutoffParts[1] || "";
+    const cutoffYear = cutoffParts[2] || "";
+    const cutoffTime = cutoffKey ? toTime(cutoffKey) : Number.POSITIVE_INFINITY;
+
+    const headers = (rawData?.headers || [])
+      .map((header: string) => ({ raw: header, normalized: normalizeDailyDateKey(header) }))
+      .filter((item): item is { raw: string; normalized: string } => Boolean(item.normalized))
+      .filter((item) => {
+        const [, monthStr, yearStr] = item.normalized.split("-");
+
+        if (cutoffKey && (monthStr !== cutoffMonth || yearStr !== cutoffYear)) return false;
+        if (toTime(item.normalized) > cutoffTime) return false;
+
+        // Header existence alone is NOT enough. Future columns can already exist.
+        // Require at least one non-empty numeric CA value in the actual rows.
+        return (rawData?.rows || []).some((row: Record<string, any>) => {
+          const rawValue = getRawValue(row, item.raw);
+          if (rawValue === null || rawValue === undefined || String(rawValue).trim() === "") return false;
+          const cleaned = String(rawValue).replace(/%/g, "").replace(/,/g, "").trim();
+          const numeric = Number.parseFloat(cleaned);
+          return Number.isFinite(numeric);
+        });
+      });
+
+    return headers
+      .sort((a, b) => toTime(a.normalized) - toTime(b.normalized))
+      .slice(-3)
+      .map((item) => item.raw);
   }, [rawData, lastUpdatedDate]);
 
   const sourceSites = useMemo<GridPerformanceSite[]>(() => {
@@ -4447,8 +5769,6 @@ function GridPerformanceScorecard({
 //  2) Latest 3 populated daily Cell AVB columns are appended.
 // ============================================================
 
-const MemoGridPerformanceScorecard = React.memo(GridPerformanceScorecard);
-
 function EnhancedOverallSummary({
   sites,
   rawData,
@@ -4511,11 +5831,7 @@ function EnhancedOverallSummary({
     };
 
     const enhance = () => {
-      // Only tables with a Site ID header can receive daily CA columns.
-      // Do not walk every nested dashboard table and its rows on each tab change.
-      const tables = Array.from(root.querySelectorAll("table"))
-        .filter((table) => Array.from(table.querySelectorAll("thead th"))
-          .some((th) => /site\s*id/i.test(th.textContent || ""))) as HTMLTableElement[];
+      const tables = Array.from(root.querySelectorAll("table")) as HTMLTableElement[];
 
       tables.forEach((table) => {
         const bodyRows = Array.from(
@@ -4886,13 +6202,6 @@ function OverallSummaryWithExport({ sites, rawData, lastUpdatedDate }: { sites: 
     return row;
   });
 
-  const overallGridExportRows = useMemo(() => overallGridRows.map(g => ({
-    grid: g.grid,
-    rows: overallGridExport(g.members),
-  })), [overallGridRows]);
-  const overallGridExportMap = useMemo(() => new Map(overallGridExportRows.map(g => [g.grid, g.rows])), [overallGridExportRows]);
-  const allGridExportRows = useMemo(() => overallGridExport(sites), [sites]);
-
   // ============================================================
   //  SHARING AS GUEST — OMO-WISE SUMMARY
   //  Source: active month's Sheet1 raw columns "Sharing Status" + "OMO Name".
@@ -4900,7 +6209,7 @@ function OverallSummaryWithExport({ sites, rawData, lastUpdatedDate }: { sites: 
   const guestOmoData = useMemo(() => {
     if (!rawData?.rows?.length) {
       return {
-        rows: [] as Array<{ omo: string; sites: SiteData[]; avgCa: number; critical: number; exportData: Record<string, any>[] }>,
+        rows: [] as Array<{ omo: string; sites: SiteData[]; avgCa: number; critical: number }>,
         latest3Dates: [] as string[],
         omoIdBySite: new Map<string, string>(),
       };
@@ -5014,34 +6323,11 @@ function OverallSummaryWithExport({ sites, rawData, lastUpdatedDate }: { sites: 
           ? validCa.reduce((sum, value) => sum + value, 0) / validCa.length
           : 0;
 
-        const sortedSites = [...uniqueSites].sort(
-          (a, b) => Number(a.currentAvb || 0) - Number(b.currentAvb || 0)
-        );
-        const exportData = sortedSites.map((site, index) => {
-          const out: Record<string, any> = {
-            Rank: index + 1, "OMO Name": omo, "Site ID": site.siteName,
-            "OMO ID": omoIdBySite.get(String(site.siteName ?? "").trim()) || "-",
-            "Current CA": Number(site.currentAvb || 0) > 0 ? `${Number(site.currentAvb).toFixed(2)}%` : "-",
-          };
-          latest3Dates.forEach(date => {
-            const value = empGetDailyAvb(site, date);
-            out[`${empFormatDailyDateHeader(date)} AVB`] = value > 0 ? `${value.toFixed(2)}%` : "-";
-          });
-          out["Category"] = site.revenueCategory || "-";
-          out["Sub-Region"] = site.subRegion || "-";
-          out["Grid"] = site.grid || "-";
-          out["DG"] = site.dgStatus || site.dgInstalled || "-";
-          out["Li-ion"] = site.liIonInstalled || "-";
-          out["BB Status"] = site.bbStatus || "-";
-          out["Cluster Owner"] = site.clusterOwner || "-";
-          out["MS GTL"] = site.msGtl || "-";
-          out["Zone Lead"] = site.zongLead || "-";
-          return out;
-        });
         return {
           omo,
-          sites: sortedSites,
-          exportData,
+          sites: [...uniqueSites].sort(
+            (a, b) => Number(a.currentAvb || 0) - Number(b.currentAvb || 0)
+          ),
           avgCa,
           critical: validCa.filter((value) => value < 98).length,
         };
@@ -5051,13 +6337,43 @@ function OverallSummaryWithExport({ sites, rawData, lastUpdatedDate }: { sites: 
     return { rows, latest3Dates, omoIdBySite };
   }, [rawData, sites, lastUpdatedDate]);
 
+  const guestOmoExport = (omoRow: (typeof guestOmoData.rows)[number]) =>
+    omoRow.sites.map((site, index) => {
+      const out: Record<string, any> = {
+        Rank: index + 1,
+        "OMO Name": omoRow.omo,
+        "Site ID": site.siteName,
+        "OMO ID": guestOmoData.omoIdBySite.get(String(site.siteName ?? "").trim()) || "-",
+        "Current CA": Number(site.currentAvb || 0) > 0
+          ? `${Number(site.currentAvb).toFixed(2)}%`
+          : "-",
+      };
+
+      guestOmoData.latest3Dates.forEach((date) => {
+        const value = empGetDailyAvb(site, date);
+        out[`${empFormatDailyDateHeader(date)} AVB`] =
+          value > 0 ? `${value.toFixed(2)}%` : "-";
+      });
+
+      out["Category"] = site.revenueCategory || "-";
+      out["Sub-Region"] = site.subRegion || "-";
+      out["Grid"] = site.grid || "-";
+      out["DG"] = site.dgStatus || site.dgInstalled || "-";
+      out["Li-ion"] = site.liIonInstalled || "-";
+      out["BB Status"] = site.bbStatus || "-";
+      out["Cluster Owner"] = site.clusterOwner || "-";
+      out["MS GTL"] = site.msGtl || "-";
+      out["Zone Lead"] = site.zongLead || "-";
+      return out;
+    });
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div className="flex items-center gap-3">
           <FileSpreadsheet className="w-5 h-5 text-cyan-400" />
           <div>
-            <h3 className="text-white font-semibold">Export All Site Data</h3>
+            <h3 className="text-white font-semibold">Export All Google Sheet Data</h3>
             <p className="text-xs text-slate-400">{fullExportData.length} rows · All columns</p>
           </div>
         </div>
@@ -5077,7 +6393,7 @@ function OverallSummaryWithExport({ sites, rawData, lastUpdatedDate }: { sites: 
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div><h3 className="text-lg font-black text-slate-900">Grid Performance — Overall Summary</h3>
             <p className="text-xs text-slate-500">Current month CA · lowest performing grids first · View site details</p></div>
-          <ExportButtonComponent data={allGridExportRows} filename="Overall_Grid_All_Sites" label="Export All Grids" format="excel" variant="success" />
+          <ExportButtonComponent data={overallGridExport(sites)} filename="Overall_Grid_All_Sites" label="Export All Grids" format="excel" variant="success" />
         </div>
         <div className="overflow-x-auto"><table className="w-full min-w-[650px] text-sm">
           <thead className="bg-sky-900 text-white"><tr>{["Grid","Sites","Current CA","Below 98%","Actions"].map(h=><th key={h} className="px-4 py-3 text-left text-white">{h}</th>)}</tr></thead>
@@ -5086,11 +6402,11 @@ function OverallSummaryWithExport({ sites, rawData, lastUpdatedDate }: { sites: 
               <td className="px-4 py-3 font-bold text-slate-900">{g.grid}</td><td className="px-4 py-3">{g.members.length}</td>
               <td className="px-4 py-3"><AvailabilityBadge value={g.ca}/></td><td className="px-4 py-3 font-bold text-rose-600">{g.critical}</td>
               <td className="px-4 py-3"><div className="flex gap-2"><button type="button" onClick={()=>setExpandedOverallGrid(expandedOverallGrid===g.grid?null:g.grid)} className="rounded-lg bg-sky-100 px-3 py-2 font-bold text-sky-800">{expandedOverallGrid===g.grid?"Hide":"View"}</button>
-              <ExportButtonComponent data={overallGridExportMap.get(g.grid) || []} filename={`Overall_Grid_${g.grid}`} label="Export" format="excel" variant="success" /></div></td>
+              <ExportButtonComponent data={overallGridExport(g.members)} filename={`Overall_Grid_${g.grid}`} label="Export" format="excel" variant="success" /></div></td>
             </tr>
             {expandedOverallGrid===g.grid && <tr><td colSpan={5} className="bg-slate-50 p-3"><div className="max-h-[520px] overflow-auto"><table className="min-w-[1350px] w-full text-xs">
-              <thead className="bg-emerald-900 text-white"><tr>{Object.keys((overallGridExportMap.get(g.grid) || [])[0] || {}).map(h=><th key={h} className="whitespace-nowrap px-3 py-2 text-left text-white">{h}</th>)}</tr></thead>
-              <tbody>{[...(overallGridExportMap.get(g.grid) || [])].sort((a,b)=>parseFloat(String(a["Current Month CA"]))-parseFloat(String(b["Current Month CA"]))).map((r,i)=><tr key={i} className="border-b border-slate-200 even:bg-white">{Object.values(r).map((v,j)=><td key={j} className="whitespace-nowrap px-3 py-2 text-slate-800">{v}</td>)}</tr>)}</tbody>
+              <thead className="bg-emerald-900 text-white"><tr>{Object.keys(overallGridExport(g.members)[0] || {}).map(h=><th key={h} className="whitespace-nowrap px-3 py-2 text-left text-white">{h}</th>)}</tr></thead>
+              <tbody>{overallGridExport(g.members).sort((a,b)=>parseFloat(String(a["Current Month CA"]))-parseFloat(String(b["Current Month CA"]))).map((r,i)=><tr key={i} className="border-b border-slate-200 even:bg-white">{Object.values(r).map((v,j)=><td key={j} className="whitespace-nowrap px-3 py-2 text-slate-800">{v}</td>)}</tr>)}</tbody>
               </table></div></td></tr>}
           </React.Fragment>)}</tbody>
         </table></div>
@@ -5149,7 +6465,7 @@ function OverallSummaryWithExport({ sites, rawData, lastUpdatedDate }: { sites: 
                           </button>
 
                           <ExportButtonComponent
-                            data={omoRow.exportData}
+                            data={guestOmoExport(omoRow)}
                             filename={`Guest_OMO_${omoRow.omo.replace(/[^a-z0-9]+/gi, "_")}`}
                             label="Export"
                             format="excel"
@@ -5329,6 +6645,24 @@ function ErrorScreen({ message, onRetry }: { message: string; onRetry: () => voi
     </div>
   );
 }
+
+function SectionBanner({ icon, title, subtitle, gradient, className = "" }: { icon: React.ReactNode; title: string; subtitle: string; gradient: string; className?: string }) {
+  return (
+    <div className={`category-page-banner rounded-2xl bg-gradient-to-r ${gradient} border border-slate-200 p-5 shadow-sm ${className}`}>
+      <div className="flex items-center gap-3">
+        {icon}
+        <div>
+          <h3 className="text-slate-900 font-extrabold text-lg" style={{ color: "#102a43" }}>{title}</h3>
+          <p className="text-slate-600 text-sm" style={{ color: "#475569" }}>{subtitle}</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+//  Pre‑Vs‑Post Analysis Component (receives parsed sites)
+// ============================================================
 
 function PreVsPostAnalysis({
   sites,
@@ -6125,6 +7459,46 @@ const normalizeDateLabel = (value: string): string => {
   return raw;
 };
 
+// Local-first, user-scoped IndexedDB. Supabase is contacted only by explicit Sync Data.
+const AVB_DB_NAME = "cell-avb-offline-v1";
+const AVB_STORE = "snapshots";
+type AvbSnapshot = { key: string; payload: SheetPayload; syncedAt: string };
+const avbUserScope = (): string => {
+  try { const s = JSON.parse(sessionStorage.getItem("cell_avb_supabase_session") || "null"); return String(s?.user?.id || "unknown"); }
+  catch { return "unknown"; }
+};
+const avbCacheKey = (name: string): string => `${avbUserScope()}:${name}`;
+function openAvbDb(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(AVB_DB_NAME, 1);
+    req.onupgradeneeded = () => { if (!req.result.objectStoreNames.contains(AVB_STORE)) req.result.createObjectStore(AVB_STORE, { keyPath: "key" }); };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error || new Error("IndexedDB unavailable"));
+  });
+}
+async function readAvbCache(name: string): Promise<AvbSnapshot | null> {
+  const db = await openAvbDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(AVB_STORE, "readonly");
+    const req = tx.objectStore(AVB_STORE).get(avbCacheKey(name));
+    req.onsuccess = () => resolve((req.result as AvbSnapshot | undefined) || null);
+    req.onerror = () => reject(req.error);
+    tx.oncomplete = () => db.close();
+    tx.onerror = () => { db.close(); reject(tx.error); };
+  });
+}
+async function saveAvbCaches(entries: Array<{ name: string; payload: SheetPayload }>): Promise<void> {
+  const db = await openAvbDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(AVB_STORE, "readwrite");
+    const syncedAt = new Date().toISOString();
+    for (const entry of entries) tx.objectStore(AVB_STORE).put({ key: avbCacheKey(entry.name), payload: entry.payload, syncedAt } as AvbSnapshot);
+    tx.oncomplete = () => { db.close(); resolve(); };
+    tx.onerror = () => { db.close(); reject(tx.error); };
+    tx.onabort = () => { db.close(); reject(tx.error); };
+  });
+}
+
 export default function App() {
   const [syncing, setSyncing] = useState(false);
   const [syncNotice, setSyncNotice] = useState("");
@@ -6277,19 +7651,19 @@ export default function App() {
     // Fetch batches concurrently instead of waiting for each 1,000-row request.
     // A first-page check also supports any future changes in archive size.
     const first = await loadPage(0);
-    for (const item of first) all.push(item);
+    all.push(...first);
     const expected = knownCounts[sheetName];
     if (first.length === pageSize) {
       if (expected) {
         const offsets = Array.from({ length: Math.ceil(expected / pageSize) - 1 }, (_, i) => (i + 1) * pageSize);
-        for (let i = 0; i < offsets.length; i += 3) {
-          const pages = await Promise.all(offsets.slice(i, i + 3).map(loadPage));
-          for (const page of pages) for (const item of page) all.push(item);
+        for (let i = 0; i < offsets.length; i += 6) {
+          const pages = await Promise.all(offsets.slice(i, i + 6).map(loadPage));
+          pages.forEach(page => all.push(...page));
         }
       } else {
         for (let offset = pageSize; ; offset += pageSize) {
           const page = await loadPage(offset);
-          for (const item of page) all.push(item);
+          all.push(...page);
           if (page.length < pageSize) break;
         }
       }
@@ -6309,7 +7683,7 @@ export default function App() {
 
   const loadMonthData = async (month: Month) => {
     // October-only mode: prevent requests to archived monthly workbooks.
-    if (month !== "october") return loadMonthData("october");
+    if (month !== "october" && month !== "november") return loadMonthData("november");
     // Every month must load strictly from its own workbook.
     // The sequence guard prevents an older request (for example August)
     // from finishing later and overwriting a newer September selection.
@@ -6336,12 +7710,12 @@ export default function App() {
     setMonthLastColumnIndex(0);
 
     try {
-      const cached = await readAvbCache("october-ca");
+      const cached = await readAvbCache(month === "november" ? "november-ca" : "october-ca");
       if (requestId !== monthLoadSeq.current) return;
       if (!cached?.payload?.rows?.length) {
         setViewMode("month");
         setAppState("error");
-        setErrorMsg("No offline October CA snapshot found. Go Home and press Sync Data once while online.");
+        setErrorMsg(`No offline ${month === "november" ? "November" : "October"} CA snapshot found. Go Home and press Sync Data once while online.`);
         return;
       }
       setMonthData(cached.payload);
@@ -6394,7 +7768,7 @@ export default function App() {
       setLastSync(h.syncedAt);
       setFuelOwnership(own?.payload ? {
         ...own.payload,
-        rows: own.payload.rows.map((raw: Parameters<typeof normalizeRow>[0]) => {
+        rows: own.payload.rows.map(raw => {
           const site = normalizeRow(raw);
           return { "Site ID": String(site.siteName ?? "").trim(), "Cluster Owner": String(site.clusterOwner ?? "").trim(), "MS GTL": String(site.msGtl ?? "").trim(), "Zone Lead": String(site.zongLead ?? "").trim() };
         })
@@ -6411,12 +7785,12 @@ export default function App() {
   const syncAllData = async () => {
     if (syncing) return;
     setSyncing(true);
-    setSyncNotice("Syncing October CA and fuel datasets from Supabase…");
+    setSyncNotice("Syncing October and November CA from Supabase…");
     try {
       // Download everything before replacing any snapshot; failed sync retains previous cache.
       // Refresh Supabase auth before the archive requests, if needed.
-      const ca = await fetchCellAvbFromSupabase();
-      setSyncNotice("October CA downloaded. Syncing fuel and 3 Basics…");
+      const [ca, november] = await Promise.all([fetchCellAvbFromSupabase(), fetchNovemberCellAvb()]);
+      setSyncNotice("October and November CA downloaded. Syncing fuel and 3 Basics…");
       const [basics, fuel, monthly, deviation] = await Promise.all([
         fetchArchivedSheet("3 Basics KPIs"),
         fetchArchivedSheet("Fuel History"),
@@ -6425,6 +7799,7 @@ export default function App() {
       ]);
       await saveAvbCaches([
         { name: "october-ca", payload: ca },
+        { name: "november-ca", payload: november },
         { name: "3 Basics KPIs", payload: basics },
         { name: "Fuel History", payload: fuel },
         { name: "Monthly Fuel History", payload: monthly },
@@ -6432,7 +7807,7 @@ export default function App() {
       ]);
       const now = new Date().toISOString();
       setLastSync(now);
-      setSyncNotice(`Sync successful: ${ca.rows.length} CA sites, ${basics.rows.length} 3 Basics, ${fuel.rows.length} fuel entries, ${monthly.rows.length} monthly fuel, ${deviation.rows.length} deviations. Open a dashboard tab to view refreshed data.`);
+      setSyncNotice(`Sync successful: October ${ca.rows.length} sites, November ${november.rows.length} sites, ${basics.rows.length} 3 Basics, ${fuel.rows.length} fuel entries, ${monthly.rows.length} monthly fuel, ${deviation.rows.length} deviations. Open a dashboard tab to view refreshed data.`);
     } catch (error) {
       setSyncNotice(`Sync failed; previous offline data preserved. ${error instanceof Error ? error.message : String(error)}`);
     } finally { setSyncing(false); }
@@ -6503,7 +7878,7 @@ export default function App() {
 
   if (!isAuthenticated) return <LoginScreen onLogin={handleLogin} />;
   if (appState === "loading") return <LoadingScreen onHome={goHome} />;
-  if (appState === "error") return <div className="min-h-screen bg-slate-900"><div className="absolute left-5 top-5 z-50"><button onClick={goHome} className="rounded-lg bg-cyan-500 px-5 py-2 font-semibold text-slate-950">← Home / Sync Data</button></div><ErrorScreen message={errorMsg} onRetry={viewMode === "prepost" ? loadPreVsPost : viewMode === "fuel" ? loadFuelDashboard : () => loadMonthData(selectedMonth || "october")} /></div>;
+  if (appState === "error") return <div className="min-h-screen bg-slate-900"><div className="absolute left-5 top-5 z-50"><button onClick={goHome} className="rounded-lg bg-cyan-500 px-5 py-2 font-semibold text-slate-950">← Home / Sync Data</button></div><ErrorScreen message={errorMsg} onRetry={viewMode === "prepost" ? loadPreVsPost : viewMode === "fuel" ? loadFuelDashboard : () => loadMonthData(selectedMonth || "november")} /></div>;
 
   // ----- HOME SCREEN (four buttons) -----
   if (viewMode === "home") {
@@ -6526,9 +7901,12 @@ export default function App() {
           </div>
           <motion.div variants={{ hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.15 } } }} initial="hidden" animate="show" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5 mt-9">
 
+            <motion.button variants={{ hidden: { opacity: 0, y: 30 }, show: { opacity: 1, y: 0 } }} whileHover={{ scale: 1.03, boxShadow: "0 0 40px rgba(34, 211, 238, 0.35)" }} whileTap={{ scale: 0.98 }} onClick={() => loadMonthData("november")} className="group relative w-full min-h-[142px] px-6 py-7 rounded-2xl bg-gradient-to-br from-emerald-500/25 to-cyan-500/20 border border-emerald-400/50 hover:border-emerald-300 transition-all duration-300 shadow-xl overflow-hidden">
+              <div className="relative text-center"><span className="block text-xl sm:text-2xl font-extrabold tracking-tight text-white">November 2026</span><span className="text-emerald-200 text-sm">ACTIVE · Daily CA</span></div>
+            </motion.button>
             <motion.button variants={{ hidden: { opacity: 0, y: 30 }, show: { opacity: 1, y: 0 } }} whileHover={{ scale: 1.03, boxShadow: "0 0 40px rgba(34, 211, 238, 0.35)" }} whileTap={{ scale: 0.98 }} onClick={() => loadMonthData("october")} className="group relative w-full min-h-[142px] px-6 py-7 rounded-2xl bg-gradient-to-br from-cyan-500/20 to-emerald-500/20 border border-cyan-400/30 hover:border-cyan-300 transition-all duration-300 shadow-xl hover:shadow-cyan-500/40 backdrop-blur-sm overflow-hidden">
               <span className="absolute inset-0 bg-gradient-to-r from-cyan-400/20 to-emerald-400/20 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-              <div className="relative text-center"><span className="block text-xl sm:text-2xl font-extrabold tracking-tight text-white">October 2026</span><span className="text-cyan-200 text-sm">LIVE · Active data</span></div>
+              <div className="relative text-center"><span className="block text-xl sm:text-2xl font-extrabold tracking-tight text-white">October 2026</span><span className="text-cyan-200 text-sm">CLOSED · Historical data</span></div>
             </motion.button>
             <motion.button variants={{ hidden: { opacity: 0, y: 30 }, show: { opacity: 1, y: 0 } }} whileHover={{ scale: 1.03, boxShadow: "0 0 40px rgba(34, 197, 94, 0.35)" }} whileTap={{ scale: 0.98 }} onClick={loadFuelDashboard} className="group relative w-full min-h-[142px] px-6 py-7 rounded-2xl bg-gradient-to-br from-green-500/25 to-emerald-700/25 border border-green-400/40 hover:border-green-300 transition-all duration-300 shadow-xl hover:shadow-green-500/40 backdrop-blur-sm overflow-hidden">
               <span className="absolute inset-0 bg-gradient-to-r from-green-400/20 to-emerald-400/20 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
@@ -6651,8 +8029,8 @@ export default function App() {
           ? "August 2026"
           : selectedMonth === "september"
             ? "September 2026"
-            : "October 2026";
-  const isLive = selectedMonth === "october";
+            : selectedMonth === "november" ? "November 2026" : "October 2026";
+  const isLive = selectedMonth === "november";
 
   return (
     <div className="light-app min-h-screen bg-[#eef0f3] text-slate-900 flex">
@@ -6719,10 +8097,10 @@ export default function App() {
 
         <main className="flex-1 p-4 sm:p-6 space-y-6">
           <ErrorBoundary key={activeTab + selectedMonth}>
-            <React.Fragment>
-              <div key={activeTab + selectedMonth} className="space-y-6">
+            <AnimatePresence mode="wait">
+              <motion.div key={activeTab + selectedMonth} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.2 }} className="space-y-6">
                 {activeTab === "overall" && <div className="overall-vibrant"><OverallSummaryWithExport sites={sites} rawData={monthData} lastUpdatedDate={monthLastUpdated} /></div>}
-                {activeTab === "grid-performance" && <div className="grid-vibrant"><MemoGridPerformanceScorecard rawData={monthData} lastUpdatedDate={monthLastUpdated} /></div>}
+                {activeTab === "grid-performance" && <div className="grid-vibrant"><GridPerformanceScorecard rawData={monthData} lastUpdatedDate={monthLastUpdated} /></div>}
                 {activeTab === "3-basics-kpis" && <div className="basics-vibrant"><ThreeBasicsKpiPage kpiData={month3Basics} sites={sites} lastUpdatedDate={monthLastUpdated} /></div>}
                 {activeTab === "employees" && <><SectionBanner icon={<Users className="w-6 h-6 text-indigo-400" />} title="Employee Performance Analysis" subtitle={`${sites.filter((s) => s.currentAvb > 0).length} active sites`} gradient="from-indigo-500/10 to-purple-500/10 border-indigo-500/20" /><div className="employee-performance-light"><style>{`
   .employee-performance-light .employee-all-sites-header,
@@ -6758,10 +8136,10 @@ export default function App() {
                 {activeTab === "dg" && <CategoryPage sites={sites} title="DG Sites (Diesel Generator Backup)" description={`${dgRows.length} sites with diesel generators`} threshold={98.5} filterFn={(s) => hasDG(s)} lastUpdatedDate={monthLastUpdated} lastColumnIndex={monthLastColumnIndex} />}
                 {activeTab === "li-ion" && <CategoryPage sites={sites} title="Li-ion Battery Backup Sites" description={`${liIonRows.length} sites with Li-ion batteries installed`} threshold={98} filterFn={(s) => hasLiIon(s)} lastUpdatedDate={monthLastUpdated} lastColumnIndex={monthLastColumnIndex} />}
                 {activeTab === "agm" && <CategoryPage sites={sites} title="AGM Battery Backup Sites" description={`${agmRows.length} sites with AGM battery banks`} threshold={95} filterFn={(s) => hasAGM(s)} lastUpdatedDate={monthLastUpdated} lastColumnIndex={monthLastColumnIndex} />}
-                {activeTab === "query" && <SiteQuery sites={sites} rawData={monthData} historyData={(selectedMonth === "september" || selectedMonth === "october") ? monthCellAvbHistory : null} />}
+                {activeTab === "query" && <SiteQuery sites={sites} rawData={monthData} historyData={(selectedMonth === "september" || selectedMonth === "october" || selectedMonth === "november") ? monthCellAvbHistory : null} />}
                 {activeTab === "weather" && <WeatherRadar />}
-              </div>
-            </React.Fragment>
+              </motion.div>
+            </AnimatePresence>
           </ErrorBoundary>
           <footer className="text-center text-xs text-slate-600 py-4">
             {useMock ? "📊 Demo Mode - Using sample data" : `Supabase cached data (${monthLabel})`} · {sites.length} sites · C1 & C6 Cell Avb Analysis
