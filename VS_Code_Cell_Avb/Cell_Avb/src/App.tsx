@@ -3549,7 +3549,7 @@ function SiteQuery({ sites, historyData = null, rawData = null }: { sites: SiteD
     return keys.map(date => {
       const ca = Number(avb[date]);
       const lsValue = ls[date];
-      const lsNumber = lsValue === null || lsValue === undefined || lsValue === "" ? null : Number(lsValue);
+      const lsNumber = lsValue == null ? null : Number(lsValue);
       return {
         date,
         ca: Number.isFinite(ca) && ca > 0 ? ca : null,
