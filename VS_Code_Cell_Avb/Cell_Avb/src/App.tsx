@@ -7891,11 +7891,6 @@ export default function App() {
             <span className="text-cyan-300 font-bold tracking-widest text-sm">📶 ZONG 5G</span>
           </motion.div>
           <h1 className="text-5xl md:text-7xl font-extrabold text-white leading-tight mb-6 drop-shadow-lg">C1 & C6 <br /><span className="bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">Cell Avb Analysis</span></h1>
-          <div className="mx-auto mt-5 max-w-3xl rounded-xl border border-cyan-400/30 bg-slate-950/80 px-5 py-4 text-white">
-            <p className="text-xs text-slate-300">Offline snapshot · IndexedDB</p>
-            {lastSync && <p className="mt-2 text-xs text-emerald-300">Last sync: {new Date(lastSync).toLocaleString()}</p>}
-            {syncNotice && <p role="status" className="mt-2 break-words text-sm text-cyan-100">{syncNotice}</p>}
-          </div>
           <motion.div variants={{ hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.15 } } }} initial="hidden" animate="show" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5 mt-9">
 
             <motion.button variants={{ hidden: { opacity: 0, y: 30 }, show: { opacity: 1, y: 0 } }} whileHover={{ scale: 1.03, boxShadow: "0 0 40px rgba(34, 211, 238, 0.35)" }} whileTap={{ scale: 0.98 }} onClick={() => loadMonthData("november")} className="group relative w-full min-h-[142px] px-6 py-7 rounded-2xl bg-gradient-to-br from-emerald-500/25 to-cyan-500/20 border border-emerald-400/50 hover:border-emerald-300 transition-all duration-300 shadow-xl overflow-hidden">
