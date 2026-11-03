@@ -7710,18 +7710,42 @@ export default function App() {
     setMonthLastColumnIndex(0);
 
     try {
-      const cached = await readAvbCache(month === "november" ? "november-ca" : "october-ca");
-      if (requestId !== monthLoadSeq.current) return;
-      if (!cached?.payload?.rows?.length) {
-        setViewMode("month");
-        setAppState("error");
-        setErrorMsg(`No offline ${month === "november" ? "November" : "October"} CA snapshot found. The offline snapshot is not available.`);
-        return;
+      const cacheName = month === "november" ? "november-ca" : "october-ca";
+      // Online-first: November must not require a pre-existing browser snapshot.
+      // If the live request fails, retain offline operation when a valid cache exists.
+      let payload: SheetPayload | null = null;
+      let updatedAt = "";
+      let liveError: unknown = null;
+      try {
+        payload = month === "november"
+          ? await fetchNovemberCellAvb()
+          : await fetchCellAvbFromSupabase();
+        if (!payload?.rows?.length) throw new Error("The live CA source returned no sites.");
+        updatedAt = new Date().toISOString();
+        // Cache is best-effort: unavailable IndexedDB must never block live CA.
+        await saveAvbCaches([{ name: cacheName, payload }]).catch(err =>
+          console.warn("[Cell AVB] Could not save CA offline cache:", err)
+        );
+      } catch (err) {
+        liveError = err;
+        console.warn("[Cell AVB] Live CA unavailable; checking offline snapshot:", err);
+        const cached = await readAvbCache(cacheName).catch(() => null);
+        if (cached?.payload?.rows?.length) {
+          payload = cached.payload;
+          updatedAt = cached.syncedAt;
+        }
       }
-      setMonthData(cached.payload);
-      setMonthLastUpdated(cached.syncedAt);
-      setLastSync(cached.syncedAt);
+      if (requestId !== monthLoadSeq.current) return;
+      if (!payload?.rows?.length) {
+        throw new Error(
+          `No ${month === "november" ? "November" : "October"} CA data available from Supabase or offline cache. ${liveError instanceof Error ? liveError.message : String(liveError || "")}`
+        );
+      }
+      setMonthData(payload);
+      setMonthLastUpdated(updatedAt);
+      setLastSync(updatedAt);
       const basics = await readAvbCache("3 Basics KPIs").catch(() => null);
+      if (requestId !== monthLoadSeq.current) return;
       setMonth3Basics(basics?.payload || null);
       setViewMode("month");
       setAppState("dashboard");
