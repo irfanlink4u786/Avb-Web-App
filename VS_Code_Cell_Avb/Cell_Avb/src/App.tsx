@@ -2450,7 +2450,7 @@ function CategoryPage({
                       </td>
                     ))}
                     <td className={`py-2 px-3 text-center font-bold ${avg !== null && avg < 98 ? "text-red-400" : "text-amber-400"}`}>
-                      avg === null ? "—" : `${avg.toFixed(2)}%`}{values.filter(v => v !== null).length < 3 && <span className="block text-[10px] font-normal text-amber-300">Partial: {values.filter(v => v !== null).length}/3 days</span>
+                      {avg === null ? "—" : `${avg.toFixed(2)}%`}{values.filter(v => v !== null).length < 3 && <span className="block text-[10px] font-normal text-amber-300">Partial: {values.filter(v => v !== null).length}/3 days</span>}
                     </td>
                     <td className="py-2 px-3 text-center text-slate-300">
                       {site.currentAvb.toFixed(2)}%
