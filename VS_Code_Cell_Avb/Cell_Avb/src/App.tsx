@@ -6074,7 +6074,7 @@ function DailyRegionalCaLsChart({ rawData, sites, selectedMonth }: { rawData?: S
       setChartError("");
       try {
         const env = import.meta.env;
-        const base = String(env.VITE_SUPABASE_URL || "").replace(/\\/$/, "");
+        const base = String(env.VITE_SUPABASE_URL || "").replace(/\/$/, "");
         const key = String(env.VITE_SUPABASE_PUBLISHABLE_KEY || env.VITE_SUPABASE_ANON_KEY || "");
         const saved = sessionStorage.getItem("cell_avb_supabase_session");
         const session = saved ? JSON.parse(saved) : null;
