@@ -6043,7 +6043,7 @@ function EnhancedOverallSummary({
           </div>;
         })()}
       </div>
-      <DailyRegionalCaLsChart rawData={rawData} sites={sites} />
+      <DailyRegionalCaLsChart rawData={rawData} sites={sites} selectedMonth={selectedMonth} />
       <OverallSummaryComponent sites={sites} />
     </div>
   );
@@ -6057,14 +6057,16 @@ function EnhancedOverallSummary({
 // LS values are not inferred from CA and are never hardcoded as current data.
 // A secure LS aggregate API can be connected independently when available.
 // Daily C-1 / C-6 availability and load-shedding comparison, using actual workbook values.
-function DailyRegionalCaLsChart({ rawData, sites }: { rawData?: SheetPayload | null; sites: SiteData[] }) {
+function DailyRegionalCaLsChart({ rawData, sites, selectedMonth }: { rawData?: SheetPayload | null; sites: SiteData[]; selectedMonth: string }) {
   const [region, setRegion] = useState<"all" | "C-1" | "C-6">("all");
   const [showLs, setShowLs] = useState(true);
   const chartData = useMemo(() => {
     if (!rawData?.rows?.length) return [];
+    const monthCode = selectedMonth === "november" ? "Nov" : "Oct";
+    const daysInMonth = selectedMonth === "november" ? 30 : 31;
     const normalize = (v: unknown) => String(v ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
     const validSites = new Map(sites.map(s => [String(s.siteName).trim(), s]));
-    const buckets = Array.from({ length: 31 }, (_, i) => ({ day: i + 1, date: `${i + 1} Oct`, c1Sum: 0, c1N: 0, c6Sum: 0, c6N: 0, ls1Sum: 0, ls1N: 0, ls6Sum: 0, ls6N: 0 }));
+    const buckets = Array.from({ length: daysInMonth }, (_, i) => ({ day: i + 1, date: `${i + 1} ${monthCode}`, c1Sum: 0, c1N: 0, c6Sum: 0, c6N: 0, ls1Sum: 0, ls1N: 0, ls6Sum: 0, ls6N: 0 }));
     for (const row of rawData.rows as Record<string, unknown>[]) {
       const idKey = Object.keys(row).find(k => ["siteid", "sitename", "site"].includes(normalize(k)));
       if (!idKey) continue;
@@ -6076,7 +6078,7 @@ function DailyRegionalCaLsChart({ rawData, sites }: { rawData?: SheetPayload | n
         const isLs = /(?:^|\W)(?:ls|load\s*shedding)(?:\W|$)/i.test(key);
         const datePart = isLs ? key.replace(/load\s*shedding(?:\s*\(hrs?\))?|\bLS\b/gi, "").replace(/^[-:_\s]+|[-:_\s]+$/g, "") : key;
         const date = normalizeDailyDateKey(datePart);
-        if (!date || !/^\d{1,2}-Oct-26$/.test(date)) continue;
+        if (!date || date.split("-")[1] !== monthCode || date.split("-")[2] !== "26") continue;
         if (rawValue == null || String(rawValue).trim() === "") continue;
         const value = Number(String(rawValue).replace(/[% ,]/g, ""));
         if (!Number.isFinite(value)) continue;
@@ -6099,13 +6101,13 @@ function DailyRegionalCaLsChart({ rawData, sites }: { rawData?: SheetPayload | n
       ls1: b.day <= 0 ? null : (b.ls1N ? +(b.ls1Sum / b.ls1N).toFixed(2) : null),
       ls6: b.day <= 0 ? null : (b.ls6N ? +(b.ls6Sum / b.ls6N).toFixed(2) : null),
     }));
-  }, [rawData, sites]);
+  }, [rawData, sites, selectedMonth]);
   const hasCa = chartData.some(d => d.c1 !== null || d.c6 !== null);
   const hasLs = chartData.some(d => d.ls1 !== null || d.ls6 !== null);
   return <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
     <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
       <div><h3 className="text-xl font-bold text-slate-900">Daily Cell AVB vs Load Shedding — C-1 &amp; C-6</h3>
-        <p className="text-xs text-slate-500">October 2026 · Daily site-average CA (%) and LS (hours) · 98% target · LS shown only where available from the current data source</p></div>
+        <p className="text-xs text-slate-500">{selectedMonth === "november" ? "November" : "October"} 2026 · Daily site-average CA (%) and LS (hours) · 98% target · LS shown only where available from the current data source</p></div>
       <div className="flex gap-2">{(["all", "C-1", "C-6"] as const).map(v => <button key={v} type="button" onClick={() => setRegion(v)} className={`rounded-lg px-3 py-2 text-sm font-semibold ${region === v ? "bg-emerald-700 text-white" : "bg-slate-100 text-slate-700"}`}>{v === "all" ? "Both" : v}</button>)}</div>
     </div>
     {hasCa ? <>
@@ -6123,11 +6125,11 @@ function DailyRegionalCaLsChart({ rawData, sites }: { rawData?: SheetPayload | n
       </ComposedChart></ResponsiveContainer></div>
       <label className="mt-2 flex items-center gap-2 text-xs text-slate-600"><input type="checkbox" checked={showLs} onChange={e => setShowLs(e.target.checked)} /> Show LS lines</label>
       {!hasLs && <p className="mt-2 text-sm text-amber-700">LS is not present in the loaded data. The protected central_ls_daily table requires a dedicated authorized aggregate endpoint.</p>}
-    </> : <p className="py-12 text-center text-sm text-slate-600">No October daily CA columns were found in the loaded workbook.</p>}
+    </> : <p className="py-12 text-center text-sm text-slate-600">No {selectedMonth === "november" ? "November" : "October"} daily CA columns were found in the loaded data.</p>}
   </section>;
 }
 
-function OverallSummaryWithExport({ sites, rawData, lastUpdatedDate }: { sites: SiteData[]; rawData?: SheetPayload | null; lastUpdatedDate?: string }) {
+function OverallSummaryWithExport({ sites, rawData, lastUpdatedDate, selectedMonth }: { sites: SiteData[]; rawData?: SheetPayload | null; lastUpdatedDate?: string; selectedMonth: string }) {
   const [expandedOmo, setExpandedOmo] = useState<string | null>(null);
   const TARGET_CA = 99;
 
@@ -8113,7 +8115,7 @@ export default function App() {
           <ErrorBoundary key={activeTab + selectedMonth}>
             <AnimatePresence mode="wait">
               <motion.div key={activeTab + selectedMonth} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.2 }} className="space-y-6">
-                {activeTab === "overall" && <div className="overall-vibrant"><OverallSummaryWithExport sites={sites} rawData={monthData} lastUpdatedDate={monthLastUpdated} /></div>}
+                {activeTab === "overall" && <div className="overall-vibrant"><OverallSummaryWithExport sites={sites} rawData={monthData} lastUpdatedDate={monthLastUpdated} selectedMonth={selectedMonth} /></div>}
                 {activeTab === "grid-performance" && <div className="grid-vibrant"><GridPerformanceScorecard rawData={monthData} lastUpdatedDate={monthLastUpdated} /></div>}
                 {activeTab === "3-basics-kpis" && <div className="basics-vibrant"><ThreeBasicsKpiPage kpiData={month3Basics} sites={sites} lastUpdatedDate={monthLastUpdated} /></div>}
                 {activeTab === "employees" && <><SectionBanner icon={<Users className="w-6 h-6 text-indigo-400" />} title="Employee Performance Analysis" subtitle={`${sites.filter((s) => s.currentAvb > 0).length} active sites`} gradient="from-indigo-500/10 to-purple-500/10 border-indigo-500/20" /><div className="employee-performance-light"><style>{`
