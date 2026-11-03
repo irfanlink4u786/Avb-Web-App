@@ -5775,10 +5775,12 @@ function EnhancedOverallSummary({
   sites,
   rawData,
   lastUpdatedDate,
+  selectedMonth,
 }: {
   sites: SiteData[];
   rawData?: SheetPayload | null;
   lastUpdatedDate?: string;
+  selectedMonth: string;
 }) {
   const hostRef = useRef<HTMLDivElement>(null);
 
@@ -6388,7 +6390,7 @@ function OverallSummaryWithExport({ sites, rawData, lastUpdatedDate, selectedMon
       </div>
 
       <div className="overall-summary-light">
-        <EnhancedOverallSummary sites={sites} rawData={rawData} lastUpdatedDate={lastUpdatedDate} />
+        <EnhancedOverallSummary sites={sites} rawData={rawData} lastUpdatedDate={lastUpdatedDate} selectedMonth={selectedMonth} />
 
       </div>
 
