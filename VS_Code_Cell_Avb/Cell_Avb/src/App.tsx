@@ -1358,7 +1358,8 @@ async function fetchNovemberCellAvb(): Promise<SheetPayload> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 60000);
   const getRows = async (table: string, select: string, offset: number) => {
-    const url = `${base}/rest/v1/${table}?select=${encodeURIComponent(select)}&limit=1000&offset=${offset}`;
+    const novFilter = table === "ca_daily_nov_history" ? "&report_date=gte.2026-11-01&report_date=lt.2026-12-01&order=report_date.desc,site_id.asc" : "";
+    const url = `${base}/rest/v1/${table}?select=${encodeURIComponent(select)}${novFilter}&limit=1000&offset=${offset}`;
     const response = await fetch(url, { headers, signal: controller.signal });
     if (!response.ok) throw new Error(`${table}: HTTP ${response.status}: ${(await response.text()).slice(0, 160)}`);
     return response.json() as Promise<Record<string, any>[]>;
@@ -1372,7 +1373,7 @@ async function fetchNovemberCellAvb(): Promise<SheetPayload> {
     const daily = [...dailyFirst];
     // Read only November, in bounded parallel batches, and stop at the first short page.
     if (dailyFirst.length === 1000) {
-      for (let start = 1000; start < 30000; start += 4000) {
+      for (let start = 1000; start < 70000; start += 4000) {
         const pages = await Promise.all([start, start + 1000, start + 2000, start + 3000].map(n => getRows("ca_daily_nov_history", "site_id,report_date,ca_pct", n)));
         pages.forEach(page => daily.push(...page));
         if (pages.some(page => page.length < 1000)) break;
@@ -2152,10 +2153,11 @@ function CategoryPage({
     const top10 = sorted.slice(0, 10);
     return top10.map((site) => {
       const data = site.dailyData || {};
-      const values = lastThreeDays.map(({ dateKey }) => data[dateKey] || 0);
-      const sum = values.reduce((a, b) => a + b, 0);
-      const count = values.filter((v) => v > 0).length;
-      const avg = count > 0 ? sum / count : 0;
+      const values = lastThreeDays.map(({ dateKey }) => { const v = data[dateKey]; return v == null || !Number.isFinite(Number(v)) ? null : Number(v); });
+      const populated = values.filter((v): v is number => v !== null);
+      const sum = populated.reduce((a, b) => a + b, 0);
+      const count = populated.length;
+      const avg = count > 0 ? sum / count : null;
       return { site, values, avg };
     });
   }, [employeeFilteredSites, lastThreeDays]);
@@ -2175,7 +2177,7 @@ function CategoryPage({
       lastThreeDays.forEach(({ label }, idx) => {
         row[label] = values[idx]?.toFixed(2) || "-";
       });
-      row["Last 3 Days Avg"] = avg.toFixed(2) + "%";
+      row["Last 3 Days Avg"] = avg === null ? "—" : `${avg === null ? "—" : `${avg.toFixed(2)}%`}{values.filter(v => v !== null).length < 3 && <span className="block text-[10px] font-normal text-amber-300">Partial: {values.filter(v => v !== null).length}/3 days</span>} (${values.filter(v => v !== null).length}/3 days)`;
       row["Current CA%"] = site.currentAvb?.toFixed(2) || "-";
       return row;
     });
@@ -2444,10 +2446,10 @@ function CategoryPage({
                     <td className="py-2 px-3 text-slate-300">{site.zongLead || "-"}</td>
                     {values.map((val, idx) => (
                       <td key={idx} className="py-2 px-3 text-center text-slate-300">
-                        {val?.toFixed(2) || "-"}
+                        {val == null ? "—" : val.toFixed(2)}
                       </td>
                     ))}
-                    <td className={`py-2 px-3 text-center font-bold ${avg < 98 ? "text-red-400" : "text-amber-400"}`}>
+                    <td className={`py-2 px-3 text-center font-bold ${avg !== null && avg < 98 ? "text-red-400" : "text-amber-400"}`}>
                       {avg.toFixed(2)}%
                     </td>
                     <td className="py-2 px-3 text-center text-slate-300">
@@ -8052,7 +8054,7 @@ export default function App() {
     <div className="light-app min-h-screen bg-[#eef0f3] text-slate-900 flex">
       
       <RainAlertWidget />
-      <div className="fixed bottom-4 right-4 z-50 rounded-lg bg-slate-900 px-3 py-2 text-xs text-white shadow-lg">Offline snapshot {lastSync ? `· ${new Date(lastSync).toLocaleString()}` : ""} · <button onClick={goHome} className="font-bold text-cyan-300">Home</button></div>
+      <div className="fixed bottom-4 right-4 z-50 rounded-lg bg-slate-900 px-3 py-2 text-xs text-white shadow-lg" title="Last time this month’s data was loaded; live Supabase is attempted first, with saved data used if live loading fails.">{monthLastUpdated ? `Data loaded · ${new Date(monthLastUpdated).toLocaleString()}` : "Data status unavailable"} · <button onClick={goHome} className="font-bold text-cyan-300">Home</button></div>
       <aside className={`fixed lg:sticky top-0 z-40 h-screen w-64 bg-[#e5e7eb] border-r border-slate-300 flex flex-col transition-transform ${sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}`}>
         <div className="p-5 border-b border-slate-800">
           <div className="flex items-center gap-3">
