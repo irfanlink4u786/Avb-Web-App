@@ -6064,57 +6064,64 @@ function EnhancedOverallSummary({
 function DailyRegionalCaLsChart({ rawData, sites, selectedMonth }: { rawData?: SheetPayload | null; sites: SiteData[]; selectedMonth: string }) {
   const [region, setRegion] = useState<"all" | "C-1" | "C-6">("all");
   const [showLs, setShowLs] = useState(true);
-  const chartData = useMemo(() => {
-    if (!rawData?.rows?.length) return [];
-    const monthCode = selectedMonth === "november" ? "Nov" : "Oct";
-    const daysInMonth = selectedMonth === "november" ? 30 : 31;
-    const normalize = (v: unknown) => String(v ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
-    const validSites = new Map(sites.map(s => [String(s.siteName).trim(), s]));
-    const buckets = Array.from({ length: daysInMonth }, (_, i) => ({ day: i + 1, date: `${i + 1} ${monthCode}`, c1Sum: 0, c1N: 0, c6Sum: 0, c6N: 0, ls1Sum: 0, ls1N: 0, ls6Sum: 0, ls6N: 0 }));
-    for (const row of rawData.rows as Record<string, unknown>[]) {
-      const idKey = Object.keys(row).find(k => ["siteid", "sitename", "site"].includes(normalize(k)));
-      if (!idKey) continue;
-      const site = validSites.get(String(row[idKey] ?? "").trim());
-      if (!site || site.currentAvb <= 0) continue;
-      const r = normalize(site.subRegion);
-      if (r !== "c1" && r !== "c6") continue;
-      for (const [key, rawValue] of Object.entries(row)) {
-        const isLs = /(?:^|\W)(?:ls|load\s*shedding)(?:\W|$)/i.test(key);
-        const datePart = isLs ? key.replace(/load\s*shedding(?:\s*\(hrs?\))?|\bLS\b/gi, "").replace(/^[-:_\s]+|[-:_\s]+$/g, "") : key;
-        const date = normalizeDailyDateKey(datePart);
-        if (!date || date.split("-")[1] !== monthCode || date.split("-")[2] !== "26") continue;
-        if (rawValue == null || String(rawValue).trim() === "") continue;
-        const value = Number(String(rawValue).replace(/[% ,]/g, ""));
-        if (!Number.isFinite(value)) continue;
-        const b = buckets[Number(date.split("-")[0]) - 1];
-        if (isLs) {
-          if (value < 0) continue;
-          if (r === "c1") { b.ls1Sum += value; b.ls1N++; }
-          else { b.ls6Sum += value; b.ls6N++; }
-        } else {
-          const ca = value > 0 && value <= 1 ? value * 100 : value;
-          if (ca < 0 || ca > 100) continue;
-          if (r === "c1") { b.c1Sum += ca; b.c1N++; }
-          else { b.c6Sum += ca; b.c6N++; }
+  const [chartData, setChartData] = useState<Array<{date: string; c1: number | null; c6: number | null; ls1: number | null; ls6: number | null}>>([]);
+  const [chartError, setChartError] = useState("");
+  const [chartLoading, setChartLoading] = useState(true);
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      setChartLoading(true);
+      setChartError("");
+      try {
+        const env = import.meta.env;
+        const base = String(env.VITE_SUPABASE_URL || "").replace(/\\/$/, "");
+        const key = String(env.VITE_SUPABASE_PUBLISHABLE_KEY || env.VITE_SUPABASE_ANON_KEY || "");
+        const saved = sessionStorage.getItem("cell_avb_supabase_session");
+        const session = saved ? JSON.parse(saved) : null;
+        if (!base || !key || !session?.access_token) throw new Error("Supabase login required");
+        const url = `${base}/rest/v1/cell_avb_ca_rolling_daily?select=report_date,sub_region,ca_pct&order=report_date.desc&limit=100`;
+        const response = await fetch(url, { headers: { apikey: key, Authorization: `Bearer ${session.access_token}` } });
+        if (!response.ok) throw new Error(`Daily CA endpoint HTTP ${response.status}: ${(await response.text()).slice(0, 120)}`);
+        const rows = await response.json() as Array<{report_date: string; sub_region: string; ca_pct: number | string | null}>;
+        if (!rows.length) throw new Error("No daily CA history available");
+        const newest = rows[0].report_date;
+        const end = new Date(`${newest}T00:00:00Z`);
+        const start = new Date(end);
+        start.setUTCDate(start.getUTCDate() - 29);
+        const map = new Map<string, {c1: number | null; c6: number | null}>();
+        for (const row of rows) {
+          const v = row.ca_pct == null ? null : Number(row.ca_pct);
+          if (!map.has(row.report_date)) map.set(row.report_date, {c1: null, c6: null});
+          if (v !== null && Number.isFinite(v)) {
+            const bucket = map.get(row.report_date)!;
+            if (row.sub_region === "C-1") bucket.c1 = v;
+            if (row.sub_region === "C-6") bucket.c6 = v;
+          }
         }
-      }
-    }
-    return buckets.map(b => ({ date: b.date,
-      c1: b.c1N ? +(b.c1Sum / b.c1N).toFixed(2) : null,
-      c6: b.c6N ? +(b.c6Sum / b.c6N).toFixed(2) : null,
-      ls1: b.day <= 0 ? null : (b.ls1N ? +(b.ls1Sum / b.ls1N).toFixed(2) : null),
-      ls6: b.day <= 0 ? null : (b.ls6N ? +(b.ls6Sum / b.ls6N).toFixed(2) : null),
-    }));
-  }, [rawData, sites, selectedMonth]);
+        const points = Array.from({length: 30}, (_, i) => {
+          const d = new Date(start);
+          d.setUTCDate(start.getUTCDate() + i);
+          const iso = d.toISOString().slice(0, 10);
+          const v = map.get(iso);
+          return {date: `${d.getUTCDate()} ${d.toLocaleString("en-US", {month:"short", timeZone:"UTC"})}`, c1: v?.c1 ?? null, c6: v?.c6 ?? null, ls1: null, ls6: null};
+        });
+        if (!cancelled) setChartData(points);
+      } catch (error) {
+        if (!cancelled) { setChartData([]); setChartError(error instanceof Error ? error.message : String(error)); }
+      } finally { if (!cancelled) setChartLoading(false); }
+    };
+    void load();
+    return () => { cancelled = true; };
+  }, [selectedMonth]);
   const hasCa = chartData.some(d => d.c1 !== null || d.c6 !== null);
   const hasLs = chartData.some(d => d.ls1 !== null || d.ls6 !== null);
   return <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
     <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
       <div><h3 className="text-xl font-bold text-slate-900">Daily Cell AVB vs Load Shedding — C-1 &amp; C-6</h3>
-        <p className="text-xs text-slate-500">{selectedMonth === "november" ? "November" : "October"} 2026 · Daily site-average CA (%) and LS (hours) · 98% target · LS shown only where available from the current data source</p></div>
+        <p className="text-xs text-slate-500">Latest 30 available calendar days · October–November continuity · 98% target · LS shown only when available</p></div>
       <div className="flex gap-2">{(["all", "C-1", "C-6"] as const).map(v => <button key={v} type="button" onClick={() => setRegion(v)} className={`rounded-lg px-3 py-2 text-sm font-semibold ${region === v ? "bg-emerald-700 text-white" : "bg-slate-100 text-slate-700"}`}>{v === "all" ? "Both" : v}</button>)}</div>
     </div>
-    {hasCa ? <>
+    {chartLoading ? <p className="py-12 text-center text-sm text-slate-600">Loading rolling 30-day CA history…</p> : hasCa ? <>
       <div className="h-[460px] w-full"><ResponsiveContainer width="100%" height="100%"><ComposedChart data={chartData} margin={{ top: 24, right: 25, bottom: 8, left: 0 }}>
         <CartesianGrid strokeDasharray="3 5" stroke="#e2e8f0" /><XAxis dataKey="date" tick={{ fontSize: 11 }} interval={2} />
         <YAxis yAxisId="ca" domain={[93, 100]} tickFormatter={v => `${v}%`} tick={{ fontSize: 11 }} />
@@ -6129,7 +6136,7 @@ function DailyRegionalCaLsChart({ rawData, sites, selectedMonth }: { rawData?: S
       </ComposedChart></ResponsiveContainer></div>
       <label className="mt-2 flex items-center gap-2 text-xs text-slate-600"><input type="checkbox" checked={showLs} onChange={e => setShowLs(e.target.checked)} /> Show LS lines</label>
       {!hasLs && <p className="mt-2 text-sm text-amber-700">LS is not present in the loaded data. The protected central_ls_daily table requires a dedicated authorized aggregate endpoint.</p>}
-    </> : <p className="py-12 text-center text-sm text-slate-600">No {selectedMonth === "november" ? "November" : "October"} daily CA columns were found in the loaded data.</p>}
+    </> : <p className="py-12 text-center text-sm text-slate-600">{chartError || "No daily CA history is available."}</p>}
   </section>;
 }
 
