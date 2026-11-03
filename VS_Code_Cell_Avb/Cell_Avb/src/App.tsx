@@ -2177,7 +2177,7 @@ function CategoryPage({
       lastThreeDays.forEach(({ label }, idx) => {
         row[label] = values[idx]?.toFixed(2) || "-";
       });
-      row["Last 3 Days Avg"] = avg === null ? "—" : `${avg === null ? "—" : `${avg.toFixed(2)}%`}{values.filter(v => v !== null).length < 3 && <span className="block text-[10px] font-normal text-amber-300">Partial: {values.filter(v => v !== null).length}/3 days</span>} (${values.filter(v => v !== null).length}/3 days)`;
+      row["Last 3 Days Avg"] = avg === null ? "—" : `${avg.toFixed(2)}% (${values.filter(v => v !== null).length}/3 days)`;
       row["Current CA%"] = site.currentAvb?.toFixed(2) || "-";
       return row;
     });
@@ -2450,7 +2450,7 @@ function CategoryPage({
                       </td>
                     ))}
                     <td className={`py-2 px-3 text-center font-bold ${avg !== null && avg < 98 ? "text-red-400" : "text-amber-400"}`}>
-                      {avg.toFixed(2)}%
+                      avg === null ? "—" : `${avg.toFixed(2)}%`}{values.filter(v => v !== null).length < 3 && <span className="block text-[10px] font-normal text-amber-300">Partial: {values.filter(v => v !== null).length}/3 days</span>
                     </td>
                     <td className="py-2 px-3 text-center text-slate-300">
                       {site.currentAvb.toFixed(2)}%
