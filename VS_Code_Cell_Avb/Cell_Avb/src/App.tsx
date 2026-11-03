@@ -6079,23 +6079,41 @@ function DailyRegionalCaLsChart({ rawData, sites, selectedMonth }: { rawData?: S
         const saved = sessionStorage.getItem("cell_avb_supabase_session");
         const session = saved ? JSON.parse(saved) : null;
         if (!base || !key || !session?.access_token) throw new Error("Supabase login required");
-        const url = `${base}/rest/v1/cell_avb_ca_rolling_daily?select=report_date,sub_region,ca_pct&order=report_date.desc&limit=100`;
-        const response = await fetch(url, { headers: { apikey: key, Authorization: `Bearer ${session.access_token}` } });
-        if (!response.ok) throw new Error(`Daily CA endpoint HTTP ${response.status}: ${(await response.text()).slice(0, 120)}`);
-        const rows = await response.json() as Array<{report_date: string; sub_region: string; ca_pct: number | string | null}>;
-        if (!rows.length) throw new Error("No daily CA history available");
-        const newest = rows[0].report_date;
+        const headers = { apikey: key, Authorization: `Bearer ${session.access_token}` };
+        const fetchDaily = async (table: string, select: string) => {
+          const url = `${base}/rest/v1/${table}?select=${select}&order=report_date.desc&limit=100`;
+          const response = await fetch(url, { headers });
+          if (!response.ok) throw new Error(`${table}: HTTP ${response.status}: ${(await response.text()).slice(0, 120)}`);
+          return response.json() as Promise<Array<Record<string, unknown>>>;
+        };
+        const [caRows, lsRows] = await Promise.all([
+          fetchDaily("cell_avb_ca_rolling_daily", "report_date,sub_region,ca_pct"),
+          fetchDaily("cell_avb_ls_rolling_daily", "report_date,sub_region,avg_ls_hours")
+        ]);
+        if (!caRows.length) throw new Error("No daily CA history available");
+        const newest = String(caRows[0].report_date);
         const end = new Date(`${newest}T00:00:00Z`);
         const start = new Date(end);
         start.setUTCDate(start.getUTCDate() - 29);
-        const map = new Map<string, {c1: number | null; c6: number | null}>();
-        for (const row of rows) {
+        const map = new Map<string, {c1: number | null; c6: number | null; ls1: number | null; ls6: number | null}>();
+        const bucketFor = (date: string) => {
+          if (!map.has(date)) map.set(date, {c1: null, c6: null, ls1: null, ls6: null});
+          return map.get(date)!;
+        };
+        for (const row of caRows) {
           const v = row.ca_pct == null ? null : Number(row.ca_pct);
-          if (!map.has(row.report_date)) map.set(row.report_date, {c1: null, c6: null});
           if (v !== null && Number.isFinite(v)) {
-            const bucket = map.get(row.report_date)!;
+            const bucket = bucketFor(String(row.report_date));
             if (row.sub_region === "C-1") bucket.c1 = v;
             if (row.sub_region === "C-6") bucket.c6 = v;
+          }
+        }
+        for (const row of lsRows) {
+          const v = row.avg_ls_hours == null ? null : Number(row.avg_ls_hours);
+          if (v !== null && Number.isFinite(v)) {
+            const bucket = bucketFor(String(row.report_date));
+            if (row.sub_region === "C-1") bucket.ls1 = v;
+            if (row.sub_region === "C-6") bucket.ls6 = v;
           }
         }
         const points = Array.from({length: 30}, (_, i) => {
@@ -6103,7 +6121,7 @@ function DailyRegionalCaLsChart({ rawData, sites, selectedMonth }: { rawData?: S
           d.setUTCDate(start.getUTCDate() + i);
           const iso = d.toISOString().slice(0, 10);
           const v = map.get(iso);
-          return {date: `${d.getUTCDate()} ${d.toLocaleString("en-US", {month:"short", timeZone:"UTC"})}`, c1: v?.c1 ?? null, c6: v?.c6 ?? null, ls1: null, ls6: null};
+          return {date: `${d.getUTCDate()} ${d.toLocaleString("en-US", {month:"short", timeZone:"UTC"})}`, c1: v?.c1 ?? null, c6: v?.c6 ?? null, ls1: v?.ls1 ?? null, ls6: v?.ls6 ?? null};
         });
         if (!cancelled) setChartData(points);
       } catch (error) {
@@ -6135,7 +6153,7 @@ function DailyRegionalCaLsChart({ rawData, sites, selectedMonth }: { rawData?: S
         {showLs && (region === "all" || region === "C-6") && <Line yAxisId="ls" type="monotone" dataKey="ls6" name="C-6 LS" stroke="#f59e0b" strokeWidth={2.5} connectNulls dot={{ r: 2 }} label={{ position: "bottom", fontSize: 9, formatter: (v: unknown) => v == null || !Number.isFinite(Number(v)) ? "" : `${Number(v).toFixed(1)}h` }} />}
       </ComposedChart></ResponsiveContainer></div>
       <label className="mt-2 flex items-center gap-2 text-xs text-slate-600"><input type="checkbox" checked={showLs} onChange={e => setShowLs(e.target.checked)} /> Show LS lines</label>
-      {!hasLs && <p className="mt-2 text-sm text-amber-700">LS is not present in the loaded data. The protected central_ls_daily table requires a dedicated authorized aggregate endpoint.</p>}
+      {!hasLs && <p className="mt-2 text-sm text-amber-700">No LS readings are available for this 30-day window. November LS will appear after daily records are imported into central_ls_daily.</p>}
     </> : <p className="py-12 text-center text-sm text-slate-600">{chartError || "No daily CA history is available."}</p>}
   </section>;
 }
