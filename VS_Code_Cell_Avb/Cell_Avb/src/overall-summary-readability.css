@@ -18,3 +18,18 @@
 .overall-summary-enhanced table tbody .text-red-500,
 .overall-summary-enhanced table tbody .text-red-400 { color: #b91c1c !important; }
 .overall-summary-enhanced .overall-expanded-detail-table thead th { color: #0f172a !important; }
+
+/* Grid Performance detail popups (Platinum+, PGS, DG, SB): readable black text.
+   Override inherited dark-theme and KPI color utility rules. */
+.grid-performance-detail-table,
+.grid-performance-detail-table th,
+.grid-performance-detail-table td,
+.grid-performance-detail-table td *,
+.grid-performance-detail-table th * {
+  color: #000000 !important;
+  -webkit-text-fill-color: #000000 !important;
+  text-shadow: none !important;
+}
+.grid-performance-detail-table td:first-child {
+  font-weight: 600 !important;
+}
