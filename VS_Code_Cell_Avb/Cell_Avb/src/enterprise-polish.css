@@ -621,3 +621,14 @@ button[class*="bg-slate-"] * {
     font-size: 20px;
   }
 }
+
+/* Grid Performance popup: final light-theme override.
+   This file loads after overall-summary-readability.css, and the light-app
+   rules have higher specificity than unscoped table styles. */
+.light-app main table.grid-performance-detail-table tbody tr td:first-child,
+.light-app main table.grid-performance-detail-table tbody tr td:first-child *,
+.light-app main table.grid-performance-detail-table thead tr th:first-child {
+  color: #000000 !important;
+  -webkit-text-fill-color: #000000 !important;
+  text-shadow: none !important;
+}
