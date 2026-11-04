@@ -3535,31 +3535,66 @@ function SiteQuery({ sites, historyData = null, rawData = null }: { sites: SiteD
     setSelectedSite(null);
   };
 
-  // Build the daily series once per selected site. Missing LS is null, never zero.
+  // Live site-level rolling history: October CA, November CA and daily LS from Supabase.
+  const [liveSiteDaily, setLiveSiteDaily] = useState<Array<{ report_date: string; ca_pct: number | null; ls_hours: number | null }> | null>(null);
+  const [liveSiteDailyError, setLiveSiteDailyError] = useState("");
+  useEffect(() => {
+    if (!selectedSite?.siteName) { setLiveSiteDaily(null); setLiveSiteDailyError(""); return; }
+    let cancelled = false;
+    setLiveSiteDaily(null);
+    setLiveSiteDailyError("");
+    const load = async () => {
+      try {
+        const env = (import.meta as any).env || {};
+        const base = String(env.VITE_SUPABASE_URL || "").replace(/\\/$/, "");
+        const key = String(env.VITE_SUPABASE_PUBLISHABLE_KEY || env.VITE_SUPABASE_ANON_KEY || "");
+        const sessionRaw = sessionStorage.getItem("cell_avb_supabase_session");
+        const session = sessionRaw ? JSON.parse(sessionRaw) : null;
+        if (!base || !key || !session?.access_token) throw new Error("Supabase session required");
+        const url = base + "/rest/v1/cell_avb_site_daily_rolling?select=report_date,ca_pct,ls_hours&site_id=eq." + encodeURIComponent(selectedSite.siteName) + "&order=report_date.desc&limit=30";
+        const response = await fetch(url, { headers: { apikey: key, Authorization: "Bearer " + session.access_token }, cache: "no-store" });
+        if (!response.ok) throw new Error("Supabase daily history HTTP " + response.status);
+        const data = await response.json();
+        if (!cancelled) setLiveSiteDaily(Array.isArray(data) ? data : []);
+      } catch (error) { if (!cancelled) setLiveSiteDailyError(error instanceof Error ? error.message : "Unable to load live daily history"); }
+    };
+    void load();
+    return () => { cancelled = true; };
+  }, [selectedSite?.siteName]);
+
+  // Always show 30 calendar days ending on the latest available Supabase date.
+  // Null readings stay null; they are never represented as zero.
   const chartData = useMemo(() => {
     if (!selectedSite) return [];
+    if (liveSiteDaily !== null && liveSiteDaily.length > 0) {
+      const byDate = new Map(liveSiteDaily.map(row => [row.report_date, row]));
+      const latest = liveSiteDaily[0].report_date;
+      const end = new Date(latest + "T00:00:00Z");
+      return Array.from({ length: 30 }, (_, i) => {
+        const d = new Date(end.getTime() - (29 - i) * 86400000);
+        const iso = d.toISOString().slice(0, 10);
+        const row = byDate.get(iso);
+        const ca = row?.ca_pct == null ? null : Number(row.ca_pct);
+        const ls = row?.ls_hours == null ? null : Number(row.ls_hours);
+        return { date: iso, ca: ca !== null && Number.isFinite(ca) ? ca : null, ls: ls !== null && Number.isFinite(ls) ? ls : null, target: 98 };
+      });
+    }
     const avb = selectedSite.dailyData || {};
     const ls = selectedSite.dailyLs || {};
     const keys = Array.from(new Set([...Object.keys(avb), ...Object.keys(ls)]));
-    const dayNumber = (key: string) => {
-      const parsed = Date.parse(key);
-      if (Number.isFinite(parsed)) return parsed;
-      const match = key.match(/(?:^|\D)(\d{1,2})(?:$|\D)/);
-      return match ? Number(match[1]) : 0;
+    const toTimestamp = (key: string) => {
+      const normalized = normalizeDailyDateKey(key);
+      if (!normalized) return Number.NaN;
+      const [day, month, year] = normalized.split("-");
+      const months: Record<string, number> = { Jan: 0, Feb: 1, Mar: 2, Apr: 3, May: 4, Jun: 5, Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11 };
+      return Date.UTC(2000 + Number(year), months[month], Number(day));
     };
-    keys.sort((x, y) => dayNumber(x) - dayNumber(y));
-    return keys.map(date => {
-      const ca = Number(avb[date]);
-      const lsValue = ls[date];
-      const lsNumber = lsValue == null ? null : Number(lsValue);
-      return {
-        date,
-        ca: Number.isFinite(ca) && ca > 0 ? ca : null,
-        ls: lsNumber !== null && Number.isFinite(lsNumber) && lsNumber >= 0 ? lsNumber : null,
-        target: 98,
-      };
-    }).filter(point => point.ca !== null || point.ls !== null);
-  }, [selectedSite]);
+    return keys.filter(k => Number.isFinite(toTimestamp(k))).sort((x,y) => toTimestamp(x)-toTimestamp(y)).slice(-30).map(date => {
+      const ca = avb[date] == null ? null : Number(avb[date]);
+      const lv = ls[date] == null ? null : Number(ls[date]);
+      return { date, ca: ca !== null && Number.isFinite(ca) ? ca : null, ls: lv !== null && Number.isFinite(lv) ? lv : null, target: 98 };
+    });
+  }, [selectedSite, liveSiteDaily]);
 
   const siteDailySummary = useMemo(() => {
     const caDays = chartData.filter(d => d.ca !== null);
@@ -3571,17 +3606,7 @@ function SiteQuery({ sites, historyData = null, rawData = null }: { sites: SiteD
     return { averageCA, latestCA, averageLS, latestLS, below98: caDays.filter(d => (d.ca ?? 100) < 98).length, below95: caDays.filter(d => (d.ca ?? 100) < 95).length, reportingDays: caDays.length, lsDays: lsDays.length };
   }, [chartData]);
 
-  const dailyExport = useMemo(() => {
-    if (!selectedSite) return [];
-    const avb = selectedSite.dailyData || {};
-    const ls = selectedSite.dailyLs || {};
-    const dates = Array.from(new Set([...Object.keys(avb), ...Object.keys(ls)])).sort();
-    return dates.map((d) => ({
-      Date: d,
-      "AVB %": avb[d] !== undefined ? avb[d].toFixed(2) : "",
-      "Load Shedding (hrs)": ls[d] !== undefined ? ls[d].toFixed(2) : "",
-    }));
-  }, [selectedSite]);
+  const dailyExport = useMemo(() => chartData.map(d => ({ Date: d.date, "AVB %": d.ca === null ? "" : d.ca.toFixed(2), "Load Shedding (hrs)": d.ls === null ? "" : d.ls.toFixed(2) })), [chartData]);
 
 
   // October technology-wise Cell AVB from Supabase CA.
@@ -4504,18 +4529,18 @@ function SiteQuery({ sites, historyData = null, rawData = null }: { sites: SiteD
           <div className="rounded-2xl border border-slate-200 bg-white p-5 text-slate-800 shadow-sm">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
               <div>
-                <h3 className="text-lg font-bold text-slate-900">Site {selectedSite.siteName} · Daily Cell AVB & Load Shedding</h3>
+                <h3 className="text-lg font-bold text-slate-900">Site {selectedSite.siteName} · Rolling 30-Day Cell AVB & Load Shedding</h3>
                 <p className="text-sm text-slate-500">{selectedSite.subRegion} · {selectedSite.grid} · {selectedSite.revenueCategory} · {selectedSite.clusterOwner || "CO not available"}</p>
               </div>
               {dailyExport.length > 0 && <ExportButton data={dailyExport} filename={`site_${selectedSite.siteName}_daily`} sheetName="Daily Data" label="Export Daily Data" />}
             </div>
             <div className="mb-5 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
               {[
-                { label: "October MTD CA", value: siteDailySummary.averageCA === null ? "N/A" : `${siteDailySummary.averageCA.toFixed(2)}%`, note: "Average of reporting days", color: "border-emerald-500" },
+                { label: "30-Day Average CA", value: siteDailySummary.averageCA === null ? "N/A" : `${siteDailySummary.averageCA.toFixed(2)}%`, note: "Average of reporting days", color: "border-emerald-500" },
                 { label: "Latest daily CA", value: siteDailySummary.latestCA?.ca === null || !siteDailySummary.latestCA ? "N/A" : `${siteDailySummary.latestCA.ca?.toFixed(2)}%`, note: siteDailySummary.latestCA?.date || "No reading", color: "border-sky-500" },
                 { label: "Days below 98%", value: String(siteDailySummary.below98), note: `${siteDailySummary.below95} days below 95%`, color: "border-red-500" },
                 { label: "Reporting days", value: String(siteDailySummary.reportingDays), note: "Actual CA readings", color: "border-emerald-500" },
-                { label: "October Average LS", value: siteDailySummary.averageLS === null ? "N/A" : `${siteDailySummary.averageLS.toFixed(2)} h`, note: `${siteDailySummary.lsDays} daily LS readings`, color: "border-fuchsia-500" },
+                { label: "30-Day Average LS", value: siteDailySummary.averageLS === null ? "N/A" : `${siteDailySummary.averageLS.toFixed(2)} h`, note: `${siteDailySummary.lsDays} daily LS readings`, color: "border-fuchsia-500" },
                 { label: "Latest Daily LS", value: siteDailySummary.latestLS?.ls === null || !siteDailySummary.latestLS ? "N/A" : `${siteDailySummary.latestLS.ls?.toFixed(2)} h`, note: siteDailySummary.latestLS?.date || "No reading", color: "border-fuchsia-500" },
               ].map(item => <div key={item.label} className={`rounded-xl border border-slate-200 border-t-4 ${item.color} bg-white p-3 shadow-sm`}>
                 <p className="text-xs font-semibold text-slate-500">{item.label}</p>
@@ -4523,7 +4548,7 @@ function SiteQuery({ sites, historyData = null, rawData = null }: { sites: SiteD
                 <p className="mt-2 text-xs text-slate-500">{item.note}</p>
               </div>)}
             </div>
-            <p className="mb-3 text-xs text-slate-500">Missing LS readings are N/A, not 0 h. Green: CA (%) · Purple: Load Shedding (hours) · Dashed: 98% CA target</p>
+            {liveSiteDailyError && <p className="mb-2 text-xs text-amber-700">Live Supabase history unavailable: {liveSiteDailyError}. Showing available local data.</p>}\n            <p className="mb-3 text-xs text-slate-500">Missing LS readings are N/A, not 0 h. Green: CA (%) · Purple: Load Shedding (hours) · Dashed: 98% CA target</p>
             {chartData.length ? <div className="h-[390px] w-full">
               <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart data={chartData} margin={{ top: 24, right: 18, bottom: 18, left: 0 }}>
