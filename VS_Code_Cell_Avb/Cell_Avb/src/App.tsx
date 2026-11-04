@@ -5073,7 +5073,21 @@ function GridPerformanceScorecard({
         });
       });
 
-    return headers
+    // The source can contain two headers for one calendar date (e.g. 3-Nov
+    // and 3-Nov-26). Keep one populated column per normalized date so the
+    // popup, daily averages, and Excel export never repeat the same day.
+    const uniqueDates = new Map<string, { raw: string; normalized: string; count: number }>();
+    for (const item of headers) {
+      const count = (rawData?.rows || []).reduce((n: number, row: Record<string, any>) => {
+        const value = getRawValue(row, item.raw);
+        return n + (value !== null && value !== undefined && String(value).trim() !== "" && Number.isFinite(Number.parseFloat(String(value).replace(/[% ,]/g, ""))) ? 1 : 0);
+      }, 0);
+      const previous = uniqueDates.get(item.normalized);
+      if (!previous || count > previous.count || (count === previous.count && item.raw.length > previous.raw.length)) {
+        uniqueDates.set(item.normalized, { ...item, count });
+      }
+    }
+    return Array.from(uniqueDates.values())
       .sort((a, b) => toTime(a.normalized) - toTime(b.normalized))
       .slice(-3)
       .map((item) => item.raw);
