@@ -5734,7 +5734,7 @@ function GridPerformanceScorecard({
                         const status = site.currentMonth >= selectedResult.config.stretch ? "Stretch Achieved" : site.currentMonth >= selectedResult.config.target ? "Target to Stretch" : site.currentMonth >= selectedResult.config.base ? "Base to Target" : "Below Base";
                         return (
                           <tr key={`${selectedKpi}-${site.siteId}`} className="border-b border-slate-800 hover:bg-white/50">
-                            <td className="px-3 py-2 font-mono font-semibold text-cyan-300">{site.siteId || "—"}</td>
+                            <td className="px-3 py-2 font-mono font-bold !text-black" style={{ color: "#000000", WebkitTextFillColor: "#000000" }}>{site.siteId || "—"}</td>
                             <td className={`px-3 py-2 font-semibold ${site.currentMonth >= selectedResult.config.stretch ? "text-emerald-400" : "text-slate-900"}`}>{site.currentMonth.toFixed(2)}%</td>
                             {site.latestDays.map((day) => (
                               <td key={`${site.siteId}-${day.label}`} className={`px-3 py-2 text-center font-medium ${day.value > 0 && day.value < selectedResult.config.base ? "text-red-400" : day.value > 0 ? "text-slate-900" : "text-slate-600"}`}>
