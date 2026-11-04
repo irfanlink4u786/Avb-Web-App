@@ -3546,7 +3546,7 @@ function SiteQuery({ sites, historyData = null, rawData = null }: { sites: SiteD
     const load = async () => {
       try {
         const env = (import.meta as any).env || {};
-        const base = String(env.VITE_SUPABASE_URL || "").replace(/\\/$/, "");
+        const base = String(env.VITE_SUPABASE_URL || "").replace(/\/$/, "");
         const key = String(env.VITE_SUPABASE_PUBLISHABLE_KEY || env.VITE_SUPABASE_ANON_KEY || "");
         const sessionRaw = sessionStorage.getItem("cell_avb_supabase_session");
         const session = sessionRaw ? JSON.parse(sessionRaw) : null;
