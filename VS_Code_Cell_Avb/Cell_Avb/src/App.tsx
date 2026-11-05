@@ -1,6 +1,7 @@
 import "./overall-summary-readability.css";
 import "./enterprise-polish.css";
 import FuelDashboard from "./FuelDashboard";
+import DGModeMonitoring from "./components/DGModeMonitoring";
 import React, { useState, useEffect, useMemo, Fragment, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -1223,6 +1224,33 @@ function ThreeBasicsKpiPage({
       </div>
     </div>
   );
+}
+
+// Fuel Management nested tabs: preserves existing FuelDashboard without editing its source.
+function FuelManagementTabs(props: React.ComponentProps<typeof FuelDashboard>) {
+  const [tab, setTab] = useState<'fuel'|'weather'|'dg'>('fuel');
+  const button = (id: 'fuel'|'weather'|'dg', label: string) => (
+    <button key={id} type="button" onClick={() => setTab(id)}
+      aria-pressed={tab===id}
+      className={`rounded-lg px-4 py-2 text-sm font-bold transition ${tab===id ? 'bg-emerald-600 text-white' : 'bg-white text-slate-800 border border-slate-300 hover:bg-slate-100'}`}>
+      {label}
+    </button>
+  );
+  return <div className="min-h-screen bg-slate-50">
+    <div className="sticky top-0 z-40 flex flex-wrap items-center gap-2 border-b border-slate-200 bg-slate-50/95 px-4 py-3 shadow-sm">
+      {button('fuel','Fuel Dashboard')}
+      {button('weather','Weather & Rain Alerts')}
+      {button('dg','DG Auto / Manual')}
+    </div>
+    <div style={{display:tab==='fuel'?'block':'none'}}><FuelDashboard {...props}/></div>
+    {tab==='weather' && <div className="mx-auto max-w-7xl space-y-4 p-4">
+      <h2 className="text-2xl font-bold text-slate-900">Weather & Rain Alerts</h2>
+      <p className="text-sm text-slate-600">Existing weather radar and alert widgets. Site-level Windy forecast integration requires a verified API and site coordinates.</p>
+      <RainAlertWidget />
+      <WeatherRadar />
+    </div>}
+    {tab==='dg' && <div className="mx-auto max-w-7xl p-4"><DGModeMonitoring /></div>}
+  </div>;
 }
 
 // ============================================================
@@ -8016,9 +8044,16 @@ export default function App() {
     return <div className="electricity-polished min-h-screen bg-slate-50 p-8"><button className="rounded-lg bg-slate-900 px-5 py-3 text-white" onClick={goHome}>Back to dashboard</button><div className="mx-auto mt-16 max-w-2xl rounded-xl bg-white p-8 text-center shadow"><h2 className="text-2xl font-bold text-slate-900">Electricity data not migrated</h2><p className="mt-4 text-slate-600">ABS Electricity was excluded from the selected Supabase datasets. This page will be available once its data is imported into Supabase. No Google Sheets connection is used.</p></div></div>;
   }
 
-  // ----- FUEL MANAGEMENT FULL PAGE -----
+  // ----- FUEL MANAGEMENT FULL PAGE WITH NESTED MONITORING TABS -----
   if (viewMode === "fuel") {
-    return <FuelDashboard data={fuelHistory} deviationData={fuelDeviation} tPrimeData={fuelTPrime} sheet1Data={fuelOwnership} monthlyFuelData={monthlyFuelData} onBack={goHome} />;
+    return <FuelManagementTabs
+      data={fuelHistory}
+      deviationData={fuelDeviation}
+      tPrimeData={fuelTPrime}
+      sheet1Data={fuelOwnership}
+      monthlyFuelData={monthlyFuelData}
+      onBack={goHome}
+    />;
   }
 
   // ----- PRE‑VS‑POST FULL PAGE WITH SIDEBAR -----
