@@ -7701,43 +7701,28 @@ export default function App() {
     if (!session?.access_token) throw new Error("Please sign in to load Supabase archive data");
     const headers = { apikey: key, Authorization: `Bearer ${session.access_token}`, Accept: "application/json" };
     const pageSize = 1000;
-    const knownCounts: Record<string, number> = {
-      "Fuel History": 19876,
-      "Deviation Fuel": 292,
-      "Monthly Fuel History": 373,
-      "3 Basics KPIs": 182,
-    };
     const all: Array<{ headers: string[]; row_values: unknown[]; source_row: number }> = [];
     const loadPage = async (offset: number) => {
       const params = new URLSearchParams({ select: "headers,row_values,source_row", sheet_name: `eq.${sheetName}`, order: "source_row.asc", limit: String(pageSize), offset: String(offset) });
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 15000);
+      const timer = setTimeout(() => controller.abort(), 20000);
       try {
         const response = await fetch(`${base}/rest/v1/cell_avb_sheet_archive?${params}`, { headers, signal: controller.signal });
         if (!response.ok) throw new Error(`Supabase ${sheetName}: HTTP ${response.status} ${(await response.text()).slice(0, 160)}`);
         return await response.json() as typeof all;
       } finally { clearTimeout(timer); }
     };
-    // Fetch batches concurrently instead of waiting for each 1,000-row request.
-    // A first-page check also supports any future changes in archive size.
-    const first = await loadPage(0);
-    all.push(...first);
-    const expected = knownCounts[sheetName];
-    if (first.length === pageSize) {
-      if (expected) {
-        const offsets = Array.from({ length: Math.ceil(expected / pageSize) - 1 }, (_, i) => (i + 1) * pageSize);
-        for (let i = 0; i < offsets.length; i += 6) {
-          const pages = await Promise.all(offsets.slice(i, i + 6).map(loadPage));
-          pages.forEach(page => all.push(...page));
-        }
-      } else {
-        for (let offset = pageSize; ; offset += pageSize) {
-          const page = await loadPage(offset);
-          all.push(...page);
-          if (page.length < pageSize) break;
-        }
-      }
+    // Read every page, including rows added after the original archive import.
+    // Batches are concurrent, but stop only after a short page is encountered.
+    let offset = 0;
+    while (true) {
+      const offsets = Array.from({ length: 6 }, (_, i) => offset + i * pageSize);
+      const pages = await Promise.all(offsets.map(loadPage));
+      for (const page of pages) all.push(...page);
+      if (pages.some(page => page.length < pageSize)) break;
+      offset += offsets.length * pageSize;
     }
+    all.sort((a, b) => a.source_row - b.source_row);
 
     if (!all.length) throw new Error(`No archived records for ${sheetName}`);
     const columnNames = all[0].headers.map(String);
@@ -7847,31 +7832,45 @@ export default function App() {
 
 
   const loadFuelDashboard = async () => {
-    // Fuel reporting now reads PostgreSQL views directly. No manual sync or
-    // IndexedDB dependency for the live November/October reporting screen.
     setErrorMsg("");
     setViewMode("fuel");
     setAppState("dashboard");
-    // Optional historical snapshots are loaded only for the advanced legacy page.
-    try {
-      const [h, d, m, own] = await Promise.all([
-        readAvbCache("Fuel History"), readAvbCache("Deviation Fuel"),
-        readAvbCache("Monthly Fuel History"), readAvbCache("october-ca")
-      ]);
-      setFuelHistory(h?.payload || null);
-      setFuelDeviation(d?.payload || null);
-      setMonthlyFuelData(m?.payload || null);
-      setFuelTPrime(null);
-      setFuelOwnership(own?.payload ? {
-        ...own.payload,
-        rows: own.payload.rows.map(raw => {
-          const site = normalizeRow(raw);
-          return { "Site ID": String(site.siteName ?? "").trim(), "Cluster Owner": String(site.clusterOwner ?? "").trim(), "MS GTL": String(site.msGtl ?? "").trim(), "Zone Lead": String(site.zongLead ?? "").trim() };
-        })
-      } : null);
-    } catch (e) {
-      console.warn("Optional historical Fuel cache unavailable; live Supabase views remain active", e);
-    }
+
+    // Browser-independent: always attempt Supabase first. An existing IndexedDB
+    // snapshot is used only if the corresponding live request fails.
+    const liveOrCached = async (sheetName: string): Promise<SheetPayload | null> => {
+      try {
+        const payload = await fetchArchivedSheet(sheetName);
+        await saveAvbCaches([{ name: sheetName, payload }]).catch(err =>
+          console.warn(`[Fuel] Cache save failed for ${sheetName}`, err)
+        );
+        return payload;
+      } catch (err) {
+        console.warn(`[Fuel] Live archive unavailable for ${sheetName}; trying cache`, err);
+        const cached = await readAvbCache(sheetName).catch(() => null);
+        return cached?.payload || null;
+      }
+    };
+
+    // Load independently so an unavailable optional sheet never hides the rest.
+    const [history, deviation, monthly, ownership] = await Promise.all([
+      liveOrCached("Fuel History"),
+      liveOrCached("Deviation Fuel"),
+      liveOrCached("Monthly Fuel History"),
+      readAvbCache("october-ca").catch(() => null),
+    ]);
+    setFuelHistory(history);
+    setFuelDeviation(deviation);
+    setMonthlyFuelData(monthly);
+    setFuelTPrime(null);
+    setFuelOwnership(ownership?.payload ? {
+      ...ownership.payload,
+      rows: ownership.payload.rows.map(raw => {
+        const site = normalizeRow(raw);
+        return { "Site ID": String(site.siteName ?? "").trim(), "Cluster Owner": String(site.clusterOwner ?? "").trim(), "MS GTL": String(site.msGtl ?? "").trim(), "Zone Lead": String(site.zongLead ?? "").trim() };
+      })
+    } : null);
+    if (!history) console.warn("[Fuel] Fuel History unavailable from both Supabase and local cache.");
   };
 
   const syncAllData = async () => {
