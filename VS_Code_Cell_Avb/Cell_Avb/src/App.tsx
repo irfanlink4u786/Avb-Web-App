@@ -58,7 +58,6 @@ import {
 import ErrorBoundary from "./components/ErrorBoundary";
 import OverallSummaryComponent from "./components/OverallSummary";
 import ExportButton from "./components/ExportButton";
-import WeatherRadar from "./components/WeatherRadar";
 import RainAlertWidget from "./components/RainAlertWidget";
 import { type SheetPayload } from "./types";
 import {
@@ -1530,7 +1529,6 @@ const NAV_ITEMS = [
   { id: "li-ion", label: "Li-ion BB", icon: Battery },
   { id: "agm", label: "AGM BB", icon: BatteryWarning },
   { id: "query", label: "Site Query", icon: Search },
-  { id: "weather", label: "Weather Radar", icon: CloudRain },
 ] as const;
 
 type Month = "july" | "august" | "september" | "october" | "november";
@@ -8330,7 +8328,6 @@ export default function App() {
                 {activeTab === "li-ion" && <CategoryPage sites={sites} title="Li-ion Battery Backup Sites" description={`${liIonRows.length} sites with Li-ion batteries installed`} threshold={98} filterFn={(s) => hasLiIon(s)} lastUpdatedDate={monthLastUpdated} lastColumnIndex={monthLastColumnIndex} />}
                 {activeTab === "agm" && <CategoryPage sites={sites} title="AGM Battery Backup Sites" description={`${agmRows.length} sites with AGM battery banks`} threshold={95} filterFn={(s) => hasAGM(s)} lastUpdatedDate={monthLastUpdated} lastColumnIndex={monthLastColumnIndex} />}
                 {activeTab === "query" && <SiteQuery sites={sites} rawData={monthData} historyData={(selectedMonth === "september" || selectedMonth === "october" || selectedMonth === "november") ? monthCellAvbHistory : null} />}
-                {activeTab === "weather" && <WeatherRadar />}
               </motion.div>
             </AnimatePresence>
           </ErrorBoundary>
