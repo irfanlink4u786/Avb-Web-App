@@ -1333,6 +1333,104 @@ async function fetchCellAvbFromSupabase(): Promise<SheetPayload> {
   }
 }
 
+
+// Fast October/November dashboard: read a pre-aggregated Supabase view,
+// rather than downloading and averaging tens of thousands of daily records.
+// Original fetch functions remain available as a compatibility fallback.
+async function fetchFastMonthCellAvb(month: "october" | "november"): Promise<SheetPayload> {
+  const env = (import.meta as any).env || {};
+  const base = String(env.VITE_SUPABASE_URL || "").replace(/\/$/, "");
+  const key = String(env.VITE_SUPABASE_PUBLISHABLE_KEY || env.VITE_SUPABASE_ANON_KEY || "");
+  if (!base || !key) throw new Error("Supabase configuration is missing");
+
+  const raw = sessionStorage.getItem("cell_avb_supabase_session");
+  let session = raw ? JSON.parse(raw) : null;
+  if (!session?.access_token) throw new Error("Please sign in to Supabase");
+  if (Number(session.expires_at || 0) * 1000 < Date.now() + 60000) {
+    if (!session.refresh_token) throw new Error("Supabase session expired");
+    const refreshed = await fetch(`${base}/auth/v1/token?grant_type=refresh_token`, {
+      method: "POST",
+      headers: { apikey: key, "Content-Type": "application/json" },
+      body: JSON.stringify({ refresh_token: session.refresh_token })
+    });
+    if (!refreshed.ok) throw new Error("Supabase session expired; please sign in again");
+    session = await refreshed.json();
+    session.expires_at = Math.floor(Date.now() / 1000) + Number(session.expires_in || 3600);
+    sessionStorage.setItem("cell_avb_supabase_session", JSON.stringify(session));
+  }
+
+  const monthStart = month === "october" ? "2026-10-01" : "2026-11-01";
+  const shortMonth = month === "october" ? "Oct" : "Nov";
+  const headers = {
+    apikey: key,
+    Authorization: `Bearer ${session.access_token}`,
+    Accept: "application/json"
+  };
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 15000);
+  try {
+    const load = async (offset: number) => {
+      const url = `${base}/rest/v1/avb_c1_c6_month_fast?select=*&month_start=eq.${monthStart}&order=site_id.asc&limit=1000&offset=${offset}`;
+      const response = await fetch(url, { headers, signal: controller.signal });
+      if (!response.ok) {
+        throw new Error(`Fast AVB view HTTP ${response.status}: ${(await response.text()).slice(0, 200)}`);
+      }
+      return await response.json() as Record<string, any>[];
+    };
+    // C1/C6 master contains ~1,866 sites, so two parallel pages are sufficient.
+    // If the population grows, fetch further pages without a fixed row cap.
+    const firstPages = await Promise.all([load(0), load(1000)]);
+    const all = [...firstPages[0], ...firstPages[1]];
+    if (firstPages[1].length === 1000) {
+      for (let offset = 2000; ; offset += 1000) {
+        const page = await load(offset);
+        all.push(...page);
+        if (page.length < 1000) break;
+      }
+    }
+    if (!all.length) throw new Error(`No ${month} sites found in optimized Supabase view`);
+
+    const result = all.map(item => {
+      const site: Record<string, any> = item.site_master || {};
+      const id = String(item.site_id || site["Site ID"] || "").trim();
+      const monthly = item.ca_pct == null ? "" : Number(item.ca_pct);
+      const merged: Record<string, any> = {
+        ...site,
+        "Site ID": id,
+        "Current Month": monthly,
+        [`${shortMonth}'26 Cell A`]: monthly,
+        [`${shortMonth.toUpperCase()}'26 Cell A`]: monthly,
+        "Measured Days": Number(item.measured_days || 0)
+      };
+      if (month === "october") {
+        merged["OCT'26 LS"] = item.ls_pct ?? "";
+        merged["OCT'26 TCH"] = item.tch_pct ?? "";
+        merged["OCT'26 Utran"] = item.utran_pct ?? "";
+        merged["OCT'26 Eutran"] = item.eutran_pct ?? "";
+        merged["OCT'26 NR Cell"] = item.nr_pct ?? "";
+        merged["TCH"] = item.tch_pct ?? "";
+        merged["Cell_U"] = item.utran_pct ?? "";
+        merged["Cell_EU"] = item.eutran_pct ?? "";
+        merged["NR Cell"] = item.nr_pct ?? "";
+      }
+      const daily = item.daily_ca && typeof item.daily_ca === "object" ? item.daily_ca : {};
+      for (const [dayKey, rawValue] of Object.entries(daily)) {
+        const match = String(dayKey).match(/^(\d{1,2})-(Oct|Nov)$/);
+        if (!match || match[2] !== shortMonth) continue;
+        const day = Number(match[1]);
+        const value = rawValue == null ? "" : Number(rawValue);
+        merged[`${day}-${shortMonth}`] = value;
+        merged[`${day}-${shortMonth}-26`] = value;
+        merged[`${String(day).padStart(2, "0")}-${shortMonth}-26`] = value;
+      }
+      return merged;
+    });
+    return { headers: Array.from(new Set(result.flatMap(row => Object.keys(row)))), rows: result } as SheetPayload;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // November daily CA is intentionally loaded independently from the October tracker.
 // November source has no LS/technology fields: do not invent those metrics.
 async function fetchNovemberCellAvb(): Promise<SheetPayload> {
@@ -7772,9 +7870,14 @@ export default function App() {
       let updatedAt = "";
       let liveError: unknown = null;
       try {
-        payload = month === "november"
-          ? await fetchNovemberCellAvb()
-          : await fetchCellAvbFromSupabase();
+        try {
+          payload = await fetchFastMonthCellAvb(month);
+        } catch (fastError) {
+          console.warn("[Cell AVB] Optimized view unavailable; using original source", fastError);
+          payload = month === "november"
+            ? await fetchNovemberCellAvb()
+            : await fetchCellAvbFromSupabase();
+        }
         if (!payload?.rows?.length) throw new Error("The live CA source returned no sites.");
         updatedAt = new Date().toISOString();
         // Cache is best-effort: unavailable IndexedDB must never block live CA.
