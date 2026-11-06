@@ -7687,7 +7687,6 @@ export default function App() {
   const [viewMode, setViewMode] = useState<ViewMode>("home");
   const [selectedMonth, setSelectedMonth] = useState<Month | null>(null);
   const [appState, setAppState] = useState<AppState>("dashboard");
-  const [dashboardPaintReady, setDashboardPaintReady] = useState(true);
   const [errorMsg, setErrorMsg] = useState("");
 
 
@@ -7842,7 +7841,6 @@ export default function App() {
 
     setViewMode("month"); // Enter November/October immediately, before network or cache work.
     setAppState("loading"); // Show loading only while the primary month data is fetched.
-    setDashboardPaintReady(false);
     const loadStartedAt = performance.now();
     console.info(`[Cell AVB] ${month} load started`);
     setErrorMsg("");
@@ -7908,11 +7906,6 @@ export default function App() {
       // 3 Basics is supplementary; don't block opening the month dashboard.
       setViewMode("month");
       setAppState("dashboard");
-      // Let the dashboard shell paint before mounting the expensive overall charts.
-      // This prevents chart calculations from keeping the loading screen visible.
-      requestAnimationFrame(() => requestAnimationFrame(() => {
-        if (requestId === monthLoadSeq.current) setDashboardPaintReady(true);
-      }));
       void readAvbCache("3 Basics KPIs")
         .then(basics => {
           if (requestId === monthLoadSeq.current) setMonth3Basics(basics?.payload || null);
@@ -7940,7 +7933,6 @@ export default function App() {
         `Failed to load ${month.charAt(0).toUpperCase() + month.slice(1)} AVB data from Supabase. ` +
         `Previous month data has been cleared to avoid showing stale values. ${error instanceof Error ? error.message : String(error)}`
       );
-      setDashboardPaintReady(true);
       setAppState("error");
     }
   };
@@ -8300,9 +8292,8 @@ export default function App() {
 
         <main className="flex-1 p-4 sm:p-6 space-y-6">
           <ErrorBoundary key={activeTab + selectedMonth}>
-            <AnimatePresence mode="wait">
-              <motion.div key={activeTab + selectedMonth} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.2 }} className="space-y-6">
-                {activeTab === "overall" && (dashboardPaintReady ? <div className="overall-vibrant"><OverallSummaryWithExport sites={sites} rawData={monthData} lastUpdatedDate={monthLastUpdated} selectedMonth={selectedMonth ?? "october"} /></div> : <div className="p-8 text-slate-200">Preparing summary charts…</div>)}
+            <div key={activeTab + selectedMonth} className="space-y-6">
+                {activeTab === "overall" && <div className="overall-vibrant"><OverallSummaryWithExport sites={sites} rawData={monthData} lastUpdatedDate={monthLastUpdated} selectedMonth={selectedMonth ?? "october"} /></div>}
                 {activeTab === "grid-performance" && <div className="grid-vibrant"><GridPerformanceScorecard rawData={monthData} lastUpdatedDate={monthLastUpdated} /></div>}
                 {activeTab === "3-basics-kpis" && <div className="basics-vibrant"><ThreeBasicsKpiPage kpiData={month3Basics} sites={sites} lastUpdatedDate={monthLastUpdated} /></div>}
                 {activeTab === "employees" && <><SectionBanner icon={<Users className="w-6 h-6 text-indigo-400" />} title="Employee Performance Analysis" subtitle={`${sites.filter((s) => s.currentAvb > 0).length} active sites`} gradient="from-indigo-500/10 to-purple-500/10 border-indigo-500/20" /><div className="employee-performance-light"><style>{`
@@ -8340,11 +8331,10 @@ export default function App() {
                 {activeTab === "li-ion" && <CategoryPage sites={sites} title="Li-ion Battery Backup Sites" description={`${liIonRows.length} sites with Li-ion batteries installed`} threshold={98} filterFn={(s) => hasLiIon(s)} lastUpdatedDate={monthLastUpdated} lastColumnIndex={monthLastColumnIndex} />}
                 {activeTab === "agm" && <CategoryPage sites={sites} title="AGM Battery Backup Sites" description={`${agmRows.length} sites with AGM battery banks`} threshold={95} filterFn={(s) => hasAGM(s)} lastUpdatedDate={monthLastUpdated} lastColumnIndex={monthLastColumnIndex} />}
                 {activeTab === "query" && <SiteQuery sites={sites} rawData={monthData} historyData={(selectedMonth === "september" || selectedMonth === "october" || selectedMonth === "november") ? monthCellAvbHistory : null} />}
-              </motion.div>
-            </AnimatePresence>
+            </div>
           </ErrorBoundary>
           <footer className="text-center text-xs text-slate-600 py-4">
-            {useMock ? "📊 Demo Mode - Using sample data" : `Supabase cached data (${monthLabel})`} · {sites.length} sites · C1 & C6 Cell Avb Analysis
+            {useMock ? "📊 Demo Mode - Using sample data" : `Supabase AVB data (${monthLabel})`} · {sites.length} sites · C1 & C6 Cell Avb Analysis
           </footer>
         </main>
       </div>
