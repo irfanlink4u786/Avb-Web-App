@@ -6783,7 +6783,7 @@ function LoadingScreen({ onHome }: { onHome: () => void }) {
       />
       <div className="text-center">
         <h2 className="text-xl font-semibold text-white">Loading Dashboard</h2>
-        <p className="text-slate-300 text-sm mt-1">Reading saved data from this browser…</p>
+        <p className="text-slate-300 text-sm mt-1">Fetching live AVB data from Supabase and preparing dashboard…</p>
         <button onClick={onHome} className="mt-5 rounded-lg bg-cyan-500 px-5 py-2 font-semibold text-slate-950">Return Home</button>
       </div>
     </div>
@@ -7687,6 +7687,7 @@ export default function App() {
   const [viewMode, setViewMode] = useState<ViewMode>("home");
   const [selectedMonth, setSelectedMonth] = useState<Month | null>(null);
   const [appState, setAppState] = useState<AppState>("dashboard");
+  const [dashboardPaintReady, setDashboardPaintReady] = useState(true);
   const [errorMsg, setErrorMsg] = useState("");
 
 
@@ -7840,7 +7841,10 @@ export default function App() {
 
 
     setViewMode("month"); // Enter November/October immediately, before network or cache work.
-    setAppState("loading"); // Show a visible loading screen instead of leaving the home page stuck.
+    setAppState("loading"); // Show loading only while the primary month data is fetched.
+    setDashboardPaintReady(false);
+    const loadStartedAt = performance.now();
+    console.info(`[Cell AVB] ${month} load started`);
     setErrorMsg("");
     setSelectedMonth(month);
     setUseMock(false);
@@ -7897,12 +7901,18 @@ export default function App() {
           `No ${month === "november" ? "November" : "October"} CA data available from Supabase or offline cache. ${liveError instanceof Error ? liveError.message : String(liveError || "")}`
         );
       }
+      console.info(`[Cell AVB] ${month}: ${payload.rows.length} sites ready in ${Math.round(performance.now() - loadStartedAt)}ms`);
       setMonthData(payload);
       setMonthLastUpdated(updatedAt);
       setLastSync(updatedAt);
       // 3 Basics is supplementary; don't block opening the month dashboard.
       setViewMode("month");
       setAppState("dashboard");
+      // Let the dashboard shell paint before mounting the expensive overall charts.
+      // This prevents chart calculations from keeping the loading screen visible.
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        if (requestId === monthLoadSeq.current) setDashboardPaintReady(true);
+      }));
       void readAvbCache("3 Basics KPIs")
         .then(basics => {
           if (requestId === monthLoadSeq.current) setMonth3Basics(basics?.payload || null);
@@ -7930,6 +7940,7 @@ export default function App() {
         `Failed to load ${month.charAt(0).toUpperCase() + month.slice(1)} AVB data from Supabase. ` +
         `Previous month data has been cleared to avoid showing stale values. ${error instanceof Error ? error.message : String(error)}`
       );
+      setDashboardPaintReady(true);
       setAppState("error");
     }
   };
@@ -8291,7 +8302,7 @@ export default function App() {
           <ErrorBoundary key={activeTab + selectedMonth}>
             <AnimatePresence mode="wait">
               <motion.div key={activeTab + selectedMonth} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.2 }} className="space-y-6">
-                {activeTab === "overall" && <div className="overall-vibrant"><OverallSummaryWithExport sites={sites} rawData={monthData} lastUpdatedDate={monthLastUpdated} selectedMonth={selectedMonth ?? "october"} /></div>}
+                {activeTab === "overall" && (dashboardPaintReady ? <div className="overall-vibrant"><OverallSummaryWithExport sites={sites} rawData={monthData} lastUpdatedDate={monthLastUpdated} selectedMonth={selectedMonth ?? "october"} /></div> : <div className="p-8 text-slate-200">Preparing summary charts…</div>)}
                 {activeTab === "grid-performance" && <div className="grid-vibrant"><GridPerformanceScorecard rawData={monthData} lastUpdatedDate={monthLastUpdated} /></div>}
                 {activeTab === "3-basics-kpis" && <div className="basics-vibrant"><ThreeBasicsKpiPage kpiData={month3Basics} sites={sites} lastUpdatedDate={monthLastUpdated} /></div>}
                 {activeTab === "employees" && <><SectionBanner icon={<Users className="w-6 h-6 text-indigo-400" />} title="Employee Performance Analysis" subtitle={`${sites.filter((s) => s.currentAvb > 0).length} active sites`} gradient="from-indigo-500/10 to-purple-500/10 border-indigo-500/20" /><div className="employee-performance-light"><style>{`
