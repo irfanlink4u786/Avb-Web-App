@@ -7713,12 +7713,33 @@ export default function App() {
   const [monthLastColumnIndex, setMonthLastColumnIndex] = useState(0);
   const [useMock, setUseMock] = useState(false);
 
-  const [activeTab, setActiveTab] = useState<string>("overall");
+  const [activeTab, setActiveTab] = useState<string>("grid-performance");
   const [selectedRow, setSelectedRow] = useState<SiteData | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [prePostSidebarOpen, setPrePostSidebarOpen] = useState(false);
   const [prePostSubView, setPrePostSubView] = useState<PrePostSubView>("analysis");
+  const [overallReady, setOverallReady] = useState(true);
   const monthLoadSeq = useRef(0);
+  const overallFrame = useRef<number | null>(null);
+  const overallPaintTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (overallFrame.current !== null) cancelAnimationFrame(overallFrame.current);
+    if (overallPaintTimer.current !== null) clearTimeout(overallPaintTimer.current);
+  }, []);
+  // The shell is painted before the heavy Overall Summary is mounted.
+  // Schedule this after data is ready; no IndexedDB or network dependency.
+  const showOverallAfterPaint = () => {
+    if (overallFrame.current !== null) cancelAnimationFrame(overallFrame.current);
+    if (overallPaintTimer.current !== null) clearTimeout(overallPaintTimer.current);
+    overallFrame.current = requestAnimationFrame(() => {
+      overallFrame.current = requestAnimationFrame(() => {
+        overallPaintTimer.current = setTimeout(() => {
+          console.info("[Cell AVB] Mounting Overall Summary", Math.round(performance.now()), "ms");
+          setOverallReady(true);
+        }, 0);
+      });
+    });
+  };
 
   const parsePrePostRows = (rows: Record<string, string>[]): SiteData[] => {
     return rows.map((row) => {
@@ -7846,7 +7867,8 @@ export default function App() {
     setErrorMsg("");
     setSelectedMonth(month);
     setUseMock(false);
-    setActiveTab("overall");
+    setActiveTab("grid-performance");
+    setOverallReady(false);
 
     // IMPORTANT: clear all previous workbook state before starting the new fetch.
     // This prevents stale August data from remaining visible while September loads
@@ -7906,6 +7928,8 @@ export default function App() {
       // 3 Basics is supplementary; don't block opening the month dashboard.
       setViewMode("month");
       setAppState("dashboard");
+      // Grid Performance loads first; defer Overall Summary entirely until selected.
+      console.info(`[Cell AVB] ${month}: dashboard state committed at ${Math.round(performance.now() - loadStartedAt)}ms`);
       void readAvbCache("3 Basics KPIs")
         .then(basics => {
           if (requestId === monthLoadSeq.current) setMonth3Basics(basics?.payload || null);
@@ -8022,6 +8046,9 @@ export default function App() {
   };
 
   const goHome = () => {
+    if (overallFrame.current !== null) cancelAnimationFrame(overallFrame.current);
+    if (overallPaintTimer.current !== null) clearTimeout(overallPaintTimer.current);
+    setOverallReady(true);
     setViewMode("home");
     setSelectedMonth(null);
     setActiveTab("overall");
@@ -8252,7 +8279,11 @@ export default function App() {
             const Icon = item.icon;
             const isActive = activeTab === item.id;
             return (
-              <button key={item.id} onClick={() => { setActiveTab(item.id); setSidebarOpen(false); }} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${isActive ? "bg-cyan-500/15 text-cyan-400 border border-cyan-500/30" : "text-slate-400 hover:bg-slate-800 hover:text-slate-200 border border-transparent"}`}>
+              <button key={item.id} onClick={() => {
+                if (item.id === "overall") setOverallReady(true);
+                setActiveTab(item.id);
+                setSidebarOpen(false);
+              }} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${isActive ? "bg-cyan-500/15 text-cyan-400 border border-cyan-500/30" : "text-slate-400 hover:bg-slate-800 hover:text-slate-200 border border-transparent"}`}>
                 <Icon className="w-4 h-4 shrink-0" />
                 {item.label}
               </button>
@@ -8293,7 +8324,13 @@ export default function App() {
         <main className="flex-1 p-4 sm:p-6 space-y-6">
           <ErrorBoundary key={activeTab + selectedMonth}>
             <div key={activeTab + selectedMonth} className="space-y-6">
-                {activeTab === "overall" && <div className="overall-vibrant"><OverallSummaryWithExport sites={sites} rawData={monthData} lastUpdatedDate={monthLastUpdated} selectedMonth={selectedMonth ?? "october"} /></div>}
+                {activeTab === "overall" && (overallReady
+                  ? <div className="overall-vibrant"><OverallSummaryWithExport sites={sites} rawData={monthData} lastUpdatedDate={monthLastUpdated} selectedMonth={selectedMonth ?? "october"} /></div>
+                  : <div className="rounded-xl bg-white p-6 text-slate-700 min-h-[240px]" role="status">
+                      <div className="text-lg font-semibold">November / October AVB data loaded</div>
+                      <p className="mt-2">Preparing Overall Summary charts…</p>
+                      <p className="mt-2 text-sm text-slate-500">{monthData?.rows?.length ?? 0} site records received from Supabase</p>
+                    </div>)}
                 {activeTab === "grid-performance" && <div className="grid-vibrant"><GridPerformanceScorecard rawData={monthData} lastUpdatedDate={monthLastUpdated} /></div>}
                 {activeTab === "3-basics-kpis" && <div className="basics-vibrant"><ThreeBasicsKpiPage kpiData={month3Basics} sites={sites} lastUpdatedDate={monthLastUpdated} /></div>}
                 {activeTab === "employees" && <><SectionBanner icon={<Users className="w-6 h-6 text-indigo-400" />} title="Employee Performance Analysis" subtitle={`${sites.filter((s) => s.currentAvb > 0).length} active sites`} gradient="from-indigo-500/10 to-purple-500/10 border-indigo-500/20" /><div className="employee-performance-light"><style>{`
