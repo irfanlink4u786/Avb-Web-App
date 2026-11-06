@@ -27,7 +27,6 @@ import {
   Search,
   X,
   Cpu,
-  CloudRain,
   FileSpreadsheet,
   Network,
   Share2,
@@ -58,7 +57,6 @@ import {
 import ErrorBoundary from "./components/ErrorBoundary";
 import OverallSummaryComponent from "./components/OverallSummary";
 import ExportButton from "./components/ExportButton";
-import RainAlertWidget from "./components/RainAlertWidget";
 import { type SheetPayload } from "./types";
 import {
   type SiteData,
@@ -7841,7 +7839,8 @@ export default function App() {
     const requestId = ++monthLoadSeq.current;
 
 
-    setAppState("dashboard"); // Never block navigation for a local IndexedDB read.
+    setViewMode("month"); // Enter November/October immediately, before network or cache work.
+    setAppState("loading"); // Show a visible loading screen instead of leaving the home page stuck.
     setErrorMsg("");
     setSelectedMonth(month);
     setUseMock(false);
@@ -7879,7 +7878,8 @@ export default function App() {
         if (!payload?.rows?.length) throw new Error("The live CA source returned no sites.");
         updatedAt = new Date().toISOString();
         // Cache is best-effort: unavailable IndexedDB must never block live CA.
-        await saveAvbCaches([{ name: cacheName, payload }]).catch(err =>
+        // Cache asynchronously: IndexedDB must not hold up navigation.
+        void saveAvbCaches([{ name: cacheName, payload }]).catch(err =>
           console.warn("[Cell AVB] Could not save CA offline cache:", err)
         );
       } catch (err) {
@@ -7900,11 +7900,14 @@ export default function App() {
       setMonthData(payload);
       setMonthLastUpdated(updatedAt);
       setLastSync(updatedAt);
-      const basics = await readAvbCache("3 Basics KPIs").catch(() => null);
-      if (requestId !== monthLoadSeq.current) return;
-      setMonth3Basics(basics?.payload || null);
+      // 3 Basics is supplementary; don't block opening the month dashboard.
       setViewMode("month");
       setAppState("dashboard");
+      void readAvbCache("3 Basics KPIs")
+        .then(basics => {
+          if (requestId === monthLoadSeq.current) setMonth3Basics(basics?.payload || null);
+        })
+        .catch(err => console.warn("[Cell AVB] 3 Basics cache unavailable:", err));
       return;
     } catch (error) {
       if (requestId !== monthLoadSeq.current) return;
@@ -8137,7 +8140,6 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100 flex">
-      <RainAlertWidget />
 
       {/* Sidebar */}
       <aside className={`fixed lg:sticky top-0 z-40 h-screen w-64 bg-slate-950 border-r border-slate-800 flex flex-col transition-transform duration-300 ${prePostSidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}`}>
@@ -8226,7 +8228,6 @@ export default function App() {
   return (
     <div className="light-app min-h-screen bg-[#eef0f3] text-slate-900 flex">
       
-      <RainAlertWidget />
       <div className="fixed bottom-4 right-4 z-50 rounded-lg bg-slate-900 px-3 py-2 text-xs text-white shadow-lg" title="Last time this month’s data was loaded; live Supabase is attempted first, with saved data used if live loading fails.">{monthLastUpdated ? `Data loaded · ${new Date(monthLastUpdated).toLocaleString()}` : "Data status unavailable"} · <button onClick={goHome} className="font-bold text-cyan-300">Home</button></div>
       <aside className={`fixed lg:sticky top-0 z-40 h-screen w-64 bg-[#e5e7eb] border-r border-slate-300 flex flex-col transition-transform ${sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}`}>
         <div className="p-5 border-b border-slate-800">
