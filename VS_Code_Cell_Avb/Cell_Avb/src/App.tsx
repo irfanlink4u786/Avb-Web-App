@@ -1516,6 +1516,9 @@ async function fetchNovemberCellAvb(): Promise<SheetPayload> {
 // Month dashboard navigation
 const NAV_ITEMS = [
   { id: "overall", label: "Overall Summary", icon: LayoutDashboard },
+  { id: "ca-below-95", label: "CA Below 95%", icon: TrendingDown },
+  { id: "ca-95-to-98", label: "CA 95% to Below 98%", icon: Activity },
+  { id: "ca-98-plus", label: "CA 98% and Above", icon: TrendingUp },
   { id: "grid-performance", label: "Grid Performance", icon: Award },
   { id: "3-basics-kpis", label: "3 Basics KPIs", icon: Activity },
   { id: "employees", label: "Employees", icon: Users },
@@ -6194,6 +6197,47 @@ function EnhancedOverallSummary({
 // LS values are not inferred from CA and are never hardcoded as current data.
 // A secure LS aggregate API can be connected independently when available.
 // Daily C-1 / C-6 availability and load-shedding comparison, using actual workbook values.
+// Cell AVB-only prefetch cache. No Central BB Analytics views are modified.
+type CellAvbTrendPayload = {
+  caRows: Array<Record<string, unknown>>;
+  lsRows: Array<Record<string, unknown>>;
+};
+const cellAvbTrendPromises = new Map<string, Promise<CellAvbTrendPayload>>();
+const cellAvbSummaryPromises = new Map<string, Promise<unknown>>();
+async function cellAvbGet(table: string, select: string, extra = ""): Promise<Array<Record<string, unknown>>> {
+  const env = import.meta.env;
+  const base = String(env.VITE_SUPABASE_URL || "").replace(/\/$/, "");
+  const key = String(env.VITE_SUPABASE_PUBLISHABLE_KEY || env.VITE_SUPABASE_ANON_KEY || "");
+  const saved = sessionStorage.getItem("cell_avb_supabase_session");
+  const session = saved ? JSON.parse(saved) : null;
+  if (!base || !key || !session?.access_token) throw new Error("Supabase login required");
+  const response = await fetch(`${base}/rest/v1/${table}?select=${select}${extra}`, {
+    headers: { apikey: key, Authorization: `Bearer ${session.access_token}` }
+  });
+  if (!response.ok) throw new Error(`${table}: HTTP ${response.status}: ${(await response.text()).slice(0, 180)}`);
+  return response.json() as Promise<Array<Record<string, unknown>>>;
+}
+function prefetchCellAvbTrends(month: string): Promise<CellAvbTrendPayload> {
+  let pending = cellAvbTrendPromises.get(month);
+  if (!pending) {
+    pending = Promise.all([
+      cellAvbGet("cell_avb_ca_rolling_daily_fast", "report_date,sub_region,ca_pct", "&order=report_date.desc&limit=100"),
+      cellAvbGet("cell_avb_ls_rolling_daily_fast", "report_date,sub_region,avg_ls_hours", "&order=report_date.desc&limit=100")
+    ]).then(([caRows, lsRows]) => ({caRows, lsRows}));
+    cellAvbTrendPromises.set(month, pending);
+    void pending.catch(() => cellAvbTrendPromises.delete(month));
+  }
+  return pending;
+}
+function prefetchCellAvbOverall(month: string): void {
+  if (cellAvbSummaryPromises.has(month)) return;
+  const start = month === "november" ? "2026-11-01" : "2026-10-01";
+  const pending = cellAvbGet("cell_avb_overall_summary_fast",
+    "month_start,site_count,valid_sites,overall_ca_pct,below_95,ca_95_98,ca_98_plus,latest_date",
+    `&month_start=eq.${start}&limit=1`);
+  cellAvbSummaryPromises.set(month, pending);
+  void pending.catch(() => cellAvbSummaryPromises.delete(month));
+}
 function DailyRegionalCaLsChart({ rawData, sites, selectedMonth }: { rawData?: SheetPayload | null; sites: SiteData[]; selectedMonth: string }) {
   const [region, setRegion] = useState<"all" | "C-1" | "C-6">("all");
   const [showLs, setShowLs] = useState(true);
@@ -6206,23 +6250,8 @@ function DailyRegionalCaLsChart({ rawData, sites, selectedMonth }: { rawData?: S
       setChartLoading(true);
       setChartError("");
       try {
-        const env = import.meta.env;
-        const base = String(env.VITE_SUPABASE_URL || "").replace(/\/$/, "");
-        const key = String(env.VITE_SUPABASE_PUBLISHABLE_KEY || env.VITE_SUPABASE_ANON_KEY || "");
-        const saved = sessionStorage.getItem("cell_avb_supabase_session");
-        const session = saved ? JSON.parse(saved) : null;
-        if (!base || !key || !session?.access_token) throw new Error("Supabase login required");
-        const headers = { apikey: key, Authorization: `Bearer ${session.access_token}` };
-        const fetchDaily = async (table: string, select: string) => {
-          const url = `${base}/rest/v1/${table}?select=${select}&order=report_date.desc&limit=100`;
-          const response = await fetch(url, { headers });
-          if (!response.ok) throw new Error(`${table}: HTTP ${response.status}: ${(await response.text()).slice(0, 120)}`);
-          return response.json() as Promise<Array<Record<string, unknown>>>;
-        };
-        const [caRows, lsRows] = await Promise.all([
-          fetchDaily("cell_avb_ca_rolling_daily_fast", "report_date,sub_region,ca_pct"),
-          fetchDaily("cell_avb_ls_rolling_daily", "report_date,sub_region,avg_ls_hours")
-        ]);
+        // Uses preloaded Cell AVB-only trend data when Grid Performance was opened first.
+        const {caRows, lsRows} = await prefetchCellAvbTrends(selectedMonth);
         if (!caRows.length) throw new Error("No daily CA history available");
         const newest = String(caRows[0].report_date);
         const end = new Date(`${newest}T00:00:00Z`);
@@ -6286,7 +6315,7 @@ function DailyRegionalCaLsChart({ rawData, sites, selectedMonth }: { rawData?: S
         {showLs && (region === "all" || region === "C-6") && <Line yAxisId="ls" type="monotone" dataKey="ls6" name="C-6 LS" stroke="#f59e0b" strokeWidth={2.5} connectNulls dot={{ r: 2 }} label={{ position: "bottom", fontSize: 9, formatter: (v: unknown) => v == null || !Number.isFinite(Number(v)) ? "" : `${Number(v).toFixed(1)}h` }} />}
       </ComposedChart></ResponsiveContainer></div>
       <label className="mt-2 flex items-center gap-2 text-xs text-slate-600"><input type="checkbox" checked={showLs} onChange={e => setShowLs(e.target.checked)} /> Show LS lines</label>
-      {!hasLs && <p className="mt-2 text-sm text-amber-700">No LS readings are available for this 30-day window. November LS will appear after daily records are imported into central_ls_daily.</p>}
+      {!hasLs && <p className="mt-2 text-sm text-amber-700">No C-1/C-6 LS readings are available for this 30-day window in the Cell AVB LS summary.</p>}
     </> : <p className="py-12 text-center text-sm text-slate-600">{chartError || "No daily CA history is available."}</p>}
   </section>;
 }
@@ -7713,7 +7742,7 @@ export default function App() {
   const [monthLastColumnIndex, setMonthLastColumnIndex] = useState(0);
   const [useMock, setUseMock] = useState(false);
 
-  const [activeTab, setActiveTab] = useState<string>("grid-performance");
+  const [activeTab, setActiveTab] = useState<string>("ca-below-95");
   const [selectedRow, setSelectedRow] = useState<SiteData | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [prePostSidebarOpen, setPrePostSidebarOpen] = useState(false);
@@ -7867,7 +7896,7 @@ export default function App() {
     setErrorMsg("");
     setSelectedMonth(month);
     setUseMock(false);
-    setActiveTab("grid-performance");
+    setActiveTab("ca-below-95");
     setOverallReady(false);
 
     // IMPORTANT: clear all previous workbook state before starting the new fetch.
@@ -7928,7 +7957,13 @@ export default function App() {
       // 3 Basics is supplementary; don't block opening the month dashboard.
       setViewMode("month");
       setAppState("dashboard");
-      // Grid Performance loads first; defer Overall Summary entirely until selected.
+      // Warm Overall Summary's SQL KPIs and CA/LS series while Grid Performance is visible.
+      // Neither request blocks the grid page or the user.
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        if (requestId !== monthLoadSeq.current) return;
+        void prefetchCellAvbTrends(month).catch(err => console.warn("[Cell AVB] Trend warm-up:", err));
+        prefetchCellAvbOverall(month);
+      }));
       console.info(`[Cell AVB] ${month}: dashboard state committed at ${Math.round(performance.now() - loadStartedAt)}ms`);
       void readAvbCache("3 Basics KPIs")
         .then(basics => {
@@ -8331,6 +8366,9 @@ export default function App() {
                       <p className="mt-2">Preparing Overall Summary charts…</p>
                       <p className="mt-2 text-sm text-slate-500">{monthData?.rows?.length ?? 0} site records received from Supabase</p>
                     </div>)}
+                {activeTab === "ca-below-95" && <CategoryPage sites={sites} title="CA Below 95%" description="C-1 & C-6 sites with valid monthly Cell Availability below 95%" threshold={95} filterFn={(site) => Number(site.currentAvb) > 0 && Number(site.currentAvb) < 95} lastUpdatedDate={monthLastUpdated} lastColumnIndex={monthLastColumnIndex} />}
+                {activeTab === "ca-95-to-98" && <CategoryPage sites={sites} title="CA 95% to Below 98%" description="C-1 & C-6 sites with valid monthly Cell Availability from 95% to below 98%" threshold={98} filterFn={(site) => Number(site.currentAvb) >= 95 && Number(site.currentAvb) < 98} lastUpdatedDate={monthLastUpdated} lastColumnIndex={monthLastColumnIndex} />}
+                {activeTab === "ca-98-plus" && <CategoryPage sites={sites} title="CA 98% and Above" description="C-1 & C-6 sites with valid monthly Cell Availability of at least 98%" threshold={98} filterFn={(site) => Number(site.currentAvb) >= 98 && Number.isFinite(Number(site.currentAvb))} lastUpdatedDate={monthLastUpdated} lastColumnIndex={monthLastColumnIndex} />}
                 {activeTab === "grid-performance" && <div className="grid-vibrant"><GridPerformanceScorecard rawData={monthData} lastUpdatedDate={monthLastUpdated} /></div>}
                 {activeTab === "3-basics-kpis" && <div className="basics-vibrant"><ThreeBasicsKpiPage kpiData={month3Basics} sites={sites} lastUpdatedDate={monthLastUpdated} /></div>}
                 {activeTab === "employees" && <><SectionBanner icon={<Users className="w-6 h-6 text-indigo-400" />} title="Employee Performance Analysis" subtitle={`${sites.filter((s) => s.currentAvb > 0).length} active sites`} gradient="from-indigo-500/10 to-purple-500/10 border-indigo-500/20" /><div className="employee-performance-light"><style>{`
