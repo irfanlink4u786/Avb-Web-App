@@ -6220,7 +6220,7 @@ function DailyRegionalCaLsChart({ rawData, sites, selectedMonth }: { rawData?: S
           return response.json() as Promise<Array<Record<string, unknown>>>;
         };
         const [caRows, lsRows] = await Promise.all([
-          fetchDaily("cell_avb_ca_rolling_daily", "report_date,sub_region,ca_pct"),
+          fetchDaily("cell_avb_ca_rolling_daily_fast", "report_date,sub_region,ca_pct"),
           fetchDaily("cell_avb_ls_rolling_daily", "report_date,sub_region,avg_ls_hours")
         ]);
         if (!caRows.length) throw new Error("No daily CA history available");
