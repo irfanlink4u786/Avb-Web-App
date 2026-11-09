@@ -12,7 +12,7 @@ export default function GridFuelMonthly({ month }: { month: string }) {
       setLoading(true); setError("");
       try {
         const env = (import.meta as any).env || {};
-        const base = String(env.VITE_SUPABASE_URL || "").replace(/\\/$/, "");
+        const base = String(env.VITE_SUPABASE_URL || "").replace(/\/$/, "");
         const key = String(env.VITE_SUPABASE_PUBLISHABLE_KEY || env.VITE_SUPABASE_ANON_KEY || "");
         const raw = sessionStorage.getItem("cell_avb_supabase_session");
         const token = raw ? JSON.parse(raw)?.access_token : null;
