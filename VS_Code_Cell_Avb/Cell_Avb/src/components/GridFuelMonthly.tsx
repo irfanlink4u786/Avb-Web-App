@@ -21,7 +21,7 @@ export default function GridFuelMonthly({ month }: { month: string }) {
         const response = await fetch(base + "/rest/v1/cell_avb_grid_fuel_monthly?" + params, { headers: { apikey: key, Authorization: "Bearer " + token }, signal: controller.signal });
         if (!response.ok) throw new Error("Supabase fuel summary: HTTP " + response.status + " " + (await response.text()).slice(0,200));
         const data = await response.json();
-        if (!controller.signal.aborted) setRows(data.filter((r: FuelGrid) => /^C(?:1|6)\\d{3}$/.test(r.grid)));
+        if (!controller.signal.aborted) setRows(data.filter((r: FuelGrid) => /^C(?:1|6)\d{3}$/.test(r.grid)));
       } catch (e: any) { if (!controller.signal.aborted) setError(e?.message || "Unable to load fuel summary"); }
       finally { if (!controller.signal.aborted) setLoading(false); }
     }
