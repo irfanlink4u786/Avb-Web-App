@@ -28,13 +28,25 @@ export default function GridFuelMonthly({ month }: { month: string }) {
     load();
     return () => controller.abort();
   }, [date]);
-  const totals = rows.reduce((a,r) => ({ sites: a.sites + Number(r.fueled_dgs), fuel: a.fuel + Number(r.fuel_filled_liters), target: a.target + Number(r.monthly_target_liters) }), { sites: 0, fuel: 0, target: 0 });
   return <section className="rounded-xl border border-slate-200 bg-white p-5 mt-5 text-slate-900">
-    <h3 className="text-lg font-extrabold">Monthly DG Fuel Target — {date === 11 ? "November" : date === 10 ? "October" : "Selected Month"} 2026</h3>
-    <p className="text-sm text-slate-600 mb-3">170 L per unique fueled DG · Includes mobile DG site IDs · Full-month benchmark</p>
-    {loading ? <p>Loading grid fuel performance…</p> : error ? <p className="text-red-600">{error}</p> : <>
-      <div className="flex flex-wrap gap-5 font-semibold mb-4"><span>Fueled DGs: {totals.sites}</span><span>Filled: {totals.fuel.toFixed(2)} L</span><span>Target: {totals.target.toFixed(2)} L</span><span>Used: {totals.target ? (100*totals.fuel/totals.target).toFixed(2) : "0.00"}%</span></div>
-      <div className="overflow-x-auto"><table className="w-full text-sm text-left"><thead className="bg-slate-100"><tr>{["Grid","Fueled DGs","Fuel Filled (L)","Average/DG (L)","Monthly Target (L)","Target Used (%)","Balance (L)"].map(x=><th key={x} className="p-2">{x}</th>)}</tr></thead><tbody>{rows.map(r=><tr key={r.grid} className="border-t border-slate-200"><td className="p-2 font-bold">{r.grid}</td><td className="p-2">{r.fueled_dgs}</td><td className="p-2">{Number(r.fuel_filled_liters).toFixed(2)}</td><td className="p-2">{r.average_liters_per_dg == null ? "—" : Number(r.average_liters_per_dg).toFixed(2)}</td><td className="p-2">{Number(r.monthly_target_liters).toFixed(2)}</td><td className="p-2">{r.target_utilization_pct == null ? "—" : Number(r.target_utilization_pct).toFixed(2)+"%"}</td><td className="p-2">{Number(r.balance_liters).toFixed(2)}</td></tr>)}</tbody></table></div>
-    </>}
+    <h3 className="text-lg font-extrabold">Monthly DG Fuel Summary — {date === 11 ? "November" : date === 10 ? "October" : "Selected Month"} 2026</h3>
+    <p className="text-sm text-slate-600 mb-3">Grid-wise distinct fueled DG sites and actual fuel consumption</p>
+    {loading ? <p>Loading grid fuel performance…</p> : error ? <p className="text-red-600">{error}</p> : rows.length === 0 ? <p>No grid fuel records available for this month.</p> : (
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm text-left">
+          <thead className="bg-slate-100">
+            <tr>{["Grid", "Fueled DGs", "Fuel Filled (L)", "Average/DG (L)"].map(label => <th key={label} className="p-2">{label}</th>)}</tr>
+          </thead>
+          <tbody>
+            {rows.map(r => <tr key={r.grid} className="border-t border-slate-200">
+              <td className="p-2 font-bold">{r.grid}</td>
+              <td className="p-2">{r.fueled_dgs}</td>
+              <td className="p-2">{Number(r.fuel_filled_liters).toFixed(2)}</td>
+              <td className="p-2">{r.average_liters_per_dg == null ? "—" : Number(r.average_liters_per_dg).toFixed(2)}</td>
+            </tr>)}
+          </tbody>
+        </table>
+      </div>
+    )}
   </section>;
 }
