@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect, Fragment } from "react";
+import GridFuelMonthly from "./components/GridFuelMonthly";
 import { AlertTriangle, CalendarDays, ChevronDown, ChevronUp, Fuel, LayoutDashboard, Search, TrendingDown, RefreshCw, FileSpreadsheet } from "lucide-react";
 import { ComposedChart, BarChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LabelList } from "recharts";
 import type { SheetPayload } from "./types";
@@ -1912,6 +1913,7 @@ function FuelDashboardLegacy({ data, deviationData, tPrimeData, sheet1Data, mont
             </div>
             {currentMonthName==="Oct" && <p className="mt-3 text-xs text-slate-500">*The 28,000 L allocation applies to the entire region. When a grid, region or owner is filtered, budget balance and utilization compare filtered fuel against that unchanged overall allocation; they are not a local budget balance. Budget balance is not physical tank stock.</p>}
           </div>
+          <GridFuelMonthly month={currentMonthName.toLowerCase()} />
           <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-3"><div><h3 className="text-lg font-black text-[#075B39]">{currentMonthLabel} · Daily Fuel Trend</h3><p className="text-xs text-slate-500">Latest date first · gold gradient bars: fuel litres · amber line: unique fueled sites · values always visible</p></div><ExportButtonComponent data={[...currentMonthDaySummary].sort((a,b)=>b.day-a.day).map(x=>({Date:x.date,"Fuel (L)":Math.round(x.fuel),"Fill Events":x.fills,Sites:x.sites}))} filename={`Fuel_${currentMonthLabel}_Daywise`} label="Export Day-wise" format="excel" variant="success"/></div>
             <p className="mb-2 text-xs font-bold text-amber-800">Click any golden fuel bar to view its site-wise refueling details and hub severity.</p>
