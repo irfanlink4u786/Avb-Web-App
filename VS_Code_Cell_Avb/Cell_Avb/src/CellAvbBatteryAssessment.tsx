@@ -11,8 +11,8 @@ type RawAssessment={raw:RawAlarm;category:string;reason:string;backup:number|nul
 type Reconcile={total:number;matched:number;unmatched:number;rawCount:number;rawUnmatched:number;rawThrough:string|null;details:Record<string,boolean>};
 const formatDate=(v:string|null|undefined)=>v?String(v).replace('T',' ').replace(/(\.\d+)?(Z|[+-]\d\d:?\d\d)$/,''):'—';
 const localMs=(v:string|null|undefined)=>v?Date.parse(String(v).replace(' ','T')+'+05:00'):NaN;
-type Tab='Executive Summary'|'Sites Requiring Action'|'Site Investigation';
-const tabs:Tab[]=['Executive Summary','Sites Requiring Action','Site Investigation'];
+type Tab='Executive Summary'|'Sites Requiring Action'|'Site Investigation'|'Last 5 Days – WSD Degradation';
+const tabs:Tab[]=['Executive Summary','Sites Requiring Action','Site Investigation','Last 5 Days – WSD Degradation'];
 const panel:CSSProperties={background:'#fff',border:'1px solid #d5e8de',borderRadius:14,padding:16};
 const btn:CSSProperties={background:'#fff',color:'#12654c',border:'1px solid #bddacc',borderRadius:9,padding:'9px 12px',cursor:'pointer',fontWeight:600};
 const cell:CSSProperties={padding:'9px 10px',borderBottom:'1px solid #e6eee9',fontSize:12,textAlign:'left',whiteSpace:'nowrap'};
@@ -23,7 +23,7 @@ function csv(rows:Site[],mode:'combined'|'wsd'|'wosd'='combined'){const keys:(ke
 export default function EassCaBackupDiagnostics({client,activeSection}:{client:SupabaseClient;activeSection?:string}){
  const active=activeSection==null||activeSection.startsWith('eass-');
  const [sites,setSites]=useState<Site[]>([]),[loading,setLoading]=useState(false),[loaded,setLoaded]=useState(false),[error,setError]=useState('');
- const [tab,setTab]=useState<Tab>('Sites Requiring Action'),[sub,setSub]=useState('All'),[grid,setGrid]=useState('All'),[search,setSearch]=useState(''),[page,setPage]=useState(1);
+ const [tab,setTab]=useState<Tab>('Executive Summary'),[sub,setSub]=useState('All'),[grid,setGrid]=useState('All'),[search,setSearch]=useState(''),[page,setPage]=useState(1);
  const [bbTypeFilter,setBbTypeFilter]=useState('Li-ion BB');
  const [evidenceMode,setEvidenceMode]=useState<'combined'|'wsd'|'wosd'>('combined');
  const [drill,setDrill]=useState<{field:'sub_region'|'grid';value:string}|null>(null);
@@ -272,6 +272,7 @@ export default function EassCaBackupDiagnostics({client,activeSection}:{client:S
  <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(160px,1fr))',gap:10}}>{kpis.map(([label,value,target])=><button key={label} style={{...panel,borderTop:'4px solid #079b76',textAlign:'left',cursor:'pointer'}} onClick={()=>{setTab(target);setPage(1);}}><div style={{fontSize:12,color:'#57776b'}}>{label}</div><strong style={{fontSize:28}}>{value.toLocaleString()}</strong></button>)}</div>
  </section>
  <div style={{display:'flex',flexWrap:'wrap',gap:7}}>{tabs.map((t,i)=><button key={t} style={{...btn,background:tab===t?'#078767':'white',color:tab===t?'white':'#12654c'}} onClick={()=>{setTab(t);setPage(1);}}>{i+1}. {t}</button>)}</div>
+ {tab==='Last 5 Days – WSD Degradation'&&<BatteryRmsUpdates client={client} mode="recent"/>}
  {tab==='Sites Requiring Action'&&<section style={panel}><h3 style={{marginTop:0}}>Priority Classification · Field Rectification</h3><p style={{fontSize:12,color:'#55776b'}}>P0 / P1 / P2 are mutually exclusive. Sites without CA are excluded from P0/P1/P2. DG and mixed labels do not override measured backup. Counts reflect the selected sub-region and grid.</p><div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(190px,1fr))',gap:10}}>{priorityCards.map(([label,desc,count])=><div key={label} style={{...panel,borderTop:'4px solid '+(label==='P0'?'#c33d32':label==='P1'?'#e0a12c':label==='P2'?'#1981a8':'#849598')}}><strong>{label} · {desc}</strong><div style={{fontSize:28,fontWeight:800}}>{count.toLocaleString()}</div></div>)}</div><p style={{fontSize:12,color:'#55776b'}}>P0 + P1 + P2 = {(scope.filter(isP0).length+scope.filter(isP1).length+scope.filter(isP2).length).toLocaleString()} classified sites. Total low backup: {scope.filter(lowBackup).length.toLocaleString()}. Non-DG, repeated WSD failures and capacity ≥400Ah are secondary field factors.</p><button style={btn} onClick={()=>csv(filtered,evidenceMode)}>Export action sites ({filtered.length})</button></section>}
  <section style={panel}><h3 style={{margin:0}}>{tab} — {filtered.length.toLocaleString()} sites</h3><p style={{marginBottom:0,fontSize:13,color:'#55776b'}}>{tab==='Sites Requiring Action'?'P0: CA <95% + BB <120 min · P1: CA 95–98% + BB <120 min · P2: CA ≥98% + BB <120 min. Sites without CA are excluded from priorities. All categories are mutually exclusive. Non-DG, repeated WSD failures and ≥400Ah are highlighted for field prioritization.':tab==='Executive Summary'?'Pure Li-ion sites; FM evidence may be missing. Backup is the maximum of validated WSD/WOSD; EASS Not Reporting means no CP evidence in the current FM staging, not proven battery failure.':'Search any site, open View to inspect September–October FM incidents, and export the filtered site list.'}</p></section>
  {tab==='Executive Summary'&&<>{summary('sub_region')}{summary('grid')}</>}
