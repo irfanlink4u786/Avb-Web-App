@@ -8166,6 +8166,9 @@ export default function App() {
             <motion.button variants={{ hidden: { opacity: 0, y: 30 }, show: { opacity: 1, y: 0 } }} whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.98 }} onClick={() => setViewMode("battery")} className="group relative w-full min-h-[142px] px-6 py-7 rounded-2xl bg-gradient-to-br from-amber-600/30 to-yellow-700/20 border border-amber-400/60 hover:border-amber-300 shadow-xl transition-all">
               <div className="relative text-center"><Battery className="mx-auto mb-2 h-7 w-7 text-amber-300" /><span className="block text-xl sm:text-2xl font-extrabold text-white">Battery Backup</span><span className="text-amber-100 text-sm">C-1 & C-6 · EASS / WSD / WOSD</span></div>
             </motion.button>
+            <motion.button variants={{ hidden: { opacity: 0, y: 30 }, show: { opacity: 1, y: 0 } }} whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.98 }} onClick={() => setViewMode("wsd-recent")} className="group relative w-full min-h-[142px] px-6 py-7 rounded-2xl bg-gradient-to-br from-orange-600/30 to-amber-700/20 border border-orange-400/60 hover:border-orange-300 shadow-xl transition-all">
+              <div className="relative text-center"><Activity className="mx-auto mb-2 h-7 w-7 text-orange-300" /><span className="block text-xl sm:text-2xl font-extrabold text-white">Last 5 Days</span><span className="text-amber-100 text-sm">WSD Degradation · C-1 & C-6</span></div>
+            </motion.button>
             <motion.button variants={{ hidden: { opacity: 0, y: 30 }, show: { opacity: 1, y: 0 } }} whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.98 }} onClick={() => setViewMode("rms")} className="group relative w-full min-h-[142px] px-6 py-7 rounded-2xl bg-gradient-to-br from-indigo-600/30 to-blue-700/20 border border-indigo-400/60 hover:border-indigo-300 shadow-xl transition-all">
               <div className="relative text-center"><Cpu className="mx-auto mb-2 h-7 w-7 text-indigo-300" /><span className="block text-xl sm:text-2xl font-extrabold text-white">RMS Analysis</span><span className="text-indigo-100 text-sm">C-1 & C-6 · Power Health</span></div>
             </motion.button>
@@ -8189,13 +8192,13 @@ export default function App() {
   }
 
   // Standalone Power Resilience modules: outside the monthly Cell AVB navigation.
-  if (viewMode === "battery" || viewMode === "rms") {
+  if (viewMode === "battery" || viewMode === "rms" || viewMode === "wsd-recent") {
     return <div className="min-h-screen bg-slate-50">
       <header className="sticky top-0 z-30 flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-5 py-4 shadow-sm">
-        <div><h1 className="text-xl font-extrabold text-slate-900">{viewMode === "battery" ? "Battery Backup · EASS / WSD / WOSD" : "RMS Analysis · Power Health"}</h1><p className="text-sm text-slate-500">Central-1 & Central-6 only · Shared Supabase backend</p></div>
+        <div><h1 className="text-xl font-extrabold text-slate-900">{viewMode === "battery" ? "Battery Backup · EASS / WSD / WOSD" : viewMode === "wsd-recent" ? "Last 5 Days · WSD Degradation" : "RMS Analysis · Power Health"}</h1><p className="text-sm text-slate-500">Central-1 & Central-6 only · Shared Supabase backend</p></div>
         <button onClick={goHome} className="rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-700">← Home</button>
       </header>
-      <main className="mx-auto max-w-[1800px] p-4 sm:p-6"><CellAvbPowerModules mode={viewMode === "battery" ? "battery" : "rms"} /></main>
+      <main className="mx-auto max-w-[1800px] p-4 sm:p-6"><CellAvbPowerModules mode={viewMode === "battery" ? "battery" : viewMode === "wsd-recent" ? "wsd-recent" : "rms"} /></main>
     </div>;
   }
 
