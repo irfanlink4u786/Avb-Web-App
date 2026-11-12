@@ -1,6 +1,7 @@
 import "./overall-summary-readability.css";
 import "./enterprise-polish.css";
 import FuelDashboard from "./FuelDashboard";
+import CellAvbPowerModules from "./CellAvbPowerModules";
 import React, { useState, useEffect, useMemo, Fragment, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -1534,6 +1535,8 @@ const NAV_ITEMS = [
   { id: "dg", label: "DG Sites", icon: Zap },
   { id: "li-ion", label: "Li-ion BB", icon: Battery },
   { id: "agm", label: "AGM BB", icon: BatteryWarning },
+  { id: "battery-assessment", label: "Battery Backup · WSD / WOSD", icon: Battery },
+  { id: "rms-analysis", label: "RMS Analysis · Power Health", icon: Cpu },
   { id: "query", label: "Site Query", icon: Search },
 ] as const;
 
@@ -8406,6 +8409,8 @@ export default function App() {
                 {activeTab === "nps" && <CategoryPage sites={sites} title="NPS Sites (New Physical Sites)" description={`${npsRows.length} NPS Y26 sites`} threshold={95} filterFn={(s) => isNPSSite(s)} lastUpdatedDate={monthLastUpdated} lastColumnIndex={monthLastColumnIndex} />}
                 {activeTab === "dg" && <CategoryPage sites={sites} title="DG Sites (Diesel Generator Backup)" description={`${dgRows.length} sites with diesel generators`} threshold={98.5} filterFn={(s) => hasDG(s)} lastUpdatedDate={monthLastUpdated} lastColumnIndex={monthLastColumnIndex} />}
                 {activeTab === "li-ion" && <CategoryPage sites={sites} title="Li-ion Battery Backup Sites" description={`${liIonRows.length} sites with Li-ion batteries installed`} threshold={98} filterFn={(s) => hasLiIon(s)} lastUpdatedDate={monthLastUpdated} lastColumnIndex={monthLastColumnIndex} />}
+                {activeTab === "battery-assessment" && <CellAvbPowerModules mode="battery" />}
+                {activeTab === "rms-analysis" && <CellAvbPowerModules mode="rms" />}
                 {activeTab === "agm" && <CategoryPage sites={sites} title="AGM Battery Backup Sites" description={`${agmRows.length} sites with AGM battery banks`} threshold={95} filterFn={(s) => hasAGM(s)} lastUpdatedDate={monthLastUpdated} lastColumnIndex={monthLastColumnIndex} />}
                 {activeTab === "query" && <SiteQuery sites={sites} rawData={monthData} historyData={(selectedMonth === "september" || selectedMonth === "october" || selectedMonth === "november") ? monthCellAvbHistory : null} />}
             </div>
