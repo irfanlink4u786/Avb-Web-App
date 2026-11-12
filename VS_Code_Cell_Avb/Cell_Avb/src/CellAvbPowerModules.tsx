@@ -2,8 +2,9 @@ import {useEffect,useState} from 'react';
 import {createClient, type SupabaseClient} from '@supabase/supabase-js';
 import CellAvbBatteryAssessment from './CellAvbBatteryAssessment';
 import CellAvbRmsAnalysis from './CellAvbRmsAnalysis';
+import BatteryRmsUpdates from './CellAvbBatteryRmsUpdates';
 
-export default function CellAvbPowerModules({mode}:{mode:'battery'|'rms'}) {
+export default function CellAvbPowerModules({mode}:{mode:'battery'|'rms'|'wsd-recent'}) {
   const [client,setClient]=useState<SupabaseClient|null>(null);
   const [error,setError]=useState('');
   useEffect(()=>{
@@ -26,5 +27,5 @@ export default function CellAvbPowerModules({mode}:{mode:'battery'|'rms'}) {
   },[]);
   if(error)return <div className="rounded-xl bg-red-50 p-6 text-red-800">{error}</div>;
   if(!client)return <div className="rounded-xl bg-white p-6 text-slate-600">Loading secure C-1 / C-6 module…</div>;
-  return mode==='battery'?<CellAvbBatteryAssessment client={client}/>:<CellAvbRmsAnalysis client={client}/>;
+  return mode==='battery'?<CellAvbBatteryAssessment client={client}/>:mode==='wsd-recent'?<BatteryRmsUpdates client={client} mode="recent"/>:<CellAvbRmsAnalysis client={client}/>;
 }
