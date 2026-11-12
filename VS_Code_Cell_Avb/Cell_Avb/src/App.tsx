@@ -1535,14 +1535,12 @@ const NAV_ITEMS = [
   { id: "dg", label: "DG Sites", icon: Zap },
   { id: "li-ion", label: "Li-ion BB", icon: Battery },
   { id: "agm", label: "AGM BB", icon: BatteryWarning },
-  { id: "battery-assessment", label: "Battery Backup · WSD / WOSD", icon: Battery },
-  { id: "rms-analysis", label: "RMS Analysis · Power Health", icon: Cpu },
   { id: "query", label: "Site Query", icon: Search },
 ] as const;
 
 type Month = "july" | "august" | "september" | "october" | "november";
 type AppState = "loading" | "dashboard" | "error";
-type ViewMode = "home" | "month" | "prepost" | "fuel" | "electricity";
+type ViewMode = "home" | "month" | "prepost" | "fuel" | "electricity" | "battery" | "rms";
 type PrePostSubView = "analysis" | "query";
 
 // ============================================================
@@ -8165,6 +8163,12 @@ export default function App() {
               <div className="relative text-center"><span className="block text-xl sm:text-2xl font-extrabold tracking-tight text-white">November 2026</span><span className="text-emerald-200 text-sm">ACTIVE · Daily CA</span></div>
             </motion.button>
             
+            <motion.button variants={{ hidden: { opacity: 0, y: 30 }, show: { opacity: 1, y: 0 } }} whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.98 }} onClick={() => setViewMode("battery")} className="group relative w-full min-h-[142px] px-6 py-7 rounded-2xl bg-gradient-to-br from-amber-600/30 to-yellow-700/20 border border-amber-400/60 hover:border-amber-300 shadow-xl transition-all">
+              <div className="relative text-center"><Battery className="mx-auto mb-2 h-7 w-7 text-amber-300" /><span className="block text-xl sm:text-2xl font-extrabold text-white">Battery Backup</span><span className="text-amber-100 text-sm">C-1 & C-6 · EASS / WSD / WOSD</span></div>
+            </motion.button>
+            <motion.button variants={{ hidden: { opacity: 0, y: 30 }, show: { opacity: 1, y: 0 } }} whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.98 }} onClick={() => setViewMode("rms")} className="group relative w-full min-h-[142px] px-6 py-7 rounded-2xl bg-gradient-to-br from-indigo-600/30 to-blue-700/20 border border-indigo-400/60 hover:border-indigo-300 shadow-xl transition-all">
+              <div className="relative text-center"><Cpu className="mx-auto mb-2 h-7 w-7 text-indigo-300" /><span className="block text-xl sm:text-2xl font-extrabold text-white">RMS Analysis</span><span className="text-indigo-100 text-sm">C-1 & C-6 · Power Health</span></div>
+            </motion.button>
             <motion.button variants={{ hidden: { opacity: 0, y: 30 }, show: { opacity: 1, y: 0 } }} whileHover={{ scale: 1.03, boxShadow: "0 0 40px rgba(34, 197, 94, 0.35)" }} whileTap={{ scale: 0.98 }} onClick={loadFuelDashboard} className="group relative w-full min-h-[142px] px-6 py-7 rounded-2xl bg-gradient-to-br from-green-500/25 to-emerald-700/25 border border-green-400/40 hover:border-green-300 transition-all duration-300 shadow-xl hover:shadow-green-500/40 backdrop-blur-sm overflow-hidden">
               <span className="absolute inset-0 bg-gradient-to-r from-green-400/20 to-emerald-400/20 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
               <div className="relative text-center"><Fuel className="mx-auto mb-2 h-7 w-7 text-green-300"/><span className="block text-xl sm:text-2xl font-extrabold tracking-tight text-white">Fuel</span><span className="text-slate-200 text-sm">2025 vs 2026 · Saving & Control</span></div>
@@ -8182,6 +8186,17 @@ export default function App() {
         </motion.div>
       </div>
     );
+  }
+
+  // Standalone Power Resilience modules: outside the monthly Cell AVB navigation.
+  if (viewMode === "battery" || viewMode === "rms") {
+    return <div className="min-h-screen bg-slate-50">
+      <header className="sticky top-0 z-30 flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-5 py-4 shadow-sm">
+        <div><h1 className="text-xl font-extrabold text-slate-900">{viewMode === "battery" ? "Battery Backup · EASS / WSD / WOSD" : "RMS Analysis · Power Health"}</h1><p className="text-sm text-slate-500">Central-1 & Central-6 only · Shared Supabase backend</p></div>
+        <button onClick={goHome} className="rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-700">← Home</button>
+      </header>
+      <main className="mx-auto max-w-[1800px] p-4 sm:p-6"><CellAvbPowerModules mode={viewMode === "battery" ? "battery" : "rms"} /></main>
+    </div>;
   }
 
   // ----- ELECTRICITY UNIT CONSUMPTION (ABS MONTH REFERENCE) -----
@@ -8409,8 +8424,6 @@ export default function App() {
                 {activeTab === "nps" && <CategoryPage sites={sites} title="NPS Sites (New Physical Sites)" description={`${npsRows.length} NPS Y26 sites`} threshold={95} filterFn={(s) => isNPSSite(s)} lastUpdatedDate={monthLastUpdated} lastColumnIndex={monthLastColumnIndex} />}
                 {activeTab === "dg" && <CategoryPage sites={sites} title="DG Sites (Diesel Generator Backup)" description={`${dgRows.length} sites with diesel generators`} threshold={98.5} filterFn={(s) => hasDG(s)} lastUpdatedDate={monthLastUpdated} lastColumnIndex={monthLastColumnIndex} />}
                 {activeTab === "li-ion" && <CategoryPage sites={sites} title="Li-ion Battery Backup Sites" description={`${liIonRows.length} sites with Li-ion batteries installed`} threshold={98} filterFn={(s) => hasLiIon(s)} lastUpdatedDate={monthLastUpdated} lastColumnIndex={monthLastColumnIndex} />}
-                {activeTab === "battery-assessment" && <CellAvbPowerModules mode="battery" />}
-                {activeTab === "rms-analysis" && <CellAvbPowerModules mode="rms" />}
                 {activeTab === "agm" && <CategoryPage sites={sites} title="AGM Battery Backup Sites" description={`${agmRows.length} sites with AGM battery banks`} threshold={95} filterFn={(s) => hasAGM(s)} lastUpdatedDate={monthLastUpdated} lastColumnIndex={monthLastColumnIndex} />}
                 {activeTab === "query" && <SiteQuery sites={sites} rawData={monthData} historyData={(selectedMonth === "september" || selectedMonth === "october" || selectedMonth === "november") ? monthCellAvbHistory : null} />}
             </div>
