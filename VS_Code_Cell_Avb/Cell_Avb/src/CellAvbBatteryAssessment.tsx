@@ -63,6 +63,12 @@ export default function EassCaBackupDiagnostics({client,activeSection}:{client:S
     const caValue=caText!==''&&Number.isFinite(Number(caText))?Number(caText):null;
     merged.push({site_id:id,sub_region:String(row['Sub-Region']??''),grid:String(row.Grid??''),site_group:group,classification:String(row.SiteClassification??''),bb_type:String(row['BB Type']),capacity_ah:null,capacity_configuration:null,dg_status:null,bb_installation_date:null,october_ca_pct:caValue,low_ca_days:null,wsd_max_min:null,wosd_max_min:null,wsd_count:null,wosd_count:null,wsd_failure_count:null,wsd_ge120_count:null,wosd_ge120_count:null,chronic_high_capacity_low_ca:false,dashboard_status:'BACKUP_NOT_VERIFIED',data_source:'CA inventory — FM assessment missing'});
    }
+   // Render the validated C-1/C-6 assessment immediately. FM evidence reconciliation
+   // can be slow (hundreds of thousands of alarms) and must not block the page.
+   const initial=merged.filter(x=>/^(?:central[- ]?[16]|c[- ]?[16])$/i.test(String(x.sub_region||'').trim()));
+   setSites(initial.map(x=>({...x})));
+   setLoaded(true);
+   setLoading(false);
    // Reconcile sites without measured WSD/WOSD against raw CP / rectifier-input alarms.
    // A single complete power window with NO site-down incident is valid WOSD evidence.
    // Incomplete CP windows or CP windows with SD cannot be interpreted as WOSD.
@@ -114,7 +120,7 @@ export default function EassCaBackupDiagnostics({client,activeSection}:{client:S
     const measured=values.length?Math.max(...values):null;
     site.dashboard_status=measured===null?'BACKUP_NOT_VERIFIED':measured>=120?'BACKUP_OK':'BACKUP_LOW';
    }
-   setSites(merged.filter(x=>/^(?:central[- ]?[16]|c[- ]?[16])$/i.test(String(x.sub_region||'').trim())));setLoaded(true);
+   setSites(merged.filter(x=>/^(?:central[- ]?[16]|c[- ]?[16])$/i.test(String(x.sub_region||'').trim())).map(x=>({...x})));
   }catch(e){setError(e instanceof Error?e.message:String(e));}
   finally{setLoading(false);}
  },[client]);
