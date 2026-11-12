@@ -1,4 +1,3 @@
-const rmsPowerFlowImage = '';
 import { useEffect, useMemo, useState } from 'react';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
@@ -159,7 +158,15 @@ export default function RmsMasterAnalysis({client}:{client:SupabaseClient}){
      <p className="rms-hero-sub">From RMS alarms to field action. Investigate AC phases, SMR capacity, battery health and rectifier settings across the Central network.</p>
      <div style={{marginTop:17,display:'flex',gap:9,flexWrap:'wrap'}}><span style={{border:'1px solid #73bd9f',background:'rgba(255,255,255,.11)',borderRadius:30,padding:'6px 11px',fontSize:12}}>4,305 master records</span><span style={{border:'1px solid #73bd9f',background:'rgba(255,255,255,.11)',borderRadius:30,padding:'6px 11px',fontSize:12}}>Site-wise actions</span></div>
    </div>
-   <div className="rms-hero-art"><img src={rmsPowerFlowImage} alt="RMS monitoring schematic: AC grid input, distribution mains, rectifier cabinet, DC load and Li-ion battery packs"/><span>RMS power chain · AC input → Rectifier / SMR → DC load + Battery backup</span></div>
+   <div className="rms-hero-art"><svg viewBox="0 0 900 300" role="img" aria-label="RMS power flow: AC grid to distribution board to rectifier and SMR, supplying telecom DC load and Li-ion battery backup" style={{width:'100%',height:'100%',maxHeight:290,display:'block',background:'linear-gradient(180deg,#f5fbff,#e8f7f0)'}}>
+<defs><marker id="rms-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="#12834d"/></marker></defs>
+{[['AC Grid',110],['Distribution DB',325],['Rectifier / SMR',550],['DC Load / RRU',785]].map(([label,x])=><g key={String(label)}><rect x={Number(x)-76} y="73" width="152" height="117" rx="12" fill="#fff" stroke="#a6d3c1" strokeWidth="3"/><rect x={Number(x)-55} y="92" width="110" height="55" rx="7" fill="#dceef1" stroke="#477b85" strokeWidth="2"/><text x={Number(x)} y="127" textAnchor="middle" fontSize="24" fill="#11694f" fontWeight="bold">{label==='AC Grid'?'⚡':label==='Distribution DB'?'AC':label==='Rectifier / SMR'?'SMR':'-48V'}</text><text x={Number(x)} y="217" textAnchor="middle" fontSize="18" fontWeight="bold" fill="#123e35">{label}</text></g>)}
+{[186,401,626].map(x=><path key={x} d={`M ${x} 131 H ${x+81}`} stroke="#12834d" strokeWidth="7" fill="none" markerEnd="url(#rms-arrow)"/>)}
+<path d="M550 190 V248 H655" stroke="#12834d" strokeWidth="6" fill="none" markerEnd="url(#rms-arrow)"/>
+<rect x="666" y="228" width="184" height="54" rx="12" fill="#e3f4e9" stroke="#12834d" strokeWidth="3"/>
+<text x="758" y="249" textAnchor="middle" fontSize="16" fontWeight="bold" fill="#075d3d">Li-ion Battery</text><text x="758" y="269" textAnchor="middle" fontSize="14" fill="#075d3d">Backup / Charging</text>
+<text x="450" y="37" textAnchor="middle" fontSize="20" fontWeight="bold" fill="#075d3d">RMS Power Monitoring &amp; Resilience</text>
+</svg><span>RMS power chain · AC input → Rectifier / SMR → DC load + Battery backup</span></div>
  </div>
  <p style={{margin:'0 0 13px',color:'#57776d',fontSize:12}}>Source: {TABLE} · All Central sub-regions · CA from October tracker · Missing or “-” values excluded from faults · Site-level RMS evidence and recommended action</p>
  <div style={{display:'flex',flexWrap:'wrap',gap:8,marginBottom:13}}>{select(sub,['All',...regions],v=>{setSub(v);setGrid('All')})}{select(grid,['All',...grids],setGrid)}{select(group,['All',...groups],setGroup)}{select(vendor,['All',...vendors],setVendor)}<input placeholder="Search Site ID" value={search} onChange={e=>{setSearch(e.target.value);setRegionView('All');setPage(0)}} style={{padding:9,border:'1px solid #c9dfd5',borderRadius:8,maxWidth:160}}/><button style={styleButton} onClick={exportRows}>Export Category Evidence CSV</button><button style={styleButton} onClick={exportClosure}>Export Closure Tracker</button></div>
