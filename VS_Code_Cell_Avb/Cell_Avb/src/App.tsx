@@ -1540,7 +1540,7 @@ const NAV_ITEMS = [
 
 type Month = "july" | "august" | "september" | "october" | "november";
 type AppState = "loading" | "dashboard" | "error";
-type ViewMode = "home" | "month" | "prepost" | "fuel" | "electricity" | "battery" | "rms";
+type ViewMode = "home" | "month" | "prepost" | "fuel" | "electricity" | "battery" | "rms" | "wsd-recent";
 type PrePostSubView = "analysis" | "query";
 
 // ============================================================
