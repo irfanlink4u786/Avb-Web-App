@@ -336,6 +336,7 @@ function EmployeePerformance({
     employeeSites.map(site => {
       const result: Record<string, string | number> = {
         Employee: employeeName, "Site ID": site.siteName,
+        "Cluster Owner": site.clusterOwner || "-", "CMPAK GTL": site.zongLead || "-",
         "Revenue Category": site.revenueCategory || "-",
         "Current Month CA (%)": Number(site.currentAvb || 0),
         "Sub-Region": site.subRegion || "-", Grid: site.grid || "-",
@@ -497,6 +498,8 @@ function EmployeePerformance({
                                   <th className="px-3 py-3 text-left text-[12px] font-black !text-white whitespace-nowrap">
                                     Site ID
                                   </th>
+                                  <th className="px-3 py-3 text-left text-[12px] font-black !text-white whitespace-nowrap">Cluster Owner</th>
+                                  <th className="px-3 py-3 text-left text-[12px] font-black !text-white whitespace-nowrap">CMPAK GTL</th>
                                   <th className="px-3 py-3 text-left text-[12px] font-black !text-white whitespace-nowrap">
                                     Revenue Category
                                   </th>
@@ -547,6 +550,8 @@ function EmployeePerformance({
                                       <td className="px-3 py-3 font-extrabold text-blue-700 whitespace-nowrap">
                                         {site.siteName}
                                       </td>
+                                      <td className="px-3 py-3 font-semibold text-slate-900 whitespace-nowrap">{site.clusterOwner || "-"}</td>
+                                      <td className="px-3 py-3 font-semibold text-slate-900 whitespace-nowrap">{site.zongLead || "-"}</td>
 
                                       <td className="px-3 py-3 font-bold text-slate-950 whitespace-nowrap">
                                         {site.revenueCategory || "-"}
