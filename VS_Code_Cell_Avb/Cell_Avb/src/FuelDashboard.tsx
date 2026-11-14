@@ -4,6 +4,7 @@ import { AlertTriangle, CalendarDays, ChevronDown, ChevronUp, Fuel, LayoutDashbo
 import { ComposedChart, BarChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LabelList } from "recharts";
 import type { SheetPayload } from "./types";
 import DGModeMonitoring from "./components/DGModeMonitoring";
+import DGAlarmImporter from "./components/DGAlarmImporter";
 import WeatherRadar from "./components/WeatherRadar";
 import RainAlertWidget from "./components/RainAlertWidget";
 import { CloudRain, Settings2 } from "lucide-react";
@@ -2202,6 +2203,7 @@ export default function FuelDashboard(props: BackendFuelProps) {
   }, [props.data, liveRows]);
   return <>
     {liveError && <div className="border-b border-amber-200 bg-amber-50 px-5 py-2 text-xs text-amber-900">Live November Fuel History unavailable: {liveError}. Showing available archived records.</div>}
+    <div className="mx-auto max-w-7xl px-4 pt-4"><DGAlarmImporter /></div>
     <FuelDashboardLegacy {...props} data={merged} />
   </>;
 }
