@@ -33,7 +33,7 @@ export default function DGAlarmImporter(){
   setEassBusy(true);setEassStatus("Reading daily EASS report...");
   try{
    const env=(import.meta as any).env||{};
-   const base=String(env.VITE_SUPABASE_URL||"").replace(/\\/$/,"");
+   const base=String(env.VITE_SUPABASE_URL||"").replace(/\/$/,"");
    const key=String(env.VITE_SUPABASE_PUBLISHABLE_KEY||env.VITE_SUPABASE_ANON_KEY||"");
    const raw=sessionStorage.getItem("cell_avb_supabase_session");
    const session=raw?JSON.parse(raw):null;
@@ -50,16 +50,16 @@ export default function DGAlarmImporter(){
    const date=(v:unknown):string|null=>{
     if(v instanceof Date&&!isNaN(v.getTime()))return [v.getFullYear(),String(v.getMonth()+1).padStart(2,"0"),String(v.getDate()).padStart(2,"0")].join("-");
     if(typeof v==="number"){const d=XLSX.SSF.parse_date_code(v);return d?[d.y,String(d.m).padStart(2,"0"),String(d.d).padStart(2,"0")].join("-"):null;}
-    const m=String(v??"").match(/^(\\d{4})-(\\d{2})-(\\d{2})/);return m?m[0]:null;
+    const m=String(v??"").match(/^(\d{4})-(\d{2})-(\d{2})/);return m?m[0]:null;
    };
    const num=(v:unknown)=>{if(v===null||v===undefined||String(v).trim()==="")return null;const n=Number(v);return Number.isFinite(n)?n:null;};
    const values=new Map<string,Record<string,unknown>>();let excluded=0,invalid=0;
    for(const row of rows.slice(1)){
-    const site=String(row[idx.site]??"").trim().replace(/\\.0$/,"");
-    const grid=String(row[idx.grid]??"").trim().toUpperCase().replace(/[\\s_-]/g,"");
+    const site=String(row[idx.site]??"").trim().replace(/\.0$/,"");
+    const grid=String(row[idx.grid]??"").trim().toUpperCase().replace(/[\s_-]/g,"");
     const day=date(row[idx.date]);
     if(!site)continue;
-    if(!/^C(1|6)\\d{3}$/.test(grid)){excluded++;continue;}
+    if(!/^C(1|6)\d{3}$/.test(grid)){excluded++;continue;}
     if(!day||num(row[idx.total])===null||num(row[idx.dg])===null||num(row[idx.ls])===null){invalid++;continue;}
     values.set(site+"|"+day,{site_id:site,statistics_date:day,region:String(row[idx.region]??""),sub_region:String(row[idx.sub]??""),grid,
       cp_hours:num(row[idx.cp]),dg_hours:num(row[idx.dg]),battery_hours:num(row[idx.battery]),no_power_2g:num(row[idx.noPower]),
