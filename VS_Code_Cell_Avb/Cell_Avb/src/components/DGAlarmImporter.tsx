@@ -8,11 +8,17 @@ function csvFields(line:string):string[] {
   fields.push(value.trim());return fields;
 }
 function localDate(value:string):string|null {
-  const m=value.trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
-  if(!m)return null;
-  const [,dd,mm,yyyy,hh,mi,ss]=m;const d=new Date(Number(yyyy),Number(mm)-1,Number(dd),Number(hh),Number(mi),Number(ss||0));
-  if(d.getFullYear()!==Number(yyyy)||d.getMonth()!==Number(mm)-1||d.getDate()!==Number(dd)||Number(hh)>23||Number(mi)>59)return null;
-  return yyyy+"-"+mm.padStart(2,"0")+"-"+dd.padStart(2,"0")+"T"+hh.padStart(2,"0")+":"+mi+":"+(ss||"00").padStart(2,"0");
+ const raw=String(value??"").trim();
+ if(!raw)return null;
+ const m=raw.match(/^(\\d{1,4})[-/](\\d{1,2})[-/](\\d{1,4})[ T](\\d{1,2}):(\\d{2})(?::(\\d{2}))?/);
+ if(!m)return null;
+ let yyyy:number,mm:number,dd:number;
+ if(m[1].length===4){yyyy=Number(m[1]);mm=Number(m[2]);dd=Number(m[3]);}
+ else{dd=Number(m[1]);mm=Number(m[2]);yyyy=Number(m[3]);}
+ const hh=Number(m[4]),mi=Number(m[5]),ss=Number(m[6]||0);
+ const d=new Date(yyyy,mm-1,dd,hh,mi,ss);
+ if(d.getFullYear()!==yyyy||d.getMonth()!==mm-1||d.getDate()!==dd||hh>23||mi>59||ss>59)return null;
+ return [yyyy,String(mm).padStart(2,"0"),String(dd).padStart(2,"0")].join("-")+"T"+[hh,mi,ss].map(x=>String(x).padStart(2,"0")).join(":");
 }
 function kind(title:string):"DG"|"CPF"|"RIF"|null {
   const t=title.toLowerCase().replace(/\s+/g," ").trim();
@@ -86,25 +92,32 @@ export default function DGAlarmImporter(){
    for(const x of await master.json())if(/^(C1|C6)/.test(String(x.grid||"")))sites.set(String(x.site_id).trim(),String(x.grid));
    if(!sites.size)throw new Error("No C1/C6 DG sites found in DG master.");
    setStatus("Reading "+file.name+" and filtering against "+sites.size+" DG master sites...");
-   const data=await file.text();const lines=data.split(/\r?\n/);
-   const header=csvFields(lines[0]||"").map(x=>x.toLowerCase());
+   const workbook=XLSX.read(await file.arrayBuffer(),{type:"array",raw:true});
+   const sheet=workbook.Sheets[workbook.SheetNames[0]];
+   const rows=XLSX.utils.sheet_to_json<(string|number|null)[]>(sheet,{header:1,defval:null,raw:false});
+   const header=(rows[0]||[]).map(x=>String(x??"").replace(/^\\uFEFF/,"").trim().toLowerCase().replace(/\\s+/g," "));
    const positions=["site","alarm title","occur time","clear time"].map(x=>header.indexOf(x));
-   if(positions.some(x=>x<0))throw new Error("Required columns: Site, Alarm title, Occur Time, Clear Time");
-   const seen=new Set<string>();const selected:AlarmRow[]=[];let excluded=0,invalid=0,duplicates=0;
-   for(let i=1;i<lines.length;i++){
-    if(!lines[i].trim())continue;
-    const cells=csvFields(lines[i]);const site=(cells[positions[0]]||"").trim();
-    const grid=sites.get(site);const alarm=kind(cells[positions[1]]||"");
-    if(!grid||!alarm){excluded++;continue;}
-    const occurred=localDate(cells[positions[2]]||"");
-    const clearText=(cells[positions[3]]||"").trim();
+   if(positions.some(x=>x<0))throw new Error("Required columns: Site, Alarm title, Occur Time, Clear Time. Detected: "+header.slice(0,12).join(", "));
+   const seen=new Set<string>();const selected:AlarmRow[]=[];let excluded=0,invalid=0,duplicates=0,siteMiss=0,titleMiss=0;
+   const examples:string[]=[];
+   for(const cells of rows.slice(1)){
+    const site=String(cells[positions[0]]??"").trim().replace(/\\.0$/,"");
+    if(!site)continue;
+    const grid=sites.get(site);const alarm=kind(String(cells[positions[1]]??""));
+    if(!grid){siteMiss++;excluded++;continue;}
+    if(!alarm){titleMiss++;excluded++;continue;}
+    const occurred=localDate(String(cells[positions[2]]??""));
+    const clearText=String(cells[positions[3]]??"").trim();
     const cleared=clearText?localDate(clearText):null;
-    if(!occurred||(clearText&&!cleared)|| (cleared&&cleared<occurred)){invalid++;continue;}
+    if(!occurred||(clearText&&!cleared)||(cleared&&cleared<occurred)){
+      invalid++;if(examples.length<3)examples.push(site+" "+String(cells[positions[2]]??"")+" / "+clearText);continue;
+    }
     const fingerprint=[site,alarm,occurred,cleared||""].join("|");
     if(seen.has(fingerprint)){duplicates++;continue;}seen.add(fingerprint);
     selected.push({site_id:site,grid,alarm_kind:alarm,occurred_at:occurred,cleared_at:cleared,fingerprint});
    }
-   if(!selected.length)throw new Error("No valid C1/C6 DG-site alarm rows found.");
+   if(!selected.length)throw new Error("No valid C1/C6 DG-site alarms. Total rows: "+(rows.length-1)+", unmatched sites: "+siteMiss+", unrelated alarms: "+titleMiss+", invalid timestamps: "+invalid+". Timestamp examples: "+examples.join("; ")+".");
+
    let inserted=0;
    for(let i=0;i<selected.length;i+=300){
     const batch=selected.slice(i,i+300);
