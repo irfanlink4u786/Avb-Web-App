@@ -9,13 +9,18 @@ export default function DGMonthlyInstanceCheck(){
  const env=(import.meta as any).env||{},base=String(env.VITE_SUPABASE_URL||"").replace(/\/$/,""),key=String(env.VITE_SUPABASE_PUBLISHABLE_KEY||env.VITE_SUPABASE_ANON_KEY||"");
  const endpoint=base+"/rest/v1/rpc/cell_avb_dg_start_mode_month";
  const token=await fuelAccessToken(base,key);
- const all:Event[]=[];const batch=1000;
- for(let offset=0;offset<50000;offset+=batch){
+ const batch=1000;
+ const fetchPage=async(offset:number):Promise<Event[]>=>{
   const send=async(t:string)=>fetch(endpoint+"?limit="+batch+"&offset="+offset,{method:"POST",headers:{"Content-Type":"application/json",apikey:key,Authorization:"Bearer "+t},body:JSON.stringify({p_month:month})});
-  let res=await send(offset===0?token:await fuelAccessToken(base,key));if(res.status===401)res=await send(await fuelAccessToken(base,key,true));
+  let res=await send(token);if(res.status===401)res=await send(await fuelAccessToken(base,key,true));
   if(!res.ok)throw Error("DG mode analysis HTTP "+res.status+": "+(await res.text()).slice(0,200));
-  const part:Event[]=await res.json();all.push(...part);if(active)setRows([...all]);
-  if(part.length<batch)break;
+  return res.json();
+ };
+ const all:Event[]=[];
+ for(let offset=0;offset<50000;offset+=batch*4){
+  const parts=await Promise.all([0,1,2,3].map(i=>fetchPage(offset+i*batch)));
+  for(const part of parts)all.push(...part);
+  if(parts.some(part=>part.length<batch))break;
  }
  if(active)setRows(all);
  }catch(e){if(active)setError(String(e))}finally{if(active)setLoading(false)}})();return()=>{active=false}},[month]);
@@ -27,13 +32,13 @@ export default function DGMonthlyInstanceCheck(){
  const shown=useMemo(()=>siteRows.filter(r=>(status==="ALL"||r.result===status)&&(!search||r.site_id.includes(search.trim())||String(r.cluster_owner||"").toLowerCase().includes(search.trim().toLowerCase()))),[siteRows,status,search]);
  const summary=(field:"grid"|"category")=>{const map=new Map<string,{name:string,total:number,ok:number,nok:number,unverified:number,auto:number,approx:number,manual:number,mixed:number}>();for(const r of siteRows){const name=field==="grid"?(r.grid||"Unknown"):category(r.hub_category);const item=map.get(name)||{name,total:0,ok:0,nok:0,unverified:0,auto:0,approx:0,manual:0,mixed:0};item.total++;if(r.result==="OK")item.ok++;if(r.result==="NOK")item.nok++;if(r.site_mode==="AUTO")item.auto++;else if(r.site_mode==="MANUAL")item.manual++;else if(r.site_mode==="MIXED")item.mixed++;else item.unverified++;if(r.approx>0)item.approx++;map.set(name,item)}return Array.from(map.values()).sort((a,b)=>field==="grid"?a.name.localeCompare(b.name):b.total-a.total)};
  const grids=useMemo(()=>Array.from(new Set(rows.map(r=>r.grid).filter(Boolean))).sort(),[rows]);
- const count=(v:string)=>siteRows.filter(r=>r.result===v).length;
+ const countMode=(v:string)=>siteRows.filter(r=>r.site_mode===v).length;
  const csv=()=>{const fields=["site_id","grid","cluster_owner","ms_gtl","zone_lead","hub_category","required_mode","site_mode","total","auto","approx","manual","ok","nok","unverified","result"] as (keyof SiteSummary)[];const content=[fields.join(","),...shown.map(r=>fields.map(f=>'"'+String(r[f]??"").replace(/"/g,'""')+'"').join(","))].join("\n");const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([content],{type:"text/csv"}));a.download="DG_Auto_Manual_Sites_"+month+".csv";a.click();URL.revokeObjectURL(a.href)};
  const btn="rounded-lg border px-3 py-2 text-sm font-semibold",per=100,view=shown.slice(page*per,(page+1)*per);
  return <div className="space-y-4 rounded-xl border bg-white p-4 text-slate-900">
  <div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="text-lg font-black">DG Auto / Manual · Site-wise Summary</h3><p className="text-xs text-slate-600">Auto: DG starts within 10 min of CP Failure · Approx Auto: 10–30 min · Manual: after 30 min · No matching CP Failure: Unverified.</p></div><div className="flex gap-2"><select className={btn} value={month} onChange={e=>setMonth(e.target.value)}>{months.map(m=><option key={m} value={m}>{m}</option>)}</select><button className={btn} disabled={!shown.length} onClick={csv}>Export CSV</button></div></div>
  {loading&&<p>Preparing site-wise DG summary for {month}…</p>}{error&&<p className="text-red-700">{error}</p>}
- {!loading&&!error&&<><div className="grid grid-cols-2 gap-3 md:grid-cols-4">{[{name:"DG Sites",n:siteRows.length},{name:"Compliant · OK",n:count("OK")},{name:"Non-Compliant · NOK",n:count("NOK")},{name:"NOK Rate",n:siteRows.length?(100*count("NOK")/siteRows.length).toFixed(1)+"%":"—"}].map(x=><div key={x.name} className="rounded-lg bg-slate-50 p-3"><p className="text-xs font-semibold text-slate-600">{x.name}</p><p className="text-2xl font-black">{x.n.toLocaleString()}</p></div>)}</div>
+ {!loading&&!error&&<><div className="grid grid-cols-2 gap-3 md:grid-cols-4">{[{name:"Total DG Sites",n:siteRows.length},{name:"Mostly Auto",n:countMode("AUTO")},{name:"Mostly Manual",n:countMode("MANUAL")},{name:"Mixed / Unverified",n:countMode("MIXED")+countMode("UNVERIFIED")}].map(x=><div key={x.name} className="rounded-lg bg-slate-50 p-3"><p className="text-xs font-semibold text-slate-600">{x.name}</p><p className="text-2xl font-black">{x.n.toLocaleString()}</p></div>)}</div>
  <div className="flex flex-wrap items-center gap-2 rounded-lg bg-emerald-50 p-3">
  <label className="text-xs font-bold">Employee Role <select className={btn+" ml-2 bg-white"} value={employeeField} onChange={e=>{setEmployeeField(e.target.value);setEmployee("ALL");setPage(0)}}><option value="cluster_owner">Cluster Owner</option><option value="ms_gtl">MS GTL</option><option value="zone_lead">Zone Lead</option></select></label>
  <label className="text-xs font-bold">Employee <select className={btn+" ml-2 bg-white"} value={employee} onChange={e=>{setEmployee(e.target.value);setPage(0)}}><option value="ALL">All Employees</option>{employees.map(e=><option key={e} value={e}>{e}</option>)}</select></label>
