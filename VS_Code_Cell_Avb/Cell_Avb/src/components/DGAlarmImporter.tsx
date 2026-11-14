@@ -23,7 +23,7 @@ function kind(title:string):"DG"|"CPF"|"RIF"|null {
 }
 export default function DGAlarmImporter(){
  const [bmBusy,setBmBusy]=useState(false);const [bmStatus,setBmStatus]=useState("Upload site-wise DG fuel consumption benchmarks (.xlsx or .csv).");
- const [busy,setBusy]=useState(false);const [status,setStatus]=useState("Select the raw five-column alarm CSV file.");const [progress,setProgress]=useState(0);
+ const [busy,setBusy]=useState(false);const [status,setStatus]=useState("Select the original FM system alarm CSV export.");const [progress,setProgress]=useState(0);
  async function uploadBM(file:File){
   setBmBusy(true);setBmStatus("Reading benchmark file...");
   try{
@@ -88,16 +88,16 @@ export default function DGAlarmImporter(){
    setStatus("Reading "+file.name+" and filtering against "+sites.size+" DG master sites...");
    const data=await file.text();const lines=data.split(/\r?\n/);
    const header=csvFields(lines[0]||"").map(x=>x.toLowerCase());
-   const positions=["site","alarm title","date","occur time","clear time"].map(x=>header.indexOf(x));
-   if(positions.some(x=>x<0))throw new Error("Required columns: Site, Alarm title, Date, Occur Time, Clear Time");
+   const positions=["site","alarm title","occur time","clear time"].map(x=>header.indexOf(x));
+   if(positions.some(x=>x<0))throw new Error("Required columns: Site, Alarm title, Occur Time, Clear Time");
    const seen=new Set<string>();const selected:AlarmRow[]=[];let excluded=0,invalid=0,duplicates=0;
    for(let i=1;i<lines.length;i++){
     if(!lines[i].trim())continue;
     const cells=csvFields(lines[i]);const site=(cells[positions[0]]||"").trim();
     const grid=sites.get(site);const alarm=kind(cells[positions[1]]||"");
     if(!grid||!alarm){excluded++;continue;}
-    const occurred=localDate(cells[positions[3]]||"");
-    const cleared=(cells[positions[4]]||"").trim()?localDate(cells[positions[4]]):null;
+    const occurred=localDate(cells[positions[2]]||"");
+    const cleared=(cells[positions[3]]||"").trim()?localDate(cells[positions[4]]):null;
     if(!occurred||((cells[positions[4]]||"").trim()&&!cleared)|| (cleared&&cleared<occurred)){invalid++;continue;}
     const fingerprint=[site,alarm,occurred,cleared||""].join("|");
     if(seen.has(fingerprint)){duplicates++;continue;}seen.add(fingerprint);
@@ -120,7 +120,7 @@ export default function DGAlarmImporter(){
  }
  return <div className="space-y-4"><section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
   <h3 className="text-lg font-semibold text-slate-900">DG Running & Power Alarm Upload</h3>
-  <p className="mt-1 text-sm text-slate-600">Upload the original system CSV. Only C1/C6 DG master sites and DG in Operation, Commercial Power Failure and Rectifier Input Failure alarms are stored. Duplicate uploads are safe.</p>
+  <p className="mt-1 text-sm text-slate-600">Upload the original FM system CSV directly. Only Site, Alarm title, Occur Time and Clear Time are retained for C1/C6 DG master sites; unrelated alarms and columns are excluded.</p>
   <input className="mt-4 block w-full text-sm" type="file" accept=".csv,text/csv" disabled={busy} onChange={e=>{const f=e.target.files?.[0];if(f)void upload(f);e.target.value="";}}/>
   {busy&&<div className="mt-3 h-2 rounded bg-slate-200"><div className="h-2 rounded bg-blue-600" style={{width:progress+"%"}}/></div>}
   <p className="mt-3 text-sm text-slate-700" role="status">{status}</p>
