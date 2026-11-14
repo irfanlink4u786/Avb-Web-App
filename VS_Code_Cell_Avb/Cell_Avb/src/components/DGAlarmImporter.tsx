@@ -1,3 +1,4 @@
+import * as XLSX from "xlsx";
 import React, { useState } from "react";
 
 type AlarmRow = { site_id:string; grid:string; alarm_kind:"DG"|"CPF"|"RIF"; occurred_at:string; cleared_at:string|null; fingerprint:string };
@@ -21,7 +22,54 @@ function kind(title:string):"DG"|"CPF"|"RIF"|null {
   return null;
 }
 export default function DGAlarmImporter(){
+ const [bmBusy,setBmBusy]=useState(false);const [bmStatus,setBmStatus]=useState("Upload site-wise DG fuel consumption benchmarks (.xlsx or .csv).");
  const [busy,setBusy]=useState(false);const [status,setStatus]=useState("Select the raw five-column alarm CSV file.");const [progress,setProgress]=useState(0);
+ async function uploadBM(file:File){
+  setBmBusy(true);setBmStatus("Reading benchmark file...");
+  try{
+   const env=(import.meta as any).env||{};
+   const base=String(env.VITE_SUPABASE_URL||"").replace(/\\/$/,"");
+   const key=String(env.VITE_SUPABASE_PUBLISHABLE_KEY||env.VITE_SUPABASE_ANON_KEY||"");
+   const raw=sessionStorage.getItem("cell_avb_supabase_session");
+   const session=raw?JSON.parse(raw):null;
+   if(!base||!key||!session?.access_token)throw Error("Sign in to Supabase before uploading.");
+   const headers={apikey:key,Authorization:"Bearer "+session.access_token};
+   const master=await fetch(base+"/rest/v1/dg_mode_monitoring?select=site_id,grid&limit=1000",{headers});
+   if(!master.ok)throw Error("DG master access failed: "+master.status);
+   const sites=new Set<string>((await master.json()).filter((x:{site_id:string;grid:string})=>/^(C1|C6)/.test(String(x.grid))).map((x:{site_id:string})=>String(x.site_id).trim()));
+   const wb=XLSX.read(await file.arrayBuffer(),{type:"array"});
+   const sheet=wb.Sheets[wb.SheetNames[0]];
+   const data=XLSX.utils.sheet_to_json<(string|number|null)[]>(sheet,{header:1,defval:null});
+   if(!data.length)throw Error("Empty benchmark sheet.");
+   const cols=(data[0]||[]).map(x=>String(x??"").trim().toUpperCase().replace(/\\s+/g," "));
+   const idIndex=cols.findIndex(x=>["NAME","SITE","SITE ID","SITE_ID"].includes(x));
+   const rateIndex=cols.findIndex(x=>["FUEL CONSUMPTION","DG L/H","DG LITERS PER HOUR","BENCHMARK","L/H"].includes(x));
+   if(idIndex<0||rateIndex<0)throw Error("Required headers: NAME and FUEL CONSUMPTION.");
+   const values=new Map<string,number>();const conflict=new Set<string>();let excluded=0,invalid=0,duplicates=0;
+   for(const row of data.slice(1)){
+    const site=String(row[idIndex]??"").trim().replace(/\\.0$/,"");
+    if(!site)continue;
+    if(!sites.has(site)){excluded++;continue;}
+    const rate=Number(row[rateIndex]);
+    if(!Number.isFinite(rate)||rate<=0){invalid++;continue;}
+    if(values.has(site)){duplicates++;if(Math.abs(values.get(site)!-rate)>0.0001)conflict.add(site);}
+    else values.set(site,rate);
+   }
+   for(const site of conflict)values.delete(site);
+   const entries=[...values].map(([site_id,dg_liters_per_hour])=>({site_id,dg_liters_per_hour,updated_at:new Date().toISOString()}));
+   if(!entries.length)throw Error("No valid C1/C6 DG benchmarks found.");
+   let sent=0;
+   for(let i=0;i<entries.length;i+=100){
+    const res=await fetch(base+"/rest/v1/cell_avb_fuel_responsibility?on_conflict=site_id",{
+     method:"POST",headers:{...headers,"Content-Type":"application/json",Prefer:"resolution=merge-duplicates,return=minimal"},body:JSON.stringify(entries.slice(i,i+100))
+    });
+    if(!res.ok)throw Error("Benchmark upload failed: HTTP "+res.status+" "+(await res.text()).slice(0,250));
+    sent+=Math.min(100,entries.length-i);setBmStatus("Uploaded "+sent+" / "+entries.length+" benchmarks...");
+   }
+   setBmStatus("BM upload complete: "+sent+" unique C1/C6 DG sites; "+excluded+" outside DG master; "+invalid+" invalid rates; "+duplicates+" repeated rows; "+conflict.size+" conflicting sites excluded. Refresh Fuel Reconciliation to recalculate.");
+  }catch(e){setBmStatus("BM upload stopped: "+String(e));}
+  finally{setBmBusy(false);}
+ }
  async function upload(file:File){
   setBusy(true);setProgress(0);
   try{
@@ -70,11 +118,11 @@ export default function DGAlarmImporter(){
   }catch(e){setStatus("Upload stopped: "+(e instanceof Error?e.message:String(e)));}
   finally{setBusy(false);}
  }
- return <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+ return <div className="space-y-4"><section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
   <h3 className="text-lg font-semibold text-slate-900">DG Running & Power Alarm Upload</h3>
   <p className="mt-1 text-sm text-slate-600">Upload the original system CSV. Only C1/C6 DG master sites and DG in Operation, Commercial Power Failure and Rectifier Input Failure alarms are stored. Duplicate uploads are safe.</p>
   <input className="mt-4 block w-full text-sm" type="file" accept=".csv,text/csv" disabled={busy} onChange={e=>{const f=e.target.files?.[0];if(f)void upload(f);e.target.value="";}}/>
   {busy&&<div className="mt-3 h-2 rounded bg-slate-200"><div className="h-2 rounded bg-blue-600" style={{width:progress+"%"}}/></div>}
   <p className="mt-3 text-sm text-slate-700" role="status">{status}</p>
- </section>;
+ </section><section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><h3 className="text-lg font-semibold text-slate-900">DG Benchmark (BM) Upload</h3><p className="mt-1 text-sm text-slate-600">Upload the site-wise fuel consumption benchmark in litres/hour. Supports Excel or CSV with NAME and FUEL CONSUMPTION columns. Only C1/C6 DG master sites are accepted. Conflicting duplicate site rates are excluded.</p><input className="mt-4 block w-full text-sm" type="file" accept=".xlsx,.xls,.csv" disabled={bmBusy} onChange={e=>{const f=e.target.files?.[0];if(f)void uploadBM(f);e.target.value="";}}/><p className="mt-3 text-sm text-slate-700" role="status">{bmStatus}</p></section></div>;
 }
