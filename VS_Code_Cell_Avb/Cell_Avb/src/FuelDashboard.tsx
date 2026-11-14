@@ -351,7 +351,7 @@ function MonthlyFuelQueryPage({ payload, ownership, fuelRows }: { payload: Sheet
   </div>;
 }
 
-type FuelSubTab = "summary" | "yoy" | "currentMonth" | "monthlyQuery" | "deviation" | "tprime" | "yesterday" | "weather" | "dg";
+type FuelSubTab = "summary" | "yoy" | "currentMonth" | "monthlyQuery" | "deviation" | "tprime" | "yesterday" | "weather" | "dg" | "alarmUpload";
 type FuelView = "overall" | "C-1" | "C-6";
 
 type FuelRow = {
@@ -1749,6 +1749,7 @@ function FuelDashboardLegacy({ data, deviationData, tPrimeData, sheet1Data, mont
             ["yesterday","Yesterday Fuel & Consumption",CalendarDays],
             ["weather","Weather & Rain Alerts",CloudRain],
             ["dg","DG Auto / Manual",Settings2],
+            ["alarmUpload","DG Alarm Upload",FileSpreadsheet],
           ] as const).map(([id,label,Icon]) => <button key={id} onClick={()=>setTab(id as FuelSubTab)} className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-bold transition ${tab===id?"bg-white text-[#075E36] shadow-lg shadow-black/10":"text-emerald-50/75 hover:bg-white/10 hover:text-white"}`}><Icon className="h-4 w-4"/><span>{label}</span></button>)}
         </nav>
         <div className="border-t border-slate-800 p-4 text-[11px] text-emerald-100/60">Fuel History · Live Google Sheet</div>
@@ -1759,11 +1760,11 @@ function FuelDashboardLegacy({ data, deviationData, tPrimeData, sheet1Data, mont
           <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-4 sm:px-6">
             <div>
               <div className="flex items-center gap-2 lg:hidden"><button onClick={onBack} className="rounded-lg bg-slate-800 px-3 py-2 text-xs font-bold text-white">← Home</button><Fuel className="h-5 w-5 text-emerald-600"/></div>
-              <h2 className="mt-1 text-xl font-black text-slate-950">{tab==="summary"?"Overall Fuel Summary":tab==="yoy"?"YoY & Worst Sites":tab==="monthlyQuery"?"Monthly Fuel Query":tab==="deviation"?"Fuel Deviation":tab==="tprime"?"T-Prime Fuel Penalty":tab==="yesterday"?"Yesterday Fuel & Consumption":tab==="weather"?"Weather & Rain Alerts":tab==="dg"?"DG Auto / Manual":`${currentMonthLabel} Fuel Summary`}</h2>
+              <h2 className="mt-1 text-xl font-black text-slate-950">{tab==="summary"?"Overall Fuel Summary":tab==="yoy"?"YoY & Worst Sites":tab==="monthlyQuery"?"Monthly Fuel Query":tab==="deviation"?"Fuel Deviation":tab==="tprime"?"T-Prime Fuel Penalty":tab==="yesterday"?"Yesterday Fuel & Consumption":tab==="weather"?"Weather & Rain Alerts":tab==="dg"?"DG Auto / Manual":tab==="alarmUpload"?"DG Running & Power Alarm Upload":`${currentMonthLabel} Fuel Summary`}</h2>
               <p className="text-xs text-slate-500">Fuel History · {previousYear} vs {currentYear} · comparable through {comparableMonths[comparableMonths.length-1]}</p>
             </div>
-            <button type="button" onClick={exportActiveTab} disabled={tab==="weather"||tab==="dg"} className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-black text-white hover:bg-emerald-800 flex items-center gap-2"><FileSpreadsheet className="h-4 w-4"/> Export This Tab</button>
-            {tab!=="deviation" && tab!=="tprime" && tab!=="yesterday" && tab!=="weather" && tab!=="dg" && <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={exportActiveTab} disabled={tab==="weather"||tab==="dg"||tab==="alarmUpload"} className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-black text-white hover:bg-emerald-800 flex items-center gap-2"><FileSpreadsheet className="h-4 w-4"/> Export This Tab</button>
+            {tab!=="deviation" && tab!=="tprime" && tab!=="yesterday" && tab!=="weather" && tab!=="dg" && tab!=="alarmUpload" && <div className="flex flex-wrap gap-2">
               {(["overall","C-1","C-6"] as FuelView[]).map(v => <button key={v} onClick={()=>setView(v)} className={`rounded-lg px-4 py-2 text-sm font-black ${view===v?"bg-[#006B3C] text-white":"bg-slate-200 text-slate-700"}`}>{v==="overall"?"Overall":v}</button>)}
               <select aria-label="Fuel month" value={fuelMonthFilter} onChange={e=>setFuelMonthFilter(e.target.value)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-bold"><option value="__all">YTD (Jan–{FUEL_MONTH_ORDER[latestMonthIndex]})</option>{FUEL_MONTH_ORDER.slice(0,latestMonthIndex+1).map(m=><option key={m} value={m}>{m} · YoY</option>)}</select>
               <select value={gridFilter} onChange={e=>setGridFilter(e.target.value)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-bold"><option value="__all">All Grids</option>{grids.map(g=><option key={g}>{g}</option>)}</select>
@@ -1777,6 +1778,7 @@ function FuelDashboardLegacy({ data, deviationData, tPrimeData, sheet1Data, mont
         <main id="fuel-active-tab-content" className="space-y-5 p-4 sm:p-6 fuel-dashboard-main">
         {tab==="weather" && <section className="space-y-4"><div className="rounded-xl border border-emerald-200 bg-white p-5"><h2 className="text-xl font-black text-emerald-950">Weather & Rain Alerts</h2><p className="text-sm text-slate-600">Weather radar and available rain alert widgets. Site-specific Windy API forecasts require a configured API and site coordinates.</p></div><RainAlertWidget/><WeatherRadar/></section>}
         {tab==="dg" && <DGModeMonitoring/>}
+        {tab==="alarmUpload" && <DGAlarmImporter/>}
         {tab==="monthlyQuery" && <MonthlyFuelQueryPage payload={monthlyFuelData} ownership={sheet1Data} fuelRows={rows} />}
         {tab==="deviation" && <FuelDeviationPage payload={deviationData} region={view} onRegionChange={setView} />}
         {tab==="yesterday" && <YesterdayFuelPage rows={rows} deviationData={deviationData} />}
@@ -2203,7 +2205,6 @@ export default function FuelDashboard(props: BackendFuelProps) {
   }, [props.data, liveRows]);
   return <>
     {liveError && <div className="border-b border-amber-200 bg-amber-50 px-5 py-2 text-xs text-amber-900">Live November Fuel History unavailable: {liveError}. Showing available archived records.</div>}
-    <div className="mx-auto max-w-7xl px-4 pt-4"><DGAlarmImporter /></div>
     <FuelDashboardLegacy {...props} data={merged} />
   </>;
 }
