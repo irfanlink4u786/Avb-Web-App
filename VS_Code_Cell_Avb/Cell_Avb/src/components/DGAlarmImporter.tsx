@@ -53,13 +53,22 @@ export default function DGAlarmImporter(){
     const m=String(v??"").match(/^(\d{4})-(\d{2})-(\d{2})/);return m?m[0]:null;
    };
    const num=(v:unknown)=>{if(v===null||v===undefined||String(v).trim()==="")return null;const n=Number(v);return Number.isFinite(n)?n:null;};
-   const values=new Map<string,Record<string,unknown>>();let excluded=0,invalid=0;
+   const masterResponse=await fetch(base+"/rest/v1/dg_mode_monitoring?select=site_id,grid,dg_status&limit=2000",{headers});
+   if(!masterResponse.ok)throw Error("DG master lookup failed: HTTP "+masterResponse.status);
+   const dgMaster=new Map<string,string>();
+   for(const item of await masterResponse.json() as {site_id:string;grid:string;dg_status:string}[]){
+     if(/^C(1|6)\d{3}$/.test(String(item.grid||""))&&String(item.dg_status||"").toLowerCase()==="operational")
+       dgMaster.set(String(item.site_id).trim(),String(item.grid));
+   }
+   if(!dgMaster.size)throw Error("No operational C1/C6 DG sites found in DG master.");
+   const values=new Map<string,Record<string,unknown>>();let excluded=0,nonDg=0,invalid=0;
    for(const row of rows.slice(1)){
     const site=String(row[idx.site]??"").trim().replace(/\.0$/,"");
     const grid=String(row[idx.grid]??"").trim().toUpperCase().replace(/[\s_-]/g,"");
     const day=date(row[idx.date]);
     if(!site)continue;
     if(!/^C(1|6)\d{3}$/.test(grid)){excluded++;continue;}
+    if(dgMaster.get(site)!==grid){nonDg++;continue;}
     if(!day||num(row[idx.total])===null||num(row[idx.dg])===null||num(row[idx.ls])===null){invalid++;continue;}
     values.set(site+"|"+day,{site_id:site,statistics_date:day,region:String(row[idx.region]??""),sub_region:String(row[idx.sub]??""),grid,
       cp_hours:num(row[idx.cp]),dg_hours:num(row[idx.dg]),battery_hours:num(row[idx.battery]),no_power_2g:num(row[idx.noPower]),
@@ -73,7 +82,7 @@ export default function DGAlarmImporter(){
     if(!response.ok)throw Error("EASS upload HTTP "+response.status+": "+(await response.text()).slice(0,250));
     setEassStatus("Uploaded "+Math.min(i+250,data.length).toLocaleString()+" / "+data.length.toLocaleString()+" daily records...");
    }
-   setEassStatus("Upload complete: "+data.length.toLocaleString()+" C1/C6 daily site records; "+excluded+" other-region rows excluded; "+invalid+" invalid rows. EASS OK: Total 22–26h. DG > Load Shedding: NOK.");
+   setEassStatus("Upload complete: "+data.length.toLocaleString()+" C1/C6 daily site records; "+excluded+" other-region rows excluded; "+nonDg+" non-DG sites excluded; "+invalid+" invalid rows. EASS OK: Total 22–26h. DG > Load Shedding: NOK.");
   }catch(e){setEassStatus("Upload stopped: "+String(e));}finally{setEassBusy(false);}
  }
  const [bmBusy,setBmBusy]=useState(false);const [bmStatus,setBmStatus]=useState("Upload site-wise DG fuel consumption benchmarks (.xlsx or .csv).");
@@ -186,5 +195,5 @@ export default function DGAlarmImporter(){
   <input className="mt-4 block w-full text-sm" type="file" accept=".csv,text/csv" disabled={busy} onChange={e=>{const f=e.target.files?.[0];if(f)void upload(f);e.target.value="";}}/>
   {busy&&<div className="mt-3 h-2 rounded bg-slate-200"><div className="h-2 rounded bg-blue-600" style={{width:progress+"%"}}/></div>}
   <p className="mt-3 text-sm text-slate-700" role="status">{status}</p>
- </section><section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><h3 className="text-lg font-semibold text-slate-900">Power Duration Report Upload</h3><p className="mt-1 text-sm text-slate-600">Upload Final Power Duration Report (.xlsx/.xls/.csv). C1/C6 only. EASS Status: Total 22–26 hours = OK, otherwise NOK. DG &gt; Load Shedding = NOK. Re-uploading the same site/date updates its record.</p><input className="mt-4 block w-full text-sm" type="file" accept=".xlsx,.xls,.csv" disabled={eassBusy} onChange={e=>{const f=e.target.files?.[0];if(f)void uploadEass(f);e.target.value="";}}/><p className="mt-3 text-sm text-slate-700" role="status">{eassStatus}</p></section><section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><h3 className="text-lg font-semibold text-slate-900">DG Benchmark (BM) Upload</h3><p className="mt-1 text-sm text-slate-600">Upload the site-wise fuel consumption benchmark in litres/hour. Supports Excel or CSV with NAME and FUEL CONSUMPTION columns. Only C1/C6 DG master sites are accepted. Conflicting duplicate site rates are excluded.</p><input className="mt-4 block w-full text-sm" type="file" accept=".xlsx,.xls,.csv" disabled={bmBusy} onChange={e=>{const f=e.target.files?.[0];if(f)void uploadBM(f);e.target.value="";}}/><p className="mt-3 text-sm text-slate-700" role="status">{bmStatus}</p></section></div>;
+ </section><section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><h3 className="text-lg font-semibold text-slate-900">Power Duration Report Upload</h3><p className="mt-1 text-sm text-slate-600">Upload Final Power Duration Report (.xlsx/.xls/.csv). Only operational DG sites in the C1/C6 DG master are accepted; non-DG sites are excluded. EASS Status: Total 22–26 hours = OK, otherwise NOK. DG &gt; Load Shedding = NOK. Re-uploading the same site/date updates its record.</p><input className="mt-4 block w-full text-sm" type="file" accept=".xlsx,.xls,.csv" disabled={eassBusy} onChange={e=>{const f=e.target.files?.[0];if(f)void uploadEass(f);e.target.value="";}}/><p className="mt-3 text-sm text-slate-700" role="status">{eassStatus}</p></section><section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><h3 className="text-lg font-semibold text-slate-900">DG Benchmark (BM) Upload</h3><p className="mt-1 text-sm text-slate-600">Upload the site-wise fuel consumption benchmark in litres/hour. Supports Excel or CSV with NAME and FUEL CONSUMPTION columns. Only C1/C6 DG master sites are accepted. Conflicting duplicate site rates are excluded.</p><input className="mt-4 block w-full text-sm" type="file" accept=".xlsx,.xls,.csv" disabled={bmBusy} onChange={e=>{const f=e.target.files?.[0];if(f)void uploadBM(f);e.target.value="";}}/><p className="mt-3 text-sm text-slate-700" role="status">{bmStatus}</p></section></div>;
 }
