@@ -10,7 +10,7 @@ function csvFields(line:string):string[] {
 function localDate(value:string):string|null {
  const raw=String(value??"").trim();
  if(!raw)return null;
- const m=raw.match(/^(\\d{1,4})[-/](\\d{1,2})[-/](\\d{1,4})[ T](\\d{1,2}):(\\d{2})(?::(\\d{2}))?/);
+ const m=raw.match(/^(\d{1,4})[-/](\d{1,2})[-/](\d{1,4})[ T](\d{1,2}):(\d{2})(?::(\d{2}))?/);
  if(!m)return null;
  let yyyy:number,mm:number,dd:number;
  if(m[1].length===4){yyyy=Number(m[1]);mm=Number(m[2]);dd=Number(m[3]);}
@@ -95,13 +95,13 @@ export default function DGAlarmImporter(){
    const workbook=XLSX.read(await file.arrayBuffer(),{type:"array",raw:true});
    const sheet=workbook.Sheets[workbook.SheetNames[0]];
    const rows=XLSX.utils.sheet_to_json<(string|number|null)[]>(sheet,{header:1,defval:null,raw:false});
-   const header=(rows[0]||[]).map(x=>String(x??"").replace(/^\\uFEFF/,"").trim().toLowerCase().replace(/\\s+/g," "));
+   const header=(rows[0]||[]).map(x=>String(x??"").replace(/^\uFEFF/,"").trim().toLowerCase().replace(/\s+/g," "));
    const positions=["site","alarm title","occur time","clear time"].map(x=>header.indexOf(x));
    if(positions.some(x=>x<0))throw new Error("Required columns: Site, Alarm title, Occur Time, Clear Time. Detected: "+header.slice(0,12).join(", "));
    const seen=new Set<string>();const selected:AlarmRow[]=[];let excluded=0,invalid=0,duplicates=0,siteMiss=0,titleMiss=0;
    const examples:string[]=[];
    for(const cells of rows.slice(1)){
-    const site=String(cells[positions[0]]??"").trim().replace(/\\.0$/,"");
+    const site=String(cells[positions[0]]??"").trim().replace(/\.0$/,"");
     if(!site)continue;
     const grid=sites.get(site);const alarm=kind(String(cells[positions[1]]??""));
     if(!grid){siteMiss++;excluded++;continue;}
