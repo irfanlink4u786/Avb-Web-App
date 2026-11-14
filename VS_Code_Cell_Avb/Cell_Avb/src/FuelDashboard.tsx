@@ -1680,7 +1680,7 @@ function FuelDashboardLegacy({ data, deviationData, tPrimeData, sheet1Data, mont
   const th = "px-4 py-3.5 text-left text-[12px] font-black uppercase tracking-wide text-white whitespace-nowrap";
   const td = "px-4 py-3 text-[14px] font-medium text-slate-800 whitespace-nowrap";
 
-  if (!data) return <div className="min-h-screen bg-slate-100 p-8"><button onClick={onBack} className="mb-5 rounded-lg bg-slate-800 px-4 py-2 text-white">← Home</button><div className="rounded-xl border border-amber-300 bg-amber-50 p-10 text-center font-bold text-amber-900">Fuel History tab is not available. Confirm the Google Sheet tab name is exactly <b>Fuel History</b>.</div></div>;
+  // Fuel Management no longer requires a Google Sheet named Fuel History.\n  // The dashboard can render with an empty event payload while backend data is loading.
 
   return (
     <div className="fuel-premium min-h-screen bg-[#073B2A] text-slate-100 flex">
@@ -2195,7 +2195,7 @@ export default function FuelDashboard(props: BackendFuelProps) {
   }, []);
   const merged = useMemo<SheetPayload | null>(() => {
     const old = props.data?.rows || [];
-    if (!old.length && !liveRows.length) return props.data;
+    if (!old.length && !liveRows.length) return props.data ?? { headers: [], rows: [] } as SheetPayload;
     // Match by the actual event content; avoid double-counting when the
     // offline October archive eventually includes November records.
     const key = (r: Record<string, any>) => [r["Site ID Name"] ?? r["Site ID"], r["Grid"], r["Refueling Time"], r["Fuel Quantity Filled"], r["Before Filling Fuel Quantity"]].map(x => String(x ?? "").trim()).join("|");
@@ -2204,7 +2204,7 @@ export default function FuelDashboard(props: BackendFuelProps) {
     return { headers: props.data?.headers || Object.keys(rows[0] || {}), rows } as SheetPayload;
   }, [props.data, liveRows]);
   return <>
-    {liveError && <div className="border-b border-amber-200 bg-amber-50 px-5 py-2 text-xs text-amber-900">Live November Fuel History unavailable: {liveError}. Showing available archived records.</div>}
+    {liveError && <div className="border-b border-amber-200 bg-amber-50 px-5 py-2 text-xs text-amber-900">Live fuel data unavailable: {liveError}. {liveError.includes("401") ? "Your Supabase session may have expired. Please sign out and sign in again to reload fuel records." : "Please check the backend connection; historical data may be incomplete."}</div>}
     <FuelDashboardLegacy {...props} data={merged} />
   </>;
 }
