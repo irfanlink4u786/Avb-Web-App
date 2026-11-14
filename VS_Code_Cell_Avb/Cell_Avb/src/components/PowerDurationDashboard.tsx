@@ -16,8 +16,8 @@ export default function PowerDurationDashboard(){
  }if(active){setMonthRows(all);setDay(previous=>previous.startsWith(month)&&all.some(r=>r.statistics_date===previous)?previous:(all[0]?.statistics_date||month+"-01"));}}
  catch(e){if(active)setError(String(e))}finally{if(active)setBusy(false)}})();return()=>{active=false}},[api,month,refresh]);
  useEffect(()=>{setRows(monthRows.filter(r=>r.statistics_date===day))},[monthRows,day]);
- const grids=useMemo(()=>Array.from(new Set(monthRows.filter(r=>region==="All"||r.sub_region===region).map(r=>r.grid))).sort(),[rows,region]);
- const regions=useMemo(()=>Array.from(new Set(monthRows.map(r=>r.sub_region||"Unmapped"))).sort(),[rows]);
+ const grids=useMemo(()=>Array.from(new Set(monthRows.filter(r=>region==="All"||r.sub_region===region).map(r=>r.grid))).sort(),[monthRows,region]);
+ const regions=useMemo(()=>Array.from(new Set(monthRows.map(r=>r.sub_region||"Unmapped"))).sort(),[monthRows]);
  const monthlyFiltered=useMemo(()=>monthRows.filter(r=>(region==="All"||(r.sub_region||"Unmapped")===region)&&(grid==="All"||r.grid===grid)&&(!search.trim()||r.site_id.includes(search.trim()))),[monthRows,region,grid,search]);
  const aggregate=(key:(r:PowerRow)=>string)=>{const m=new Map<string,{name:string;records:number;eassNok:number;dgNok:number;dgHours:number;sites:Set<string>;days:Set<string>;maxDg:number;worstSite:string}>();for(const r of monthlyFiltered){const name=key(r);const x=m.get(name)||{name,records:0,eassNok:0,dgNok:0,dgHours:0,sites:new Set<string>(),days:new Set<string>(),maxDg:0,worstSite:""};x.records++;if(r.eass_status==="NOK")x.eassNok++;if(r.dg_gt_ls==="NOK")x.dgNok++;const h=Number(r.dg_hours||0);x.dgHours+=h;if(h>x.maxDg){x.maxDg=h;x.worstSite=r.site_id}x.sites.add(r.site_id);x.days.add(r.statistics_date);m.set(name,x)}return [...m.values()]};
  const gridSummary=useMemo(()=>aggregate(r=>r.grid).sort((a,b)=>b.eassNok-a.eassNok||b.dgNok-a.dgNok),[monthlyFiltered]);
