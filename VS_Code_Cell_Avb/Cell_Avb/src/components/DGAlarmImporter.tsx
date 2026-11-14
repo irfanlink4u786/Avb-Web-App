@@ -97,8 +97,9 @@ export default function DGAlarmImporter(){
     const grid=sites.get(site);const alarm=kind(cells[positions[1]]||"");
     if(!grid||!alarm){excluded++;continue;}
     const occurred=localDate(cells[positions[2]]||"");
-    const cleared=(cells[positions[3]]||"").trim()?localDate(cells[positions[4]]):null;
-    if(!occurred||((cells[positions[4]]||"").trim()&&!cleared)|| (cleared&&cleared<occurred)){invalid++;continue;}
+    const clearText=(cells[positions[3]]||"").trim();
+    const cleared=clearText?localDate(clearText):null;
+    if(!occurred||(clearText&&!cleared)|| (cleared&&cleared<occurred)){invalid++;continue;}
     const fingerprint=[site,alarm,occurred,cleared||""].join("|");
     if(seen.has(fingerprint)){duplicates++;continue;}seen.add(fingerprint);
     selected.push({site_id:site,grid,alarm_kind:alarm,occurred_at:occurred,cleared_at:cleared,fingerprint});
