@@ -1,7 +1,7 @@
 import "./overall-summary-readability.css";
 import "./enterprise-polish.css";
-import FuelDashboard from "./FuelDashboard";
-import CellAvbPowerModules from "./CellAvbPowerModules";
+const FuelDashboard = React.lazy(() => import("./FuelDashboard"));
+const CellAvbPowerModules = React.lazy(() => import("./CellAvbPowerModules"));
 import React, { useState, useEffect, useMemo, Fragment, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -8198,7 +8198,7 @@ export default function App() {
         <div><h1 className="text-xl font-extrabold text-slate-900">{viewMode === "battery" ? "Battery Backup · EASS / WSD / WOSD" : viewMode === "wsd-recent" ? "Last 5 Days · WSD Degradation" : "RMS Analysis · Power Health"}</h1><p className="text-sm text-slate-500">Central-1 & Central-6 only · Shared Supabase backend</p></div>
         <button onClick={goHome} className="rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-700">← Home</button>
       </header>
-      <main className="mx-auto max-w-[1800px] p-4 sm:p-6"><CellAvbPowerModules mode={viewMode === "battery" ? "battery" : viewMode === "wsd-recent" ? "wsd-recent" : "rms"} /></main>
+      <main className="mx-auto max-w-[1800px] p-4 sm:p-6"><React.Suspense fallback={<p className="p-6 text-slate-700">Loading Power Analysis…</p>}><CellAvbPowerModules mode={viewMode === "battery" ? "battery" : viewMode === "wsd-recent" ? "wsd-recent" : "rms"} /></React.Suspense></main>
     </div>;
   }
 
@@ -8209,14 +8209,14 @@ export default function App() {
 
   // ----- FUEL MANAGEMENT FULL PAGE WITH NESTED MONITORING TABS -----
   if (viewMode === "fuel") {
-    return <FuelDashboard
+    return <React.Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-slate-50 text-slate-700 font-semibold">Loading Fuel Management module…</div>}><FuelDashboard
       data={fuelHistory}
       deviationData={fuelDeviation}
       tPrimeData={fuelTPrime}
       sheet1Data={fuelOwnership}
       monthlyFuelData={monthlyFuelData}
       onBack={goHome}
-    />;
+    /></React.Suspense>;
   }
 
   // ----- PRE‑VS‑POST FULL PAGE WITH SIDEBAR -----
