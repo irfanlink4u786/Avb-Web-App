@@ -28,7 +28,7 @@ export default function DGAlarmImporter(){
   setBmBusy(true);setBmStatus("Reading benchmark file...");
   try{
    const env=(import.meta as any).env||{};
-   const base=String(env.VITE_SUPABASE_URL||"").replace(/\\/$/,"");
+   const base=String(env.VITE_SUPABASE_URL||"").replace(/\/$/,"");
    const key=String(env.VITE_SUPABASE_PUBLISHABLE_KEY||env.VITE_SUPABASE_ANON_KEY||"");
    const raw=sessionStorage.getItem("cell_avb_supabase_session");
    const session=raw?JSON.parse(raw):null;
@@ -41,13 +41,13 @@ export default function DGAlarmImporter(){
    const sheet=wb.Sheets[wb.SheetNames[0]];
    const data=XLSX.utils.sheet_to_json<(string|number|null)[]>(sheet,{header:1,defval:null});
    if(!data.length)throw Error("Empty benchmark sheet.");
-   const cols=(data[0]||[]).map(x=>String(x??"").trim().toUpperCase().replace(/\\s+/g," "));
+   const cols=(data[0]||[]).map(x=>String(x??"").trim().toUpperCase().replace(/\s+/g," "));
    const idIndex=cols.findIndex(x=>["NAME","SITE","SITE ID","SITE_ID"].includes(x));
    const rateIndex=cols.findIndex(x=>["FUEL CONSUMPTION","DG L/H","DG LITERS PER HOUR","BENCHMARK","L/H"].includes(x));
    if(idIndex<0||rateIndex<0)throw Error("Required headers: NAME and FUEL CONSUMPTION.");
    const values=new Map<string,number>();const conflict=new Set<string>();let excluded=0,invalid=0,duplicates=0;
    for(const row of data.slice(1)){
-    const site=String(row[idIndex]??"").trim().replace(/\\.0$/,"");
+    const site=String(row[idIndex]??"").trim().replace(/\.0$/,"");
     if(!site)continue;
     if(!sites.has(site)){excluded++;continue;}
     const rate=Number(row[rateIndex]);
