@@ -21,9 +21,27 @@ export default function FuelSiteQuery(){
  const [site,setSite]=useState(""),[summary,setSummary]=useState<Summary|null>(null),[history,setHistory]=useState<History[]>([]),[recon,setRecon]=useState<Recon[]>([]),[alarms,setAlarms]=useState<Alarm[]>([]),[durations,setDurations]=useState<Duration[]>([]),[view,setView]=useState<"fuel"|"power"|"recon">("power"),[busy,setBusy]=useState(false),[error,setError]=useState("");
  async function query(){const id=site.trim();if(!/^\d{3,7}$/.test(id)){setError("Enter a valid numeric Site ID.");return}setBusy(true);setError("");setSummary(null);setView("power");try{
  const env=(import.meta as any).env||{},base=String(env.VITE_SUPABASE_URL||"").replace(/\/$/,""),key=String(env.VITE_SUPABASE_PUBLISHABLE_KEY||env.VITE_SUPABASE_ANON_KEY||"");
- const raw=sessionStorage.getItem("cell_avb_supabase_session"),token=raw?JSON.parse(raw)?.access_token:null;if(!base||!key||!token)throw Error("Sign in to Supabase to view site fuel data.");
- const headers={apikey:key,Authorization:"Bearer "+token,"Content-Type":"application/json"};
- const request=async(path:string,options?:RequestInit)=>{const r=await fetch(base+"/rest/v1/"+path,{...options,headers});if(!r.ok)throw Error("Query failed ("+r.status+"): "+(await r.text()).slice(0,180));return r.json()};
+ const storageKey="cell_avb_supabase_session";
+ const raw=sessionStorage.getItem(storageKey);
+ let session:{access_token?:string;refresh_token?:string;expires_at?:number}|null=null;
+ try{session=raw?JSON.parse(raw):null}catch{session=null}
+ if(!base||!key||!session?.access_token)throw Error("Session unavailable. Please sign in again.");
+ const refresh=async()=>{
+  if(!session?.refresh_token)throw Error("Your login has expired. Please sign out and sign in again.");
+  const response=await fetch(base+"/auth/v1/token?grant_type=refresh_token",{method:"POST",headers:{apikey:key,"Content-Type":"application/json"},body:JSON.stringify({refresh_token:session.refresh_token})});
+  if(!response.ok)throw Error("Your login has expired. Please sign out and sign in again.");
+  const refreshed=await response.json();
+  session={...session,...refreshed,expires_at:Math.floor(Date.now()/1000)+Number(refreshed.expires_in||3600)};
+  sessionStorage.setItem(storageKey,JSON.stringify(session));
+ };
+ if(session.expires_at&&session.expires_at<=Math.floor(Date.now()/1000)+60)await refresh();
+ const request=async(path:string,options?:RequestInit)=>{
+  const execute=()=>fetch(base+"/rest/v1/"+path,{...options,headers:{apikey:key,Authorization:"Bearer "+session?.access_token,"Content-Type":"application/json"}});
+  let response=await execute();
+  if(response.status===401){await refresh();response=await execute()}
+  if(!response.ok)throw Error("Query failed ("+response.status+"): "+(await response.text()).slice(0,180));
+  return response.json();
+ };
  const sum:Summary=await request("rpc/cell_avb_site_fuel_query",{method:"POST",body:JSON.stringify({p_site_id:id})});if(sum.error)throw Error(sum.error);
  const sid=encodeURIComponent(id);
  const results=await Promise.allSettled([
