@@ -7,8 +7,8 @@ type Duration={statistics_date:string;cp_hours:number|null;dg_hours:number|null;
 const num=(v:number|null|undefined)=>v===null||v===undefined?"Not available":Number(v).toFixed(2);
 const stamp=(v:string|null|undefined)=>v?new Date(v).toLocaleString("en-GB",{timeZone:"Asia/Karachi",day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit",hour12:false}):"Not available";
 export default function FuelSiteQuery(){
- const [site,setSite]=useState(""),[summary,setSummary]=useState<Summary|null>(null),[history,setHistory]=useState<History[]>([]),[recon,setRecon]=useState<Recon[]>([]),[alarms,setAlarms]=useState<Alarm[]>([]),[durations,setDurations]=useState<Duration[]>([]),[view,setView]=useState<"fuel"|"power"|"recon">("fuel"),[busy,setBusy]=useState(false),[error,setError]=useState("");
- async function query(){const id=site.trim();if(!/^\d{3,7}$/.test(id)){setError("Enter a valid numeric Site ID.");return}setBusy(true);setError("");setSummary(null);setView("fuel");try{
+ const [site,setSite]=useState(""),[summary,setSummary]=useState<Summary|null>(null),[history,setHistory]=useState<History[]>([]),[recon,setRecon]=useState<Recon[]>([]),[alarms,setAlarms]=useState<Alarm[]>([]),[durations,setDurations]=useState<Duration[]>([]),[view,setView]=useState<"fuel"|"power"|"recon">("power"),[busy,setBusy]=useState(false),[error,setError]=useState("");
+ async function query(){const id=site.trim();if(!/^\d{3,7}$/.test(id)){setError("Enter a valid numeric Site ID.");return}setBusy(true);setError("");setSummary(null);setView("power");try{
  const env=(import.meta as any).env||{},base=String(env.VITE_SUPABASE_URL||"").replace(/\/$/,""),key=String(env.VITE_SUPABASE_PUBLISHABLE_KEY||env.VITE_SUPABASE_ANON_KEY||"");
  const raw=sessionStorage.getItem("cell_avb_supabase_session"),token=raw?JSON.parse(raw)?.access_token:null;if(!base||!key||!token)throw Error("Sign in to Supabase to view site fuel data.");
  const headers={apikey:key,Authorization:"Bearer "+token,"Content-Type":"application/json"};
