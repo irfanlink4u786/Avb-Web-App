@@ -1,5 +1,5 @@
 import React,{useEffect,useMemo,useState} from "react";
-import {fuelAuthenticatedFetch} from "../fuelAuth";
+import {fuelAccessToken} from "../fuelAuth";
 type Event={site_id:string;grid:string;sub_region:string;cluster_owner:string;ms_gtl:string;zone_lead:string;hub_category:string;dependent_sites:number|null;dg_start:string;dg_stop:string|null;running_hours:number|null;cp_start:string|null;cp_stop:string|null;inferred_start_mode:string;required_mode:string;compliance_status:string;start_delay_minutes:number|null};
 const months=["2026-11","2026-10","2026-09","2026-08","2026-07","2026-06","2026-05"];
 const time=(s:string|null)=>s?String(s).replace("T"," ").slice(0,16):"—";
@@ -7,7 +7,9 @@ export default function DGMonthlyInstanceCheck(){
  const [month,setMonth]=useState("2026-11"),[rows,setRows]=useState<Event[]>([]),[loading,setLoading]=useState(false),[error,setError]=useState(""),[status,setStatus]=useState("ALL"),[search,setSearch]=useState(""),[page,setPage]=useState(0);
  useEffect(()=>{let active=true;setLoading(true);setError("");setRows([]);setPage(0);(async()=>{try{
  const env=(import.meta as any).env||{},base=String(env.VITE_SUPABASE_URL||"").replace(/\/$/,""),key=String(env.VITE_SUPABASE_PUBLISHABLE_KEY||env.VITE_SUPABASE_ANON_KEY||"");
- const res=await fuelAuthenticatedFetch(base,key,base+"/rest/v1/rpc/cell_avb_dg_start_mode_month",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({p_month:month})});
+ const endpoint=base+"/rest/v1/rpc/cell_avb_dg_start_mode_month";
+ const send=async(token:string)=>fetch(endpoint,{method:"POST",headers:{"Content-Type":"application/json",apikey:key,Authorization:"Bearer "+token},body:JSON.stringify({p_month:month})});
+ let res=await send(await fuelAccessToken(base,key));if(res.status===401)res=await send(await fuelAccessToken(base,key,true));
  if(!res.ok)throw Error("DG mode analysis HTTP "+res.status+": "+(await res.text()).slice(0,200));
  const data=await res.json();if(active)setRows(data);
  }catch(e){if(active)setError(String(e))}finally{if(active)setLoading(false)}})();return()=>{active=false}},[month]);
