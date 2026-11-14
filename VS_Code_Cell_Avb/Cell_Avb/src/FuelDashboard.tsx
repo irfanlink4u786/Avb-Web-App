@@ -1752,6 +1752,7 @@ function FuelDashboardLegacy({ data, deviationData, tPrimeData, sheet1Data, mont
             ["yesterday","Yesterday Fuel & Consumption",CalendarDays],
             ["weather","Weather & Rain Alerts",CloudRain],
             ["reconciliation","Fuel Reconciliation",AlertTriangle],
+            ["dg","DG Auto / Manual",FileSpreadsheet],
             ["alarmUpload","DG Alarm Upload",FileSpreadsheet],
             ["powerDuration","Power Duration · EASS",FileSpreadsheet],
             ["siteQuery","Site Query · Fuel Balance",FileSpreadsheet],
