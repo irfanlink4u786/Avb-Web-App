@@ -1,3 +1,4 @@
+import CurrentFuelAvailability from "./components/CurrentFuelAvailability";
 import DGMonthlyInstanceCheck from "./components/DGMonthlyInstanceCheck";
 import {fuelAuthenticatedFetch} from "./fuelAuth";
 import React, { useState, useMemo, useEffect, Fragment } from "react";
@@ -356,7 +357,7 @@ function MonthlyFuelQueryPage({ payload, ownership, fuelRows }: { payload: Sheet
   </div>;
 }
 
-type FuelSubTab = "summary" | "yoy" | "currentMonth" | "monthlyQuery" | "deviation" | "tprime" | "yesterday" | "weather" | "dg" | "alarmUpload" | "powerDuration" | "siteQuery" | "reconciliation";
+type FuelSubTab = "summary" | "yoy" | "currentMonth" | "monthlyQuery" | "deviation" | "tprime" | "yesterday" | "weather" | "dg" | "alarmUpload" | "powerDuration" | "siteQuery" | "reconciliation" | "fuelAvailability";
 type FuelView = "overall" | "C-1" | "C-6";
 
 type FuelRow = {
@@ -1756,6 +1757,7 @@ function FuelDashboardLegacy({ data, deviationData, tPrimeData, sheet1Data, mont
             ["alarmUpload","DG Alarm Upload",FileSpreadsheet],
             ["powerDuration","Power Duration · EASS",FileSpreadsheet],
             ["siteQuery","Site Query · Fuel Balance",FileSpreadsheet],
+            ["fuelAvailability","Current Fuel Availability",AlertTriangle],
           ] as const).map(([id,label,Icon]) => <button key={id} onClick={()=>setTab(id as FuelSubTab)} className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-bold transition ${tab===id?"bg-white text-[#075E36] shadow-lg shadow-black/10":"text-emerald-50/75 hover:bg-white/10 hover:text-white"}`}><Icon className="h-4 w-4"/><span>{label}</span></button>)}
         </nav>
         <div className="border-t border-slate-800 p-4 text-[11px] text-emerald-100/60">Fuel History · Live Google Sheet</div>
@@ -1766,10 +1768,10 @@ function FuelDashboardLegacy({ data, deviationData, tPrimeData, sheet1Data, mont
           <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-4 sm:px-6">
             <div>
               <div className="flex items-center gap-2 lg:hidden"><button onClick={onBack} className="rounded-lg bg-slate-800 px-3 py-2 text-xs font-bold text-white">← Home</button><Fuel className="h-5 w-5 text-emerald-600"/></div>
-              <h2 className="mt-1 text-xl font-black text-slate-950">{tab==="summary"?"Overall Fuel Summary":tab==="yoy"?"YoY & Worst Sites":tab==="monthlyQuery"?"Monthly Fuel Query":tab==="deviation"?"Fuel Deviation":tab==="tprime"?"T-Prime Fuel Penalty":tab==="yesterday"?"Yesterday Fuel & Consumption":tab==="weather"?"Weather & Rain Alerts":tab==="dg"?"DG Auto / Manual":tab==="alarmUpload"?"DG Running & Power Alarm Upload":tab==="powerDuration"?"Power Duration · DG EASS Status":tab==="siteQuery"?"Site Query · DG Fuel Balance":tab==="reconciliation"?"Fuel Reconciliation & Accountability":`${currentMonthLabel} Fuel Summary`}</h2>
+              <h2 className="mt-1 text-xl font-black text-slate-950">{tab==="summary"?"Overall Fuel Summary":tab==="yoy"?"YoY & Worst Sites":tab==="monthlyQuery"?"Monthly Fuel Query":tab==="deviation"?"Fuel Deviation":tab==="tprime"?"T-Prime Fuel Penalty":tab==="yesterday"?"Yesterday Fuel & Consumption":tab==="weather"?"Weather & Rain Alerts":tab==="dg"?"DG Auto / Manual":tab==="alarmUpload"?"DG Running & Power Alarm Upload":tab==="powerDuration"?"Power Duration · DG EASS Status":tab==="siteQuery"?"Site Query · DG Fuel Balance":tab==="fuelAvailability"?"Current Fuel Availability":tab==="reconciliation"?"Fuel Reconciliation & Accountability":`${currentMonthLabel} Fuel Summary`}</h2>
               <p className="text-xs text-slate-500">Fuel History · {previousYear} vs {currentYear} · comparable through {comparableMonths[comparableMonths.length-1]}</p>
             </div>
-            <button type="button" onClick={exportActiveTab} disabled={tab==="weather"||tab==="dg"||tab==="alarmUpload"||tab==="powerDuration"||tab==="siteQuery"||tab==="reconciliation"} className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-black text-white hover:bg-emerald-800 flex items-center gap-2"><FileSpreadsheet className="h-4 w-4"/> Export This Tab</button>
+            <button type="button" onClick={exportActiveTab} disabled={tab==="weather"||tab==="dg"||tab==="alarmUpload"||tab==="powerDuration"||tab==="siteQuery"||tab==="fuelAvailability"||tab==="reconciliation"} className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-black text-white hover:bg-emerald-800 flex items-center gap-2"><FileSpreadsheet className="h-4 w-4"/> Export This Tab</button>
             {tab!=="deviation" && tab!=="tprime" && tab!=="yesterday" && tab!=="weather" && tab!=="dg" && tab!=="alarmUpload" && tab!=="reconciliation" && <div className="flex flex-wrap gap-2">
               {(["overall","C-1","C-6"] as FuelView[]).map(v => <button key={v} onClick={()=>setView(v)} className={`rounded-lg px-4 py-2 text-sm font-black ${view===v?"bg-[#006B3C] text-white":"bg-slate-200 text-slate-700"}`}>{v==="overall"?"Overall":v}</button>)}
               <select aria-label="Fuel month" value={fuelMonthFilter} onChange={e=>setFuelMonthFilter(e.target.value)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-bold"><option value="__all">YTD (Jan–{FUEL_MONTH_ORDER[latestMonthIndex]})</option>{FUEL_MONTH_ORDER.slice(0,latestMonthIndex+1).map(m=><option key={m} value={m}>{m} · YoY</option>)}</select>
@@ -1787,6 +1789,7 @@ function FuelDashboardLegacy({ data, deviationData, tPrimeData, sheet1Data, mont
         {tab==="alarmUpload" && <DGAlarmImporter/>}
         {tab==="powerDuration" && <PowerDurationDashboard/>}
         {tab==="siteQuery" && <FuelSiteQuery/>}
+        {tab==="fuelAvailability" && <CurrentFuelAvailability/>}
         {tab==="reconciliation" && <FuelReconciliationDashboard/>}
         {tab==="monthlyQuery" && <MonthlyFuelQueryPage payload={monthlyFuelData} ownership={sheet1Data} fuelRows={rows} />}
         {tab==="deviation" && <FuelDeviationPage payload={deviationData} region={view} onRegionChange={setView} />}
