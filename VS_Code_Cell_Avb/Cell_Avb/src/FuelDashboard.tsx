@@ -1,3 +1,4 @@
+import DGMonthlyInstanceCheck from "./components/DGMonthlyInstanceCheck";
 import {fuelAuthenticatedFetch} from "./fuelAuth";
 import React, { useState, useMemo, useEffect, Fragment } from "react";
 import GridFuelMonthly from "./components/GridFuelMonthly";
@@ -1781,7 +1782,7 @@ function FuelDashboardLegacy({ data, deviationData, tPrimeData, sheet1Data, mont
 
         <main id="fuel-active-tab-content" className="space-y-5 p-4 sm:p-6 fuel-dashboard-main">
         {tab==="weather" && <section className="space-y-4"><div className="rounded-xl border border-emerald-200 bg-white p-5"><h2 className="text-xl font-black text-emerald-950">Weather & Rain Alerts</h2><p className="text-sm text-slate-600">Weather radar and available rain alert widgets. Site-specific Windy API forecasts require a configured API and site coordinates.</p></div><RainAlertWidget/><WeatherRadar/></section>}
-        {tab==="dg" && <DGModeMonitoring/>}
+        {tab==="dg" && <DGMonthlyInstanceCheck/>}
         {tab==="alarmUpload" && <DGAlarmImporter/>}
         {tab==="powerDuration" && <PowerDurationDashboard/>}
         {tab==="siteQuery" && <FuelSiteQuery/>}
