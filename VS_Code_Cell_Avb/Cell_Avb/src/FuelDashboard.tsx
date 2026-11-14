@@ -2195,7 +2195,7 @@ export default function FuelDashboard(props: BackendFuelProps) {
   }, []);
   const merged = useMemo<SheetPayload | null>(() => {
     const old = props.data?.rows || [];
-    if (!old.length && !liveRows.length) return props.data ?? { headers: [], rows: [] } as SheetPayload;
+    if (!old.length && !liveRows.length) return props.data ?? { sheetTitle: "Fuel History", tabTitle: "Fuel History", totalRows: 0, fetchedAt: new Date().toISOString(), headers: [], rows: [] } as SheetPayload;
     // Match by the actual event content; avoid double-counting when the
     // offline October archive eventually includes November records.
     const key = (r: Record<string, any>) => [r["Site ID Name"] ?? r["Site ID"], r["Grid"], r["Refueling Time"], r["Fuel Quantity Filled"], r["Before Filling Fuel Quantity"]].map(x => String(x ?? "").trim()).join("|");
