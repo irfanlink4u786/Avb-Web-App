@@ -1,3 +1,4 @@
+import {fuelAuthenticatedFetch} from "./fuelAuth";
 import React, { useState, useMemo, useEffect, Fragment } from "react";
 import GridFuelMonthly from "./components/GridFuelMonthly";
 import { AlertTriangle, CalendarDays, ChevronDown, ChevronUp, Fuel, LayoutDashboard, Search, TrendingDown, RefreshCw, FileSpreadsheet } from "lucide-react";
@@ -2170,11 +2171,9 @@ export default function FuelDashboard(props: BackendFuelProps) {
         const env = (import.meta as any).env || {};
         const base = String(env.VITE_SUPABASE_URL || "").replace(/\/$/, "");
         const key = String(env.VITE_SUPABASE_PUBLISHABLE_KEY || env.VITE_SUPABASE_ANON_KEY || "");
-        const raw = sessionStorage.getItem("cell_avb_supabase_session");
-        const session = raw ? JSON.parse(raw) : null;
-        if (!base || !key || !session?.access_token) throw new Error("Supabase session unavailable");
+        if (!base || !key) throw new Error("Supabase configuration unavailable");
         const params = new URLSearchParams({ select: "site_id,grid,month_label,refueling_time,before_qty,filled_qty,fuel_year,fuel_month,source_row", fuel_year: "eq.2026", fuel_month: "eq.11", limit: "1000" });
-        const response = await fetch(`${base}/rest/v1/v_fuel_events?${params}`, { headers: { apikey: key, Authorization: `Bearer ${session.access_token}` } });
+        const response = await fuelAuthenticatedFetch(base,key,`${base}/rest/v1/v_fuel_events?${params}`);
         if (!response.ok) throw new Error(`Supabase fuel events: HTTP ${response.status}`);
         const events = await response.json();
         if (active) {
