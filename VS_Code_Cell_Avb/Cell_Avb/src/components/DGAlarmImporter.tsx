@@ -28,6 +28,54 @@ function kind(title:string):"DG"|"CPF"|"RIF"|null {
   return null;
 }
 export default function DGAlarmImporter(){
+ const [eassBusy,setEassBusy]=useState(false),[eassStatus,setEassStatus]=useState("Select a Final Power Duration Report (.xlsx or .csv).");
+ async function uploadEass(file:File){
+  setEassBusy(true);setEassStatus("Reading daily EASS report...");
+  try{
+   const env=(import.meta as any).env||{};
+   const base=String(env.VITE_SUPABASE_URL||"").replace(/\\/$/,"");
+   const key=String(env.VITE_SUPABASE_PUBLISHABLE_KEY||env.VITE_SUPABASE_ANON_KEY||"");
+   const raw=sessionStorage.getItem("cell_avb_supabase_session");
+   const session=raw?JSON.parse(raw):null;
+   if(!base||!key||!session?.access_token)throw Error("Sign in to Supabase before uploading.");
+   const headers={apikey:key,Authorization:"Bearer "+session.access_token};
+   const wb=XLSX.read(await file.arrayBuffer(),{type:"array",cellDates:true});
+   const rows=XLSX.utils.sheet_to_json<(string|number|Date|null)[]>(wb.Sheets[wb.SheetNames[0]],{header:1,defval:null,raw:true});
+   if(rows.length<2)throw Error("Empty report.");
+   const normalize=(v:unknown)=>String(v??"").toLowerCase().replace(/[^a-z0-9]/g,"");
+   const cols=(rows[0]||[]).map(normalize);
+   const pos=(...names:string[])=>cols.findIndex(x=>names.map(normalize).includes(x));
+   const idx={date:pos("Statistics date"),site:pos("Site name","Site ID"),region:pos("Region"),sub:pos("SubRegion"),grid:pos("Grid"),cp:pos("CP"),dg:pos("DG"),battery:pos("Battery"),noPower:pos("No_Power(2G)"),down3:pos("3g site down"),down4:pos("4g site down"),complete:pos("Complete site down"),ls:pos("Load Shedding"),total:pos("Total"),installed:pos("Generator Installed")};
+   if([idx.date,idx.site,idx.grid,idx.dg,idx.ls,idx.total].some(x=>x<0))throw Error("Required columns: Statistics date, Site name, Grid, DG, Load Shedding, Total.");
+   const date=(v:unknown):string|null=>{
+    if(v instanceof Date&&!isNaN(v.getTime()))return [v.getFullYear(),String(v.getMonth()+1).padStart(2,"0"),String(v.getDate()).padStart(2,"0")].join("-");
+    if(typeof v==="number"){const d=XLSX.SSF.parse_date_code(v);return d?[d.y,String(d.m).padStart(2,"0"),String(d.d).padStart(2,"0")].join("-"):null;}
+    const m=String(v??"").match(/^(\\d{4})-(\\d{2})-(\\d{2})/);return m?m[0]:null;
+   };
+   const num=(v:unknown)=>{if(v===null||v===undefined||String(v).trim()==="")return null;const n=Number(v);return Number.isFinite(n)?n:null;};
+   const values=new Map<string,Record<string,unknown>>();let excluded=0,invalid=0;
+   for(const row of rows.slice(1)){
+    const site=String(row[idx.site]??"").trim().replace(/\\.0$/,"");
+    const grid=String(row[idx.grid]??"").trim().toUpperCase().replace(/[\\s_-]/g,"");
+    const day=date(row[idx.date]);
+    if(!site)continue;
+    if(!/^C(1|6)\\d{3}$/.test(grid)){excluded++;continue;}
+    if(!day||num(row[idx.total])===null||num(row[idx.dg])===null||num(row[idx.ls])===null){invalid++;continue;}
+    values.set(site+"|"+day,{site_id:site,statistics_date:day,region:String(row[idx.region]??""),sub_region:String(row[idx.sub]??""),grid,
+      cp_hours:num(row[idx.cp]),dg_hours:num(row[idx.dg]),battery_hours:num(row[idx.battery]),no_power_2g:num(row[idx.noPower]),
+      site_down_3g:num(row[idx.down3]),site_down_4g:num(row[idx.down4]),complete_site_down:num(row[idx.complete]),
+      load_shedding_hours:num(row[idx.ls]),total_hours:num(row[idx.total]),generator_installed:String(row[idx.installed]??"")});
+   }
+   const data=[...values.values()];if(!data.length)throw Error("No valid C1/C6 records. Check date, grid and required hour columns.");
+   for(let i=0;i<data.length;i+=250){
+    const response=await fetch(base+"/rest/v1/cell_avb_dg_eass_daily?on_conflict=site_id,statistics_date",{
+      method:"POST",headers:{...headers,"Content-Type":"application/json",Prefer:"resolution=merge-duplicates,return=minimal"},body:JSON.stringify(data.slice(i,i+250))});
+    if(!response.ok)throw Error("EASS upload HTTP "+response.status+": "+(await response.text()).slice(0,250));
+    setEassStatus("Uploaded "+Math.min(i+250,data.length).toLocaleString()+" / "+data.length.toLocaleString()+" daily records...");
+   }
+   setEassStatus("Upload complete: "+data.length.toLocaleString()+" C1/C6 daily site records; "+excluded+" other-region rows excluded; "+invalid+" invalid rows. EASS OK: Total 22–26h. DG > Load Shedding: NOK.");
+  }catch(e){setEassStatus("Upload stopped: "+String(e));}finally{setEassBusy(false);}
+ }
  const [bmBusy,setBmBusy]=useState(false);const [bmStatus,setBmStatus]=useState("Upload site-wise DG fuel consumption benchmarks (.xlsx or .csv).");
  const [busy,setBusy]=useState(false);const [status,setStatus]=useState("Select the original FM system alarm CSV export.");const [progress,setProgress]=useState(0);
  async function uploadBM(file:File){
@@ -138,5 +186,5 @@ export default function DGAlarmImporter(){
   <input className="mt-4 block w-full text-sm" type="file" accept=".csv,text/csv" disabled={busy} onChange={e=>{const f=e.target.files?.[0];if(f)void upload(f);e.target.value="";}}/>
   {busy&&<div className="mt-3 h-2 rounded bg-slate-200"><div className="h-2 rounded bg-blue-600" style={{width:progress+"%"}}/></div>}
   <p className="mt-3 text-sm text-slate-700" role="status">{status}</p>
- </section><section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><h3 className="text-lg font-semibold text-slate-900">DG Benchmark (BM) Upload</h3><p className="mt-1 text-sm text-slate-600">Upload the site-wise fuel consumption benchmark in litres/hour. Supports Excel or CSV with NAME and FUEL CONSUMPTION columns. Only C1/C6 DG master sites are accepted. Conflicting duplicate site rates are excluded.</p><input className="mt-4 block w-full text-sm" type="file" accept=".xlsx,.xls,.csv" disabled={bmBusy} onChange={e=>{const f=e.target.files?.[0];if(f)void uploadBM(f);e.target.value="";}}/><p className="mt-3 text-sm text-slate-700" role="status">{bmStatus}</p></section></div>;
+ </section><section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><h3 className="text-lg font-semibold text-slate-900">DG EASS Daily Report Upload</h3><p className="mt-1 text-sm text-slate-600">Upload Final Power Duration Report (.xlsx/.xls/.csv). C1/C6 only. EASS Status: Total 22–26 hours = OK, otherwise NOK. DG &gt; Load Shedding = NOK. Re-uploading the same site/date updates its record.</p><input className="mt-4 block w-full text-sm" type="file" accept=".xlsx,.xls,.csv" disabled={eassBusy} onChange={e=>{const f=e.target.files?.[0];if(f)void uploadEass(f);e.target.value="";}}/><p className="mt-3 text-sm text-slate-700" role="status">{eassStatus}</p></section><section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><h3 className="text-lg font-semibold text-slate-900">DG Benchmark (BM) Upload</h3><p className="mt-1 text-sm text-slate-600">Upload the site-wise fuel consumption benchmark in litres/hour. Supports Excel or CSV with NAME and FUEL CONSUMPTION columns. Only C1/C6 DG master sites are accepted. Conflicting duplicate site rates are excluded.</p><input className="mt-4 block w-full text-sm" type="file" accept=".xlsx,.xls,.csv" disabled={bmBusy} onChange={e=>{const f=e.target.files?.[0];if(f)void uploadBM(f);e.target.value="";}}/><p className="mt-3 text-sm text-slate-700" role="status">{bmStatus}</p></section></div>;
 }
