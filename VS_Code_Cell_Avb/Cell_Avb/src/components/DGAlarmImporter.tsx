@@ -85,6 +85,14 @@ export default function DGAlarmImporter(){
    setEassStatus("Upload complete: "+data.length.toLocaleString()+" C1/C6 daily site records; "+excluded+" other-region rows excluded; "+nonDg+" non-DG sites excluded; "+invalid+" invalid rows. EASS OK: Total 22–26h. DG > Load Shedding: NOK.");
   }catch(e){setEassStatus("Upload stopped: "+String(e));}finally{setEassBusy(false);}
  }
+ const [uploadUnlocked,setUploadUnlocked]=useState(false);
+ const [uploadPin,setUploadPin]=useState("");
+ const [uploadPinError,setUploadPinError]=useState("");
+ const unlockUploads=(e:React.FormEvent<HTMLFormElement>)=>{
+  e.preventDefault();
+  if(uploadPin==="!@%^ifi"){setUploadUnlocked(true);setUploadPin("");setUploadPinError("");}
+  else{setUploadPinError("Incorrect upload password.");setUploadPin("");}
+ };
  const [bmBusy,setBmBusy]=useState(false);const [bmStatus,setBmStatus]=useState("Upload site-wise DG fuel consumption benchmarks (.xlsx or .csv).");
  const [busy,setBusy]=useState(false);const [status,setStatus]=useState("Select the original FM system alarm Excel or CSV export.");const [progress,setProgress]=useState(0);
  async function uploadBM(file:File){
@@ -189,11 +197,26 @@ export default function DGAlarmImporter(){
   }catch(e){setStatus("Upload stopped: "+(e instanceof Error?e.message:String(e)));}
   finally{setBusy(false);}
  }
- return <div className="space-y-4"><section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+ return <div className="space-y-4">
+ {!uploadUnlocked ? <section className="rounded-2xl border border-emerald-200 bg-white p-6 shadow-sm">
+  <h3 className="text-lg font-bold text-emerald-950">Upload Authorization</h3>
+  <p className="mt-1 text-sm text-slate-600">Enter the upload password to unlock DG Alarm, Power Duration and DG Benchmark Excel/CSV imports.</p>
+  <form onSubmit={unlockUploads} className="mt-4 flex flex-wrap items-center gap-3">
+   <input type="password" autoComplete="off" aria-label="Upload password" placeholder="Upload password" value={uploadPin} onChange={e=>{setUploadPin(e.target.value);setUploadPinError("");}} className="w-64 rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+   <button type="submit" className="rounded-lg bg-emerald-700 px-5 py-2 text-sm font-bold text-white hover:bg-emerald-800">Unlock Uploads</button>
+  </form>
+  {uploadPinError&&<p className="mt-2 text-sm font-semibold text-red-700" role="alert">{uploadPinError}</p>}
+  <p className="mt-3 text-xs text-amber-700">Frontend-only password gate; existing Supabase permissions still apply.</p>
+ </section> : <>
+ <div className="flex items-center justify-between rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3">
+  <span className="text-sm font-semibold text-emerald-900">Uploads unlocked · Excel and CSV accepted</span>
+  <button type="button" onClick={()=>setUploadUnlocked(false)} className="rounded-lg border border-emerald-700 px-3 py-1.5 text-sm font-semibold text-emerald-900">Lock Uploads</button>
+ </div>
+<section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
   <h3 className="text-lg font-semibold text-slate-900">DG Running & Power Alarm Upload</h3>
   <p className="mt-1 text-sm text-slate-600">Upload the original FM system Excel or CSV directly. Only Site, Alarm title, Occur Time and Clear Time are retained for C1/C6 DG master sites; unrelated alarms and columns are excluded.</p>
   <input className="mt-4 block w-full text-sm" type="file" accept=".xlsx,.xls,.csv,text/csv" disabled={busy} onChange={e=>{const f=e.target.files?.[0];if(f)void upload(f);e.target.value="";}}/>
   {busy&&<div className="mt-3 h-2 rounded bg-slate-200"><div className="h-2 rounded bg-blue-600" style={{width:progress+"%"}}/></div>}
   <p className="mt-3 text-sm text-slate-700" role="status">{status}</p>
- </section><section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><h3 className="text-lg font-semibold text-slate-900">Power Duration Report Upload</h3><p className="mt-1 text-sm text-slate-600">Upload Final Power Duration Report (.xlsx/.xls/.csv). Only operational DG sites in the C1/C6 DG master are accepted; non-DG sites are excluded. EASS Status: Total 22–26 hours = OK, otherwise NOK. DG &gt; Load Shedding = NOK. Re-uploading the same site/date updates its record.</p><input className="mt-4 block w-full text-sm" type="file" accept=".xlsx,.xls,.csv" disabled={eassBusy} onChange={e=>{const f=e.target.files?.[0];if(f)void uploadEass(f);e.target.value="";}}/><p className="mt-3 text-sm text-slate-700" role="status">{eassStatus}</p></section><section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><h3 className="text-lg font-semibold text-slate-900">DG Benchmark (BM) Upload</h3><p className="mt-1 text-sm text-slate-600">Upload the site-wise fuel consumption benchmark in litres/hour. Supports Excel or CSV with NAME and FUEL CONSUMPTION columns. Only C1/C6 DG master sites are accepted. Conflicting duplicate site rates are excluded.</p><input className="mt-4 block w-full text-sm" type="file" accept=".xlsx,.xls,.csv" disabled={bmBusy} onChange={e=>{const f=e.target.files?.[0];if(f)void uploadBM(f);e.target.value="";}}/><p className="mt-3 text-sm text-slate-700" role="status">{bmStatus}</p></section></div>;
+ </section><section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><h3 className="text-lg font-semibold text-slate-900">Power Duration Report Upload</h3><p className="mt-1 text-sm text-slate-600">Upload Final Power Duration Report (.xlsx/.xls/.csv). Only operational DG sites in the C1/C6 DG master are accepted; non-DG sites are excluded. EASS Status: Total 22–26 hours = OK, otherwise NOK. DG &gt; Load Shedding = NOK. Re-uploading the same site/date updates its record.</p><input className="mt-4 block w-full text-sm" type="file" accept=".xlsx,.xls,.csv" disabled={eassBusy} onChange={e=>{const f=e.target.files?.[0];if(f)void uploadEass(f);e.target.value="";}}/><p className="mt-3 text-sm text-slate-700" role="status">{eassStatus}</p></section><section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><h3 className="text-lg font-semibold text-slate-900">DG Benchmark (BM) Upload</h3><p className="mt-1 text-sm text-slate-600">Upload the site-wise fuel consumption benchmark in litres/hour. Supports Excel or CSV with NAME and FUEL CONSUMPTION columns. Only C1/C6 DG master sites are accepted. Conflicting duplicate site rates are excluded.</p><input className="mt-4 block w-full text-sm" type="file" accept=".xlsx,.xls,.csv" disabled={bmBusy} onChange={e=>{const f=e.target.files?.[0];if(f)void uploadBM(f);e.target.value="";}}/><p className="mt-3 text-sm text-slate-700" role="status">{bmStatus}</p></section></>}</div>;
 }
