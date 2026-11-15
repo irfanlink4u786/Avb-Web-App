@@ -246,11 +246,13 @@ function KpiCard({
 function CategoryKpiCard({ kpi }: { kpi: CategoryKPI }) {
 
   const isHealthy = kpi.avgCa >= kpi.threshold;
+  const priority = kpi.label === "Platinum+" ? "platinum" : kpi.label === "DG Sites" ? "dg" : null;
 
   return (
 
-    <div className="bg-white border border-slate-200 rounded-lg p-4 hover:border-slate-600 transition-colors">
+    <div className={`relative rounded-xl border p-4 transition-all hover:-translate-y-0.5 hover:shadow-lg ${priority === "platinum" ? "border-amber-400 bg-gradient-to-br from-amber-50 via-yellow-50 to-white shadow-md shadow-amber-200/70 ring-1 ring-amber-200" : priority === "dg" ? "border-orange-400 bg-gradient-to-br from-orange-50 via-amber-50 to-white shadow-md shadow-orange-200/70 ring-1 ring-orange-200" : "border-slate-200 bg-white hover:border-slate-400"}`}>
 
+      {priority && <div className={`mb-2 text-[10px] font-black uppercase tracking-wider ${priority === "platinum" ? "text-amber-800" : "text-orange-800"}`}>★ Priority KPI</div>}
       <div className="flex items-center gap-2 mb-2">
 
         <div className={`w-8 h-8 rounded-lg ${kpi.iconBg} flex items-center justify-center`}>
@@ -261,15 +263,15 @@ function CategoryKpiCard({ kpi }: { kpi: CategoryKPI }) {
 
         <div className="flex-1">
 
-          <div className="text-xs font-medium text-slate-600">{kpi.label}</div>
+          <div className={`text-xs font-extrabold ${priority === "platinum" ? "text-amber-900" : priority === "dg" ? "text-orange-900" : "text-slate-600"}`}>{kpi.label}</div>
 
-          <div className="text-lg font-bold text-slate-950">{kpi.avgCa.toFixed(2)}%</div>
+          <div className={`font-black text-slate-950 ${priority ? "text-2xl" : "text-lg"}`}>{kpi.avgCa.toFixed(2)}%</div>
 
         </div>
 
         <div className="text-right">
 
-          <div className="text-sm font-semibold text-slate-700">{kpi.count}</div>
+          <div className={`font-extrabold text-slate-800 ${priority ? "text-lg" : "text-sm"}`}>{kpi.count</div>
 
           <div className="text-[10px] text-slate-600">sites</div>
 
@@ -289,7 +291,7 @@ function CategoryKpiCard({ kpi }: { kpi: CategoryKPI }) {
 
       </div>
 
-      <div className="mt-2 h-1.5 w-full bg-slate-700 rounded-full overflow-hidden">
+      <div className={`mt-3 w-full rounded-full overflow-hidden ${priority ? "h-2.5 bg-slate-200" : "h-1.5 bg-slate-200"}`}>
 
         <div 
 
