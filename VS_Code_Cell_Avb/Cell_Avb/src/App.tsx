@@ -6326,6 +6326,49 @@ function DailyRegionalCaLsChart({ rawData, sites, selectedMonth }: { rawData?: S
   </section>;
 }
 
+function formatCellAvbBannerDate(value?: string | null): string {
+  if (!value) return "Awaiting update";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return value.replace("T", " ").replace(/\\.\\d+Z?$/, "").slice(0, 16);
+  return d.toLocaleString("en-GB", { timeZone: "Asia/Karachi", day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: true });
+}
+
+function CellAvbBanner({ lastUpdatedDate }: { lastUpdatedDate?: string | null }) {
+  return (
+      <section className="relative isolate min-h-[205px] overflow-hidden rounded-2xl border border-cyan-400/40 bg-gradient-to-r from-[#052d40] via-[#075b70] to-[#1688a2] p-6 shadow-lg sm:p-8" aria-label="Network Cell Availability banner">
+        <div className="pointer-events-none absolute inset-0" style={{background:"radial-gradient(ellipse at 83% 15%,rgba(185,241,255,.36),transparent 44%),linear-gradient(145deg,transparent 55%,rgba(0,18,44,.35))"}}/>
+        <div className="pointer-events-none absolute bottom-0 right-0 h-full w-[44%] opacity-70" aria-hidden="true">
+          <svg viewBox="0 0 500 240" preserveAspectRatio="xMidYMax meet" className="h-full w-full">
+            <defs><linearGradient id="cellAvbTower" x1="0" y1="0" x2="1" y2="1"><stop stopColor="#d5f5ff"/><stop offset="1" stopColor="#477e96"/></linearGradient></defs>
+            <path d="M0 240L85 194L155 214L250 172L340 215L500 160V240Z" fill="#02364d" opacity=".55"/>
+            <g stroke="url(#cellAvbTower)" strokeWidth="6" fill="none" strokeLinejoin="round"><path d="M275 235L324 20L374 235M294 154H355M306 103H344M317 53H331M289 184L355 103M361 184L306 103M301 140L342 53M348 140L317 53"/><path d="M324 20V0M313 7H335"/></g>
+            <g fill="#d8f7ff"><rect x="296" y="3" width="10" height="48" rx="3"/><rect x="343" y="3" width="10" height="48" rx="3"/><rect x="319" y="-2" width="10" height="42" rx="3"/></g>
+            <g stroke="#a7f3d0" strokeWidth="3" fill="none" opacity=".8"><path d="M275 42Q235 72 275 102M257 22Q200 72 257 122M375 42Q415 72 375 102M393 22Q450 72 393 122"/></g>
+            <g fill="#052d40"><rect x="92" y="175" width="100" height="65" rx="5"/><rect x="115" y="189" width="18" height="24" fill="#55d6ef"/><rect x="147" y="189" width="18" height="24" fill="#55d6ef"/></g>
+          </svg>
+        </div>
+        <div className="relative z-10 flex flex-wrap items-start justify-between gap-5">
+          <div className="max-w-[74%]">
+            <div className="flex items-center gap-3">
+              <div className="rounded-xl border border-cyan-200/60 bg-cyan-400/15 p-3 text-cyan-100"><Radio className="h-7 w-7"/></div>
+              <div><h2 className="text-2xl font-black uppercase leading-tight tracking-tight text-white sm:text-4xl">NETWORK <span className="text-[#faff00]">CELL AVB</span></h2><div className="mt-1 inline-block rounded-md bg-emerald-700/90 px-3 py-1 text-sm font-extrabold tracking-wide text-white sm:text-base">CENTRAL C-1 &amp; C-6</div></div>
+            </div>
+            <div className="mt-6 flex flex-wrap gap-x-6 gap-y-2 text-xs font-semibold text-cyan-50 sm:text-sm">
+              <span className="flex items-center gap-2"><Activity className="h-4 w-4"/> Cell Availability</span>
+              <span className="flex items-center gap-2"><Zap className="h-4 w-4"/> Network Continuity</span>
+              <span className="flex items-center gap-2"><Battery className="h-4 w-4"/> Power Resilience</span>
+              <span className="flex items-center gap-2"><TrendingUp className="h-4 w-4"/> Performance Analytics</span>
+            </div>
+          </div>
+          <div className="rounded-xl border border-cyan-200/40 bg-[#04354b]/90 px-4 py-3 text-right shadow-lg">
+            <div className="flex items-center justify-end gap-2 text-[10px] font-extrabold uppercase tracking-wide text-cyan-100"><CalendarDays className="h-4 w-4"/> Last AVB Update</div>
+            <div className="mt-1 text-sm font-black text-[#fff200] sm:text-lg">{formatCellAvbBannerDate(lastUpdatedDate)}</div>
+          </div>
+        </div>
+      </section>
+  );
+}
+
 function OverallSummaryWithExport({ sites, rawData, lastUpdatedDate, selectedMonth }: { sites: SiteData[]; rawData?: SheetPayload | null; lastUpdatedDate?: string; selectedMonth: string }) {
   const [expandedOmo, setExpandedOmo] = useState<string | null>(null);
   const TARGET_CA = 99;
@@ -6568,37 +6611,6 @@ function OverallSummaryWithExport({ sites, rawData, lastUpdatedDate, selectedMon
 
   return (
     <div className="space-y-6">
-      <section className="relative isolate min-h-[205px] overflow-hidden rounded-2xl border border-cyan-400/40 bg-gradient-to-r from-[#052d40] via-[#075b70] to-[#1688a2] p-6 shadow-lg sm:p-8" aria-label="Network Cell Availability banner">
-        <div className="pointer-events-none absolute inset-0" style={{background:"radial-gradient(ellipse at 83% 15%,rgba(185,241,255,.36),transparent 44%),linear-gradient(145deg,transparent 55%,rgba(0,18,44,.35))"}}/>
-        <div className="pointer-events-none absolute bottom-0 right-0 h-full w-[44%] opacity-70" aria-hidden="true">
-          <svg viewBox="0 0 500 240" preserveAspectRatio="xMidYMax meet" className="h-full w-full">
-            <defs><linearGradient id="cellAvbTower" x1="0" y1="0" x2="1" y2="1"><stop stopColor="#d5f5ff"/><stop offset="1" stopColor="#477e96"/></linearGradient></defs>
-            <path d="M0 240L85 194L155 214L250 172L340 215L500 160V240Z" fill="#02364d" opacity=".55"/>
-            <g stroke="url(#cellAvbTower)" strokeWidth="6" fill="none" strokeLinejoin="round"><path d="M275 235L324 20L374 235M294 154H355M306 103H344M317 53H331M289 184L355 103M361 184L306 103M301 140L342 53M348 140L317 53"/><path d="M324 20V0M313 7H335"/></g>
-            <g fill="#d8f7ff"><rect x="296" y="3" width="10" height="48" rx="3"/><rect x="343" y="3" width="10" height="48" rx="3"/><rect x="319" y="-2" width="10" height="42" rx="3"/></g>
-            <g stroke="#a7f3d0" strokeWidth="3" fill="none" opacity=".8"><path d="M275 42Q235 72 275 102M257 22Q200 72 257 122M375 42Q415 72 375 102M393 22Q450 72 393 122"/></g>
-            <g fill="#052d40"><rect x="92" y="175" width="100" height="65" rx="5"/><rect x="115" y="189" width="18" height="24" fill="#55d6ef"/><rect x="147" y="189" width="18" height="24" fill="#55d6ef"/></g>
-          </svg>
-        </div>
-        <div className="relative z-10 flex flex-wrap items-start justify-between gap-5">
-          <div className="max-w-[74%]">
-            <div className="flex items-center gap-3">
-              <div className="rounded-xl border border-cyan-200/60 bg-cyan-400/15 p-3 text-cyan-100"><Radio className="h-7 w-7"/></div>
-              <div><h2 className="text-2xl font-black uppercase leading-tight tracking-tight text-white sm:text-4xl">NETWORK <span className="text-[#8df1ff]">CELL AVB</span></h2><div className="mt-1 inline-block rounded-md bg-cyan-500/60 px-3 py-1 text-sm font-extrabold tracking-wide text-white sm:text-base">CENTRAL C-1 &amp; C-6</div></div>
-            </div>
-            <div className="mt-6 flex flex-wrap gap-x-6 gap-y-2 text-xs font-semibold text-cyan-50 sm:text-sm">
-              <span className="flex items-center gap-2"><Activity className="h-4 w-4"/> Cell Availability</span>
-              <span className="flex items-center gap-2"><Zap className="h-4 w-4"/> Network Continuity</span>
-              <span className="flex items-center gap-2"><Battery className="h-4 w-4"/> Power Resilience</span>
-              <span className="flex items-center gap-2"><TrendingUp className="h-4 w-4"/> Performance Analytics</span>
-            </div>
-          </div>
-          <div className="rounded-xl border border-cyan-200/40 bg-[#04354b]/90 px-4 py-3 text-right shadow-lg">
-            <div className="flex items-center justify-end gap-2 text-[10px] font-extrabold uppercase tracking-wide text-cyan-100"><CalendarDays className="h-4 w-4"/> Last AVB Update</div>
-            <div className="mt-1 text-sm font-black text-[#9af5ff] sm:text-lg">{lastUpdatedDate || "Awaiting update"}</div>
-          </div>
-        </div>
-      </section>
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div className="flex items-center gap-3">
           <FileSpreadsheet className="w-5 h-5 text-cyan-400" />
@@ -8411,6 +8423,7 @@ export default function App() {
         </header>
 
         <main className="flex-1 p-4 sm:p-6 space-y-6">
+          <CellAvbBanner lastUpdatedDate={monthLastUpdated} />
           <ErrorBoundary key={activeTab + selectedMonth}>
             <div key={activeTab + selectedMonth} className="space-y-6">
                 {activeTab === "overall" && (overallReady
