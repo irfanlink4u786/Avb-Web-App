@@ -5690,9 +5690,11 @@ function GridPerformanceScorecard({
             </thead>
             <tbody>
               {subRegionSummaries.flatMap((region) =>
-                region.rows.map((row, rowIndex) => (
-                  <tr key={row.grid} className={`${rowIndex % 2 === 0 ? "bg-white" : "bg-slate-50"} border-b border-slate-200 hover:bg-cyan-50/60`}>
-                    <td className="px-4 py-4 text-left text-[16px] font-black text-blue-700">{row.grid}</td>
+                region.rows.map((row, rowIndex) => {
+                  const zeroScore = [row.platinum.score, row.pgs.score, row.sb.score].some((score) => score !== null && score !== undefined && Number(score) === 0);
+                  return (
+                  <tr key={row.grid} className={`${zeroScore ? "bg-red-50 border-l-4 border-l-red-600 hover:bg-red-100" : rowIndex % 2 === 0 ? "bg-white hover:bg-cyan-50/60" : "bg-slate-50 hover:bg-cyan-50/60"} border-b border-slate-200`}>
+                    <td className={`px-4 py-4 text-left text-[16px] font-black ${zeroScore ? "text-red-700" : "text-blue-700"}`}>{row.grid}</td>
                     <td className="px-4 py-4 text-left font-semibold text-slate-900">{row.cmpakGtl}</td>
                     {(gridDailyAverages.get(row.grid) || []).map((value, idx) => (
                       <td key={`${row.grid}-${idx}`} className={`px-4 py-4 text-center font-extrabold ${value > 0 && value < 95 ? "text-red-600" : value > 0 && value < 98 ? "text-amber-600" : value > 0 ? "text-slate-900" : "text-slate-400"}`}>
@@ -5703,16 +5705,17 @@ function GridPerformanceScorecard({
                       {row.monthlyAverage === null ? "—" : `${row.monthlyAverage.toFixed(2)}%`}
                     </td>
                     <td className="px-4 py-3 text-center">{kpiCell(row, row.platinum)}</td>
-                    <td className="px-4 py-3 text-center"><GridScoreBadge score={row.platinum.score} max={12} /></td>
+                    <td className="px-4 py-3 text-center"><span className={row.platinum.score !== null && row.platinum.score !== undefined && Number(row.platinum.score) === 0 ? "inline-flex min-w-[90px] justify-center rounded-lg bg-red-700 px-3 py-2 font-black text-white" : ""}><GridScoreBadge score={row.platinum.score} max={12} /></span></td>
                     <td className="px-4 py-3 text-center">{kpiCell(row, row.pgs)}</td>
-                    <td className="px-4 py-3 text-center"><GridScoreBadge score={row.pgs.score} max={12} /></td>
+                    <td className="px-4 py-3 text-center"><span className={row.pgs.score !== null && row.pgs.score !== undefined && Number(row.pgs.score) === 0 ? "inline-flex min-w-[90px] justify-center rounded-lg bg-red-700 px-3 py-2 font-black text-white" : ""}><GridScoreBadge score={row.pgs.score} max={12} /></span></td>
                     <td className="px-4 py-3 text-center">{kpiCell(row, row.sb)}</td>
-                    <td className="px-4 py-3 text-center"><GridScoreBadge score={row.sb.score} max={7} /></td>
+                    <td className="px-4 py-3 text-center"><span className={row.sb.score !== null && row.sb.score !== undefined && Number(row.sb.score) === 0 ? "inline-flex min-w-[90px] justify-center rounded-lg bg-red-700 px-3 py-2 font-black text-white" : ""}><GridScoreBadge score={row.sb.score} max={7} /></span></td>
                     <td className="px-4 py-3 text-center">{kpiCell(row, row.dg)}</td>
                     <td className="px-4 py-3 text-center"><GridScoreBadge score={row.dg.score} max={12} /></td>
                     <td className="px-4 py-3 text-center"><GridScoreBadge score={row.totalScore} max={43} /></td>
                   </tr>
-                ))
+                  );
+                })
               )}
             </tbody>
           </table>
