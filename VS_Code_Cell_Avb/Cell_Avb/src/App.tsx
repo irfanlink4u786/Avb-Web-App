@@ -6333,7 +6333,7 @@ function formatCellAvbBannerDate(value?: string | null): string {
   return d.toLocaleString("en-GB", { timeZone: "Asia/Karachi", day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: true });
 }
 
-function CellAvbBanner({ lastUpdatedDate }: { lastUpdatedDate?: string | null }) {
+function CellAvbBanner({ lastUpdatedDate, dataDate }: { lastUpdatedDate?: string | null; dataDate?: string | null }) {
   return (
       <section className="relative isolate min-h-[205px] overflow-hidden rounded-2xl border border-cyan-400/40 bg-gradient-to-r from-[#052d40] via-[#075b70] to-[#1688a2] p-6 shadow-lg sm:p-8" aria-label="Network Cell Availability banner">
         <div className="pointer-events-none absolute inset-0" style={{background:"radial-gradient(ellipse at 83% 15%,rgba(185,241,255,.36),transparent 44%),linear-gradient(145deg,transparent 55%,rgba(0,18,44,.35))"}}/>
@@ -6361,8 +6361,10 @@ function CellAvbBanner({ lastUpdatedDate }: { lastUpdatedDate?: string | null })
             </div>
           </div>
           <div className="rounded-xl border border-cyan-200/40 bg-[#04354b]/90 px-4 py-3 text-right shadow-lg">
-            <div className="flex items-center justify-end gap-2 text-[10px] font-extrabold uppercase tracking-wide text-cyan-100"><CalendarDays className="h-4 w-4"/> Last AVB Update</div>
-            <div className="mt-1 text-sm font-black text-[#fff200] sm:text-lg">{formatCellAvbBannerDate(lastUpdatedDate)}</div>
+            <div className="flex items-center justify-end gap-2 text-[10px] font-extrabold uppercase tracking-wide text-cyan-100"><CalendarDays className="h-4 w-4"/> Latest Cell AVB Data</div>
+            <div className="mt-1 text-lg font-black text-[#fff200]">{dataDate ? formatCellAvbBannerDate(dataDate + "T12:00:00+05:00").split(",")[0] : "Awaiting data"}</div>
+            <div className="mt-2 text-[10px] font-semibold uppercase text-cyan-100">Report refreshed</div>
+            <div className="mt-1 text-xs font-bold text-white sm:text-sm">{formatCellAvbBannerDate(lastUpdatedDate)}</div>
           </div>
         </div>
       </section>
@@ -7788,7 +7790,19 @@ export default function App() {
   const [prePostSites, setPrePostSites] = useState<SiteData[]>([]);
   const [prePostLastUpdated, setPrePostLastUpdated] = useState("");
   const [monthLastUpdated, setMonthLastUpdated] = useState("");
+  const [cellAvbLatestDataDate, setCellAvbLatestDataDate] = useState<string | null>(null);
   const [monthLastColumnIndex, setMonthLastColumnIndex] = useState(0);
+  useEffect(() => {
+    let cancelled = false;
+    const monthStart = selectedMonth === "november" ? "2026-11-01" : selectedMonth === "october" ? "2026-10-01" : null;
+    setCellAvbLatestDataDate(null);
+    if (!monthStart) return;
+    cellAvbGet("cell_avb_overall_summary_fast", "latest_date", `&month_start=eq.${monthStart}&limit=1`)
+      .then(rows => { if (!cancelled) setCellAvbLatestDataDate(rows[0]?.latest_date ? String(rows[0].latest_date) : null); })
+      .catch(() => { if (!cancelled) setCellAvbLatestDataDate(null); });
+    return () => { cancelled = true; };
+  }, [selectedMonth]);
+
   const [useMock, setUseMock] = useState(false);
 
   const [activeTab, setActiveTab] = useState<string>("ca-below-95");
@@ -8423,7 +8437,7 @@ export default function App() {
         </header>
 
         <main className="flex-1 p-4 sm:p-6 space-y-6">
-          <CellAvbBanner lastUpdatedDate={monthLastUpdated} />
+          <CellAvbBanner lastUpdatedDate={monthLastUpdated} dataDate={cellAvbLatestDataDate} />
           <ErrorBoundary key={activeTab + selectedMonth}>
             <div key={activeTab + selectedMonth} className="space-y-6">
                 {activeTab === "overall" && (overallReady
