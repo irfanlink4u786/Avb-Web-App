@@ -1754,18 +1754,18 @@ function FuelDashboardLegacy({ data, deviationData, tPrimeData, sheet1Data, mont
         </div>
         <nav className="flex-1 space-y-1 p-3">
           {([
+            ["siteQuery","Site Query · Fuel Balance",FileSpreadsheet],
             ["summary","Overall Summary",LayoutDashboard],
             ["currentMonth",`Current Month · ${currentMonthLabel}`,CalendarDays],
+            ["fuelAvailability","Current Fuel Availability",AlertTriangle],
+            ["dg","DG Auto / Manual",FileSpreadsheet],
+            ["reconciliation","Fuel Reconciliation",AlertTriangle],
             ["monthlyQuery","Monthly Fuel Query",Search],
+            ["alarmUpload","DG Alarm Upload",FileSpreadsheet],
+            ["powerDuration","Power Duration · EASS",FileSpreadsheet],
             ["tprime","T-Prime Penalty",AlertTriangle],
             ["yesterday","Yesterday Fuel & Consumption",CalendarDays],
             ["weather","Weather & Rain Alerts",CloudRain],
-            ["reconciliation","Fuel Reconciliation",AlertTriangle],
-            ["dg","DG Auto / Manual",FileSpreadsheet],
-            ["alarmUpload","DG Alarm Upload",FileSpreadsheet],
-            ["powerDuration","Power Duration · EASS",FileSpreadsheet],
-            ["siteQuery","Site Query · Fuel Balance",FileSpreadsheet],
-            ["fuelAvailability","Current Fuel Availability",AlertTriangle],
           ] as const).map(([id,label,Icon]) => <button key={id} onClick={()=>setTab(id as FuelSubTab)} className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-bold transition ${tab===id?"bg-white text-[#075E36] shadow-lg shadow-black/10":"text-emerald-50/75 hover:bg-white/10 hover:text-white"}`}><Icon className="h-4 w-4"/><span>{label}</span></button>)}
         </nav>
         <div className="border-t border-slate-800 p-4 text-[11px] text-emerald-100/60">Fuel History · Live Google Sheet</div>
