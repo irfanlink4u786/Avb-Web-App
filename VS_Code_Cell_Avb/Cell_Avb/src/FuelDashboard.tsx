@@ -1792,10 +1792,23 @@ function FuelDashboardLegacy({ data, deviationData, tPrimeData, sheet1Data, mont
         </header>
 
         <main id="fuel-active-tab-content" className="space-y-5 p-4 sm:p-6 fuel-dashboard-main">
-        <section aria-label="Fuel Management banner" className="relative isolate flex min-h-[150px] flex-wrap items-center justify-between gap-5 overflow-hidden rounded-2xl border border-emerald-700/30 bg-gradient-to-r from-[#043a32] via-[#07546b] to-[#13754a] px-5 py-5 text-white shadow-md sm:min-h-[180px] sm:px-8">
-          <div className="pointer-events-none absolute inset-0 -z-10 opacity-60" style={{background:"radial-gradient(circle at 8% 10%,rgba(111,231,167,.22),transparent 34%),radial-gradient(circle at 85% 45%,rgba(92,181,196,.28),transparent 45%)",filter:"blur(16px)"}}/>
-          <div className="relative max-w-[65%] min-w-[240px]"><p className="text-xs font-bold uppercase tracking-[.22em] !text-emerald-100">Central C-1 & C-6</p><h2 className="mt-1 text-2xl font-black tracking-tight text-white sm:text-3xl">FUEL MANAGEMENT</h2><p className="mt-2 text-xs font-medium !text-emerald-100 sm:text-sm">Fuel Availability · DG Operations · Consumption Analytics</p></div>
-          <div className="relative ml-auto rounded-xl border border-white/30 bg-[#063c37]/80 px-4 py-3 text-right shadow-lg backdrop-blur-md"><div className="flex items-center justify-end gap-2 text-xs font-bold uppercase tracking-wider text-emerald-100"><CalendarDays size={15}/> Last Fuel Update</div><div className="mt-1 text-lg font-black tabular-nums text-white sm:text-xl">{latestFuelUpdateDate ?? "Awaiting fuel records"}</div><div className="mt-1 text-[10px] text-emerald-100">Latest recorded refueling date</div></div>
+        <section aria-label="Fuel Management banner" className="relative isolate min-h-[220px] overflow-hidden rounded-2xl border border-emerald-700/30 bg-[#053f3b] text-white shadow-md sm:min-h-[240px]">
+          <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-[#043c34] via-[#064a4a] to-[#0b6b55]"/>
+          <img src="/fuel-operations-illustration.svg" alt="Telecom tower, diesel generator, fuel pump and storage tank" className="pointer-events-none absolute inset-y-0 right-0 h-full w-[70%] object-cover object-right opacity-95" />
+          <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-[#043c34] via-[#043c34]/85 via-45% to-transparent"/>
+          <div className="pointer-events-none absolute bottom-0 left-0 right-0 h-3 bg-gradient-to-r from-[#0e9d64] via-[#b8ee06] to-[#00875d]"/>
+          <div className="relative z-10 flex min-h-[220px] flex-wrap items-start justify-between gap-4 px-5 py-5 sm:min-h-[240px] sm:px-8">
+            <div className="max-w-[68%] min-w-[270px]">
+              <div className="flex items-center gap-3"><div className="rounded-xl border border-lime-400 bg-emerald-700/90 p-3 text-lime-300 shadow-lg"><Fuel size={31}/></div><div><h2 className="text-[25px] font-black leading-none tracking-tight sm:text-[38px]"><span className="text-white">FUEL </span><span className="text-[#b9ef08]">MANAGEMENT</span></h2><div className="mt-2 inline-block rounded-md bg-gradient-to-r from-green-700 to-emerald-600/50 px-3 py-1 text-base font-black tracking-wide text-white sm:text-xl">CENTRAL C-1 &amp; C-6</div></div></div>
+              <div className="mt-5 grid grid-cols-2 gap-3 text-center text-[11px] font-bold text-white sm:grid-cols-4 sm:text-xs">
+                <div className="flex flex-col items-center gap-1 border-r border-white/20"><Gauge size={23}/><span>Fuel Availability</span></div>
+                <div className="flex flex-col items-center gap-1 border-r border-white/20"><Fuel size={23}/><span>DG Operations</span></div>
+                <div className="flex flex-col items-center gap-1 border-r border-white/20"><BarChart3 size={23}/><span>Consumption Analytics</span></div>
+                <div className="flex flex-col items-center gap-1"><ShieldCheck size={23}/><span>Power Resilience</span></div>
+              </div>
+            </div>
+            <div className="ml-auto rounded-xl border border-white/30 bg-[#043c34]/90 px-4 py-3 text-right shadow-xl backdrop-blur-md"><div className="flex items-center justify-end gap-2 text-[11px] font-black uppercase tracking-wide text-white"><CalendarDays size={16}/> Last Fuel Update</div><div className="mt-2 rounded-lg bg-[#b8ed06] px-3 py-1 text-lg font-black tabular-nums text-[#053b30] sm:text-xl">{latestFuelUpdateDate ?? "Awaiting fuel records"}</div><div className="mt-1 text-[10px] text-emerald-100">Latest recorded refueling date</div></div>
+          </div>
         </section>
         {tab==="weather" && <section className="space-y-4"><div className="rounded-xl border border-emerald-200 bg-white p-5"><h2 className="text-xl font-black text-emerald-950">Weather & Rain Alerts</h2><p className="text-sm text-slate-600">Weather radar and available rain alert widgets. Site-specific Windy API forecasts require a configured API and site coordinates.</p></div><RainAlertWidget/><WeatherRadar/></section>}
         {tab==="dg" && <DGMonthlyInstanceCheck/>}
