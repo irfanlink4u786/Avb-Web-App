@@ -1132,6 +1132,14 @@ function FuelDashboardLegacy({ data, deviationData, tPrimeData, sheet1Data, mont
   const [selectedFuelDay, setSelectedFuelDay] = useState<number | null>(null);
 
   const rows = useMemo(() => parseFuelRows(data), [data]);
+  // Show the latest actual refueling record date, not today's date or the sheet fetch timestamp.
+  const latestFuelUpdateDate = useMemo(() => {
+    const valid = rows.map(row => row.date).filter((date): date is Date => !!date && Number.isFinite(date.getTime()) && date.getTime() <= Date.now() + 86400000);
+    if (!valid.length) return null;
+    const latest = valid.reduce((max,date) => date.getTime()>max.getTime()?date:max);
+    return new Intl.DateTimeFormat("en-GB",{day:"2-digit",month:"short",year:"numeric",timeZone:"Asia/Karachi"}).format(latest);
+  },[rows]);
+
   const exportActiveTab = () => {
     const container = document.getElementById("fuel-active-tab-content");
     if (!container) return;
@@ -1784,6 +1792,11 @@ function FuelDashboardLegacy({ data, deviationData, tPrimeData, sheet1Data, mont
         </header>
 
         <main id="fuel-active-tab-content" className="space-y-5 p-4 sm:p-6 fuel-dashboard-main">
+        <section aria-label="Fuel Management banner" className="relative isolate flex min-h-[150px] flex-wrap items-center justify-between gap-5 overflow-hidden rounded-2xl border border-emerald-700/30 bg-gradient-to-r from-[#043a32] via-[#07546b] to-[#13754a] px-5 py-5 text-white shadow-md sm:min-h-[180px] sm:px-8">
+          <div className="pointer-events-none absolute inset-0 -z-10 opacity-60" style={{background:"radial-gradient(circle at 8% 10%,rgba(111,231,167,.22),transparent 34%),radial-gradient(circle at 85% 45%,rgba(92,181,196,.28),transparent 45%)",filter:"blur(16px)"}}/>
+          <div className="relative max-w-[65%] min-w-[240px]"><p className="text-xs font-bold uppercase tracking-[.22em] !text-emerald-100">Central C-1 & C-6</p><h2 className="mt-1 text-2xl font-black tracking-tight text-white sm:text-3xl">FUEL MANAGEMENT</h2><p className="mt-2 text-xs font-medium !text-emerald-100 sm:text-sm">Fuel Availability · DG Operations · Consumption Analytics</p></div>
+          <div className="relative ml-auto rounded-xl border border-white/30 bg-[#063c37]/80 px-4 py-3 text-right shadow-lg backdrop-blur-md"><div className="flex items-center justify-end gap-2 text-xs font-bold uppercase tracking-wider text-emerald-100"><CalendarDays size={15}/> Last Fuel Update</div><div className="mt-1 text-lg font-black tabular-nums text-white sm:text-xl">{latestFuelUpdateDate ?? "Awaiting fuel records"}</div><div className="mt-1 text-[10px] text-emerald-100">Latest recorded refueling date</div></div>
+        </section>
         {tab==="weather" && <section className="space-y-4"><div className="rounded-xl border border-emerald-200 bg-white p-5"><h2 className="text-xl font-black text-emerald-950">Weather & Rain Alerts</h2><p className="text-sm text-slate-600">Weather radar and available rain alert widgets. Site-specific Windy API forecasts require a configured API and site coordinates.</p></div><RainAlertWidget/><WeatherRadar/></section>}
         {tab==="dg" && <DGMonthlyInstanceCheck/>}
         {tab==="alarmUpload" && <DGAlarmImporter/>}
