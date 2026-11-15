@@ -3,7 +3,7 @@ import DGMonthlyInstanceCheck from "./components/DGMonthlyInstanceCheck";
 import {fuelAuthenticatedFetch} from "./fuelAuth";
 import React, { useState, useMemo, useEffect, Fragment } from "react";
 import GridFuelMonthly from "./components/GridFuelMonthly";
-import { AlertTriangle, CalendarDays, ChevronDown, ChevronUp, Fuel, LayoutDashboard, Search, TrendingDown, RefreshCw, FileSpreadsheet } from "lucide-react";
+import { AlertTriangle, CalendarDays, ChevronDown, ChevronUp, Fuel, Gauge, BarChart3, ShieldCheck, LayoutDashboard, Search, TrendingDown, RefreshCw, FileSpreadsheet } from "lucide-react";
 import { ComposedChart, BarChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LabelList } from "recharts";
 import type { SheetPayload } from "./types";
 import DGModeMonitoring from "./components/DGModeMonitoring";
