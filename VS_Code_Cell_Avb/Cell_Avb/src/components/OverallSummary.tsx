@@ -271,7 +271,7 @@ function CategoryKpiCard({ kpi }: { kpi: CategoryKPI }) {
 
         <div className="text-right">
 
-          <div className={`font-extrabold text-slate-800 ${priority ? "text-lg" : "text-sm"}`}>{kpi.count</div>
+          <div className={`font-extrabold text-slate-800 ${priority ? "text-lg" : "text-sm"}`}>{kpi.count}</div>
 
           <div className="text-[10px] text-slate-600">sites</div>
 
