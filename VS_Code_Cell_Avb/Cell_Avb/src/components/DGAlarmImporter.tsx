@@ -163,7 +163,7 @@ export default function DGAlarmImporter(){
    const header=(rows[0]||[]).map(x=>String(x??"").replace(/^\uFEFF/,"").trim().toLowerCase().replace(/\s+/g," "));
    const positions=["site","alarm title","occur time","clear time"].map(x=>header.indexOf(x));
    if(positions.some(x=>x<0))throw new Error("Required columns: Site, Alarm title, Occur Time, Clear Time. Detected: "+header.slice(0,12).join(", "));
-   const seen=new Set<string>();const selected:AlarmRow[]=[];let excluded=0,invalid=0,duplicates=0,siteMiss=0,titleMiss=0;
+   const seen=new Map<string,number>();const selected:AlarmRow[]=[];let excluded=0,invalid=0,duplicates=0,siteMiss=0,titleMiss=0;
    const examples:string[]=[];
    for(const cells of rows.slice(1)){
     const site=String(cells[positions[0]]??"").trim().replace(/\.0$/,"");
@@ -178,7 +178,17 @@ export default function DGAlarmImporter(){
       invalid++;if(examples.length<3)examples.push(site+" "+String(cells[positions[2]]??"")+" / "+clearText);continue;
     }
     const fingerprint=[site,alarm,occurred,cleared||""].join("|");
-    if(seen.has(fingerprint)){duplicates++;continue;}seen.add(fingerprint);
+    const occurrenceKey=[site,alarm,occurred].join("|");
+    const existingIndex=seen.get(occurrenceKey);
+    if(existingIndex!==undefined){
+      duplicates++;
+      const existing=selected[existingIndex];
+      if(cleared && (!existing.cleared_at || cleared>existing.cleared_at)){
+        selected[existingIndex]={site_id:site,grid,alarm_kind:alarm,occurred_at:occurred,cleared_at:cleared,fingerprint};
+      }
+      continue;
+    }
+    seen.set(occurrenceKey,selected.length);
     selected.push({site_id:site,grid,alarm_kind:alarm,occurred_at:occurred,cleared_at:cleared,fingerprint});
    }
    if(!selected.length)throw new Error("No valid C1/C6 DG-site alarms. Total rows: "+(rows.length-1)+", unmatched sites: "+siteMiss+", unrelated alarms: "+titleMiss+", invalid timestamps: "+invalid+". Timestamp examples: "+examples.join("; ")+".");
@@ -186,14 +196,14 @@ export default function DGAlarmImporter(){
    let inserted=0;
    for(let i=0;i<selected.length;i+=300){
     const batch=selected.slice(i,i+300);
-    const res=await fetch(base+"/rest/v1/cell_avb_dg_alarm_events?on_conflict=fingerprint",{
-      method:"POST",headers:{...headers,"Content-Type":"application/json",Prefer:"resolution=ignore-duplicates,return=minimal"},body:JSON.stringify(batch)
+    const res=await fetch(base+"/rest/v1/cell_avb_dg_alarm_events?on_conflict=site_id,alarm_kind,occurred_at",{
+      method:"POST",headers:{...headers,"Content-Type":"application/json",Prefer:"resolution=merge-duplicates,return=minimal"},body:JSON.stringify(batch)
     });
     if(!res.ok)throw new Error("Upload failed at row "+i+": HTTP "+res.status+" "+(await res.text()).slice(0,250));
     inserted+=batch.length;setProgress(Math.round(inserted/selected.length*100));
     setStatus("Processed "+inserted.toLocaleString()+" / "+selected.length.toLocaleString()+" filtered alarms...");
    }
-   setStatus("Upload complete. "+selected.length.toLocaleString()+" eligible unique rows submitted; "+excluded.toLocaleString()+" irrelevant rows excluded; "+invalid+" invalid timestamps; "+duplicates+" file duplicates. Existing database duplicates skipped.");
+   setStatus("Upload complete. "+selected.length.toLocaleString()+" eligible unique rows submitted; "+excluded.toLocaleString()+" irrelevant rows excluded; "+invalid+" invalid timestamps; "+duplicates+" file duplicates. Existing occurrences updated rather than duplicated; latest available clear time retained.");
   }catch(e){setStatus("Upload stopped: "+(e instanceof Error?e.message:String(e)));}
   finally{setBusy(false);}
  }
