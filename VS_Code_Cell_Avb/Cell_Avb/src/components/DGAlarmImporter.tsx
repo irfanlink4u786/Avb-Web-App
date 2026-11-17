@@ -1,5 +1,5 @@
 import * as XLSX from "xlsx";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 
 type AlarmRow = { site_id:string; grid:string; alarm_kind:"DG"|"CPF"|"RIF"; occurred_at:string; cleared_at:string|null; fingerprint:string };
 function csvFields(line:string):string[] {
@@ -95,6 +95,30 @@ export default function DGAlarmImporter(){
  };
  const [bmBusy,setBmBusy]=useState(false);const [bmStatus,setBmStatus]=useState("Upload site-wise DG fuel consumption benchmarks (.xlsx or .csv).");
  const [busy,setBusy]=useState(false);const [status,setStatus]=useState("Select the original FM system alarm Excel or CSV export.");const [progress,setProgress]=useState(0);
+ const [latestAlarmEvent,setLatestAlarmEvent]=useState<string|null>(null);
+ const [latestAlarmLoading,setLatestAlarmLoading]=useState(true);
+ const [latestAlarmError,setLatestAlarmError]=useState(false);
+ async function refreshLatestAlarmEvent(){
+  setLatestAlarmLoading(true);
+  try{
+   const env=(import.meta as any).env||{};
+   const base=String(env.VITE_SUPABASE_URL||"").replace(/\/$/,"");
+   const key=String(env.VITE_SUPABASE_PUBLISHABLE_KEY||env.VITE_SUPABASE_ANON_KEY||"");
+   const raw=sessionStorage.getItem("cell_avb_supabase_session");
+   const session=raw?JSON.parse(raw):null;
+   if(!base||!key||!session?.access_token)throw Error("Not signed in");
+   const response=await fetch(base+"/rest/v1/cell_avb_dg_alarm_events?select=occurred_at&order=occurred_at.desc&limit=1",{headers:{apikey:key,Authorization:"Bearer "+session.access_token},cache:"no-store"});
+   if(!response.ok)throw Error("HTTP "+response.status);
+   const records=await response.json() as {occurred_at:string}[];
+   setLatestAlarmEvent(records[0]?.occurred_at??null);
+   setLatestAlarmError(false);
+  }catch{
+   setLatestAlarmError(true);
+  }finally{setLatestAlarmLoading(false);}
+ }
+ useEffect(()=>{void refreshLatestAlarmEvent();},[]);
+ const latestAlarmDisplay=latestAlarmEvent?latestAlarmEvent.replace("T"," ").replace(/(?:\.\d+)?(?:Z|[+-]\d\d:\d\d)?$/,"").slice(0,19):null;
+
  async function uploadBM(file:File){
   setBmBusy(true);setBmStatus("Reading benchmark file...");
   try{
@@ -204,6 +228,7 @@ export default function DGAlarmImporter(){
     setStatus("Processed "+inserted.toLocaleString()+" / "+selected.length.toLocaleString()+" filtered alarms...");
    }
    setStatus("Upload complete. "+selected.length.toLocaleString()+" eligible unique rows submitted; "+excluded.toLocaleString()+" irrelevant rows excluded; "+invalid+" invalid timestamps; "+duplicates+" file duplicates. Existing occurrences updated rather than duplicated; latest available clear time retained.");
+   await refreshLatestAlarmEvent();
   }catch(e){setStatus("Upload stopped: "+(e instanceof Error?e.message:String(e)));}
   finally{setBusy(false);}
  }
@@ -224,6 +249,14 @@ export default function DGAlarmImporter(){
  </div>
 <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
   <h3 className="text-lg font-bold text-emerald-950">FM Alarm Query — CP, RIF and DG Alarms History</h3>
+  <div className="mt-3 flex flex-wrap items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3">
+   <div className="flex-1">
+    <p className="text-xs font-semibold uppercase tracking-wide text-emerald-800">Last Alarm Event · Supabase</p>
+    <p className="mt-1 text-xl font-black tabular-nums text-emerald-950">{latestAlarmLoading?"Checking latest event…":latestAlarmError?"Unable to load latest event":latestAlarmDisplay?latestAlarmDisplay+" (Pakistan time)":"No alarms uploaded yet"}</p>
+    <p className="mt-1 text-xs text-emerald-800">Latest recorded occurrence time (not upload time). Upload subsequent alarms from this point; overlapping records are merged.</p>
+   </div>
+   <button type="button" onClick={()=>void refreshLatestAlarmEvent()} disabled={latestAlarmLoading} className="rounded-lg border border-emerald-600 bg-white px-3 py-2 text-xs font-bold text-emerald-800 hover:bg-emerald-100 disabled:opacity-50">Refresh Date</button>
+  </div>
   <p className="mt-1 text-sm text-slate-600">Upload the original FM system Excel or CSV directly. Only Site, Alarm title, Occur Time and Clear Time are retained for C1/C6 DG master sites; unrelated alarms and columns are excluded.</p>
   <label className={`mt-5 inline-flex cursor-pointer items-center gap-3 rounded-xl bg-gradient-to-r from-emerald-700 to-teal-600 px-6 py-3.5 text-base font-extrabold text-white shadow-lg shadow-emerald-900/20 transition hover:from-emerald-800 hover:to-teal-700 hover:shadow-xl focus-within:ring-4 focus-within:ring-emerald-200 ${busy?"pointer-events-none opacity-60":""}`}>
    <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 16V3m0 0L7 8m5-5 5 5"/><path d="M4 16v4h16v-4"/></svg>
