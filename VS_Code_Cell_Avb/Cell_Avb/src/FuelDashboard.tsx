@@ -2242,11 +2242,18 @@ export default function FuelDashboard(props: BackendFuelProps) {
   const merged = useMemo<SheetPayload | null>(() => {
     const old = props.data?.rows || [];
     if (!old.length && !liveRows.length) return props.data ?? { sheetTitle: "Fuel History", tabTitle: "Fuel History", totalRows: 0, fetchedAt: new Date().toISOString(), headers: [], rows: [] } as SheetPayload;
-    // Match by the actual event content; avoid double-counting when the
-    // offline October archive eventually includes November records.
-    const key = (r: Record<string, any>) => [r["Site ID Name"] ?? r["Site ID"], r["Grid"], r["Refueling Time"], r["Fuel Quantity Filled"], r["Before Filling Fuel Quantity"]].map(x => String(x ?? "").trim()).join("|");
-    const seen = new Set<string>();
-    const rows = [...old, ...liveRows].filter(r => { const k = key(r); if (seen.has(k)) return false; seen.add(k); return true; });
+    // Supabase is authoritative for November 2026. Preserve every source event,
+    // including legitimately repeated refuelings with identical quantities.
+    // Never deduplicate live tickets by site/date/quantity.
+    const isNovember2026 = (r: Record<string, any>) => {
+      const year = String(r["Year"] ?? r["year"] ?? "").trim();
+      const month = String(r["Month"] ?? r["Month_1"] ?? r["month"] ?? "").trim().toLowerCase();
+      const date = String(r["Refueling Time"] ?? "").trim().toLowerCase();
+      return year === "2026" && (month.includes("nov") || date.includes("-nov"));
+    };
+    const rows = liveRows.length
+      ? [...old.filter(r => !isNovember2026(r)), ...liveRows]
+      : old;
     return { headers: props.data?.headers || Object.keys(rows[0] || {}), rows } as SheetPayload;
   }, [props.data, liveRows]);
   return <>
