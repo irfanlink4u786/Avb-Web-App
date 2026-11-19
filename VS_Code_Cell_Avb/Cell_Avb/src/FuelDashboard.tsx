@@ -1514,6 +1514,33 @@ function FuelDashboardLegacy({ data, deviationData, tPrimeData, sheet1Data, mont
   // not inferred from refueling events, which omit DGs that received no fuel.
   const octoberFuelBudget = 28000;
   const perDgMonthlyTarget = 170;
+  const [currentFuelSeverity,setCurrentFuelSeverity]=useState<Map<string,string>>(new Map());
+  useEffect(()=>{
+    let active=true;
+    const load=async()=>{
+      try{
+        const env=(import.meta as any).env||{};
+        const base=String(env.VITE_SUPABASE_URL||"").replace(/\\/$/,"");
+        const key=String(env.VITE_SUPABASE_PUBLISHABLE_KEY||env.VITE_SUPABASE_ANON_KEY||"");
+        const raw=sessionStorage.getItem("cell_avb_supabase_session");
+        const session=raw?JSON.parse(raw):null;
+        if(!base||!key||!session?.access_token)return;
+        const map=new Map<string,string>();
+        for(let offset=0;offset<20000;offset+=1000){
+          const p=new URLSearchParams({select:"site_id,severity",order:"site_id.asc",limit:"1000",offset:String(offset)});
+          const response=await fetch(base+"/rest/v1/cell_avb_fuel_site_severity?"+p,{headers:{apikey:key,Authorization:"Bearer "+session.access_token}});
+          if(!response.ok)throw Error("Severity HTTP "+response.status);
+          const records=await response.json();
+          records.forEach((x:{site_id:string;severity:string})=>map.set(normalizeSiteKey(x.site_id),x.severity));
+          if(records.length<1000)break;
+        }
+        if(active)setCurrentFuelSeverity(map);
+      }catch(e){console.warn("Current fuel severity unavailable",e)}
+    };
+    void load();
+    const timer=window.setInterval(()=>{if(document.visibilityState==="visible")void load()},60000);
+    return()=>{active=false;window.clearInterval(timer)};
+  },[]);
   const dgInventory = useMemo(() => {
     const unique = new Map<string, FuelDeviationSite>();
     parseDeviationSites(deviationData).forEach(site => {
@@ -1523,10 +1550,10 @@ function FuelDashboardLegacy({ data, deviationData, tPrimeData, sheet1Data, mont
       if (monthCO!=="__all" && (ownership.get(normalizeSiteKey(site.siteId))?.co||"Unassigned")!==monthCO) return;
       if (monthGTL!=="__all" && (ownership.get(normalizeSiteKey(site.siteId))?.gtl||"Unassigned")!==monthGTL) return;
       if (monthLead!=="__all" && (ownership.get(normalizeSiteKey(site.siteId))?.lead||"Unassigned")!==monthLead) return;
-      unique.set(`${site.grid}:${site.siteId}`, site);
+      unique.set(`${site.grid}:${site.siteId}`, {...site,hubType:currentFuelSeverity.get(normalizeSiteKey(site.siteId))||site.hubType});
     });
     return Array.from(unique.values());
-  }, [deviationData, view, gridFilter, monthCO, monthGTL, monthLead, ownership]);
+  }, [deviationData, view, gridFilter, monthCO, monthGTL, monthLead, ownership, currentFuelSeverity]);
   const dgCategory = (raw: string) => {
     const v = raw.toLowerCase().replace(/\s+/g, " ").trim();
     if (v.includes("ptn")) return "PTN Node";
