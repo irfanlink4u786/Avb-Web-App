@@ -40,17 +40,21 @@ export default function DGAlarmImporter(){
    const session=raw?JSON.parse(raw):null;
    if(!base||!key||!session?.access_token)throw Error("Sign in to Supabase before uploading.");
    const wb=XLSX.read(await file.arrayBuffer(),{type:"array"});
-   const rows=XLSX.utils.sheet_to_json<Record<string,unknown>>(wb.Sheets[wb.SheetNames[0]],{defval:""});
-   const norm=(x:string)=>x.toLowerCase().replace(/[^a-z0-9]/g,"");
-   const keys=Object.keys(rows[0]||{});
-   const siteCol=keys.find(k=>["siteid","sitename","site"].includes(norm(k)));
-   const severityCol=keys.find(k=>["hubsingle","severity","siteseverity","fuelcategory","category"].includes(norm(k)));
-   if(!siteCol||!severityCol)throw Error("Required columns: Site ID and HUB/Single (or Severity).");
+   const norm=(x:unknown)=>String(x??"").toLowerCase().replace(/[^a-z0-9]/g,"");
+   const siteNames=["siteid","sitename","site","sitecode","siteidentifier","siteidname","siteidsite"];
+   const severityNames=["hubsingle","severity","siteseverity","fuelcategory","category","sitecategory","dgcategory","hubtype","siteclassification","classification","fuelseverity","fuelpriority"];
+   const matrix=XLSX.utils.sheet_to_json<unknown[]>(wb.Sheets[wb.SheetNames[0]],{header:1,defval:""});
+   const headerIndex=matrix.findIndex(row=>Array.isArray(row)&&row.some(v=>siteNames.includes(norm(v)))&&row.some(v=>severityNames.includes(norm(v))));
+   if(headerIndex<0)throw Error("Could not find Site ID and Severity/HUB-Single columns. Check column headings in the first 20 rows.");
+   const headersRow=matrix[headerIndex].map(norm);
+   const siteIdx=headersRow.findIndex(k=>siteNames.includes(k));
+   const severityIdx=headersRow.findIndex(k=>severityNames.includes(k));
    const map=new Map<string,string>();
    let invalid=0;
-   for(const row of rows){
-    const id=String(row[siteCol]??"").trim().match(/\\d{3,6}/)?.[0]||"";
-    const severity=String(row[severityCol]??"").trim().replace(/\\\\~/g,"~");
+   for(const row of matrix.slice(headerIndex+1)){
+    const rawId=String(row[siteIdx]??"").trim();
+    const id=rawId.match(/\\d{3,6}/)?.[0]||"";
+    const severity=String(row[severityIdx]??"").trim();
     if(!id||!severity||["#N/A","-","N/A"].includes(severity.toUpperCase())){invalid++;continue;}
     map.set(id,severity);
    }
