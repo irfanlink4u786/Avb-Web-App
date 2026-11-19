@@ -2237,7 +2237,10 @@ export default function FuelDashboard(props: BackendFuelProps) {
       }
     };
     fetchLive();
-    return () => { active = false; };
+    const timer = window.setInterval(() => { if (document.visibilityState === "visible") fetchLive(); }, 60000);
+    const onVisible = () => { if (document.visibilityState === "visible") fetchLive(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => { active = false; window.clearInterval(timer); document.removeEventListener("visibilitychange", onVisible); };
   }, []);
   const merged = useMemo<SheetPayload | null>(() => {
     const old = props.data?.rows || [];
