@@ -1538,8 +1538,9 @@ function FuelDashboardLegacy({ data, deviationData, tPrimeData, sheet1Data, mont
       }catch(e){console.warn("Current fuel severity unavailable",e)}
     };
     void load();
+    window.addEventListener("cell-avb-fuel-severity-updated",load);
     const timer=window.setInterval(()=>{if(document.visibilityState==="visible")void load()},60000);
-    return()=>{active=false;window.clearInterval(timer)};
+    return()=>{active=false;window.removeEventListener("cell-avb-fuel-severity-updated",load);window.clearInterval(timer)};
   },[]);
   const dgInventory = useMemo(() => {
     const unique = new Map<string, FuelDeviationSite>();
