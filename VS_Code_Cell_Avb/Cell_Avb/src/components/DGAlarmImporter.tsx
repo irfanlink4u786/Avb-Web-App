@@ -65,7 +65,8 @@ export default function DGAlarmImporter(){
     const response=await fetch(base+"/rest/v1/cell_avb_fuel_site_severity?on_conflict=site_id",{method:"POST",headers,body:JSON.stringify(entries.slice(i,i+250))});
     if(!response.ok)throw Error("Severity upload failed: "+await response.text());
    }
-   setSeverityStatus("Updated "+map.size+" sites; "+invalid+" blank/invalid rows skipped. Non-DG entries retained. Reload dashboard to apply current severity.");
+   window.dispatchEvent(new Event("cell-avb-fuel-severity-updated"));
+   setSeverityStatus("Updated "+map.size+" sites; "+invalid+" blank/invalid rows skipped. Non-DG entries retained. Fuel severity refresh requested across tabs.");
   }catch(e){setSeverityStatus(e instanceof Error?e.message:String(e));}
   finally{setSeverityBusy(false);}
  }
