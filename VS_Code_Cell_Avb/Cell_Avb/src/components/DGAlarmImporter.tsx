@@ -53,7 +53,7 @@ export default function DGAlarmImporter(){
    let invalid=0;
    for(const row of matrix.slice(headerIndex+1)){
     const rawId=String(row[siteIdx]??"").trim();
-    const id=rawId.match(/\\d{3,6}/)?.[0]||"";
+    const id=rawId.match(/[0-9]{3,6}/)?.[0]||"";
     const severity=String(row[severityIdx]??"").trim();
     if(!id||!severity||["#N/A","-","N/A"].includes(severity.toUpperCase())){invalid++;continue;}
     map.set(id,severity);
