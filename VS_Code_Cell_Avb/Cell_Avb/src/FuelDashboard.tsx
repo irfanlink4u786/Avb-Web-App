@@ -1535,7 +1535,7 @@ function FuelDashboardLegacy({ data, deviationData, tPrimeData, sheet1Data, mont
           records.forEach((x:{site_id:string;severity:string})=>map.set(normalizeSiteKey(x.site_id),x.severity));
           if(records.length<1000)break;
         }
-        if(active){setCurrentFuelSeverity(map);setFuelSeverityRevision(v=>v+1);}
+        if(active){setCurrentFuelSeverity(previous=>{const changed=previous.size!==map.size||[...map].some(([id,value])=>previous.get(id)!==value);if(changed)setFuelSeverityRevision(v=>v+1);return changed?map:previous;});}
       }catch(e){console.warn("Current fuel severity unavailable",e)}
     };
     void load();
