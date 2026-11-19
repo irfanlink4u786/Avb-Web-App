@@ -1386,7 +1386,7 @@ function FuelDashboardLegacy({ data, deviationData, tPrimeData, sheet1Data, mont
     const load=async()=>{
       try{
         const env=(import.meta as any).env||{};
-        const base=String(env.VITE_SUPABASE_URL||"").replace(/\\/$/,"");
+        const base=String(env.VITE_SUPABASE_URL||"").replace(/\/$/,"");
         const key=String(env.VITE_SUPABASE_PUBLISHABLE_KEY||env.VITE_SUPABASE_ANON_KEY||"");
         const raw=sessionStorage.getItem("cell_avb_supabase_session");
         const session=raw?JSON.parse(raw):null;
