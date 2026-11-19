@@ -1392,12 +1392,18 @@ function FuelDashboardLegacy({ data, deviationData, tPrimeData, sheet1Data, mont
         const raw=sessionStorage.getItem("cell_avb_supabase_session");
         const session=raw?JSON.parse(raw):null;
         if(!base||!key)return;
-        const params=new URLSearchParams({select:'"Site ID","Zone Lead"',limit:"10000"});
-        const response=await fetch(`${base}/rest/v1/cell_avb_c1_c6_site_master?${params}`,{headers:{apikey:key,Authorization:`Bearer ${session?.access_token||key}`}});
-        if(!response.ok)throw new Error(`Cell AVB ownership HTTP ${response.status}`);
-        const records=await response.json();
+        // PostgREST caps a single response (typically 1,000 rows), even with
+        // limit=10000. Page through the entire master or late-listed sites
+        // silently appear as "Unassigned" in the dispersion report.
         const map=new Map<string,string>();
-        for(const record of records){const id=normalizeSiteKey(record["Site ID"]);const lead=String(record["Zone Lead"]||"").trim();if(id&&lead)map.set(id,lead)}
+        for(let offset=0;offset<20000;offset+=1000){
+          const params=new URLSearchParams({select:'"Site ID","Zone Lead"',order:'"Site ID".asc',limit:"1000",offset:String(offset)});
+          const response=await fetch(`${base}/rest/v1/cell_avb_c1_c6_site_master?${params}`,{headers:{apikey:key,Authorization:`Bearer ${session?.access_token||key}`}});
+          if(!response.ok)throw new Error(`Cell AVB ownership HTTP ${response.status}`);
+          const records=await response.json();
+          for(const record of records){const id=normalizeSiteKey(record["Site ID"]);const lead=String(record["Zone Lead"]||"").trim();if(id&&lead)map.set(id,lead)}
+          if(records.length<1000)break;
+        }
         if(active)setLiveZoneLeads(map);
       }catch(e){console.warn("Zone Lead master could not load",e)}
     };
