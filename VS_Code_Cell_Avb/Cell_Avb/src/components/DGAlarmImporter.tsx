@@ -34,7 +34,7 @@ export default function DGAlarmImporter(){
   setSeverityBusy(true);setSeverityStatus("Reading severity master...");
   try{
    const env=(import.meta as any).env||{};
-   const base=String(env.VITE_SUPABASE_URL||"").replace(/\\/$/,"");
+   const base=String(env.VITE_SUPABASE_URL||"").replace(/\/$/,"");
    const key=String(env.VITE_SUPABASE_PUBLISHABLE_KEY||env.VITE_SUPABASE_ANON_KEY||"");
    const raw=sessionStorage.getItem("cell_avb_supabase_session");
    const session=raw?JSON.parse(raw):null;
