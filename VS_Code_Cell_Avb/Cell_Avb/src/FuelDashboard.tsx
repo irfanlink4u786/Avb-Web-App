@@ -1119,6 +1119,7 @@ function TPrimePenaltyPage({fuelRows,primeData,deviationData}:{fuelRows:FuelRow[
 
 function FuelDashboardLegacy({ data, deviationData, tPrimeData, sheet1Data, monthlyFuelData = null, onBack }: { data: SheetPayload | null; deviationData: SheetPayload | null; tPrimeData: SheetPayload | null; sheet1Data: SheetPayload | null; monthlyFuelData?: SheetPayload | null; onBack: () => void }) {
   const [tab, setTab] = useState<FuelSubTab>("summary");
+  const [fuelMenuOpen, setFuelMenuOpen] = useState(false);
   const [expandedZoneLead,setExpandedZoneLead]=useState<string|null>(null);
   const [view, setView] = useState<FuelView>("overall");
   const [gridFilter, setGridFilter] = useState("__all");
@@ -1761,7 +1762,7 @@ function FuelDashboardLegacy({ data, deviationData, tPrimeData, sheet1Data, mont
 
       <style>{`
         .fuel-premium .fuel-dashboard-main { position:relative; }
-        .fuel-premium .fuel-dashboard-main::before { content:""; position:fixed; pointer-events:none; z-index:0; inset:0 0 0 16rem; opacity:.28;
+        .fuel-premium .fuel-dashboard-main::before { content:""; position:fixed; pointer-events:none; z-index:0; inset:0; opacity:.28;
           background-image:radial-gradient(circle at 1px 1px,rgba(37,99,235,.16) 1px,transparent 0),linear-gradient(125deg,rgba(59,130,246,.13),rgba(14,165,233,.09) 55%,rgba(99,102,241,.065));
           background-size:19px 19px,100% 100%; }
         .fuel-premium .fuel-dashboard-main > * {position:relative;z-index:1;}
@@ -1804,10 +1805,11 @@ function FuelDashboardLegacy({ data, deviationData, tPrimeData, sheet1Data, mont
         .fuel-premium .fuel-dashboard-main input:focus-visible {outline:2px solid #06b6d4;outline-offset:2px;}
         @media(max-width:1023px){.fuel-premium .fuel-dashboard-main::before{inset:0;}}
       `}</style>
-      {/* Fuel left navigation — same interaction pattern as Sep AVB dashboard */}
-      <aside className="fixed inset-y-0 left-0 z-40 hidden w-64 flex-col border-r border-emerald-900/60 bg-gradient-to-b from-[#064E3B] via-[#075E36] to-[#043927] lg:flex">
+      {fuelMenuOpen && <button type="button" aria-label="Close navigation" onClick={()=>setFuelMenuOpen(false)} className="fixed inset-0 z-40 bg-slate-950/50" />}
+      {/* Fuel navigation is a temporary drawer; main dashboard always uses full width */}
+      <aside className={`fixed inset-y-0 left-0 z-50 flex w-72 flex-col transition-transform duration-200 ${fuelMenuOpen ? "translate-x-0" : "-translate-x-full"} border-r border-emerald-900/60 bg-gradient-to-b from-[#064E3B] via-[#075E36] to-[#043927] `}>
         <div className="border-b border-emerald-300/15 p-5">
-          <button onClick={onBack} className="mb-4 flex items-center gap-2 text-xs font-bold text-emerald-100/70 hover:text-white">← Home</button>
+          <div className="mb-4 flex items-center justify-between"><button onClick={onBack} className="text-xs font-bold text-emerald-100/70 hover:text-white">← Home</button><button type="button" onClick={()=>setFuelMenuOpen(false)} aria-label="Close menu" className="rounded-lg border border-white/30 px-3 py-1 text-lg font-bold text-white">×</button></div>
           <div className="flex items-center gap-3">
             <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/10"><Fuel className="h-6 w-6 text-emerald-400" /></div>
             <div><h1 className="font-black text-white">Fuel Management</h1><p className="text-[11px] text-slate-500">{previousYear} vs {currentYear} · Jan–{comparableMonths[comparableMonths.length-1]}</p></div>
@@ -1828,16 +1830,16 @@ function FuelDashboardLegacy({ data, deviationData, tPrimeData, sheet1Data, mont
             ["tprime","T-Prime Penalty",AlertTriangle],
             ["yesterday","Yesterday Fuel & Consumption",CalendarDays],
             ["weather","Weather & Rain Alerts",CloudRain],
-          ] as const).map(([id,label,Icon]) => <button key={id} onClick={()=>setTab(id as FuelSubTab)} className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-bold transition ${tab===id?"bg-white text-[#075E36] shadow-lg shadow-black/10":"text-emerald-50/75 hover:bg-white/10 hover:text-white"}`}><Icon className="h-4 w-4"/><span>{label}</span></button>)}
+          ] as const).map(([id,label,Icon]) => <button key={id} onClick={()=>{setTab(id as FuelSubTab);setFuelMenuOpen(false)}} className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-bold transition ${tab===id?"bg-white text-[#075E36] shadow-lg shadow-black/10":"text-emerald-50/75 hover:bg-white/10 hover:text-white"}`}><Icon className="h-4 w-4"/><span>{label}</span></button>)}
         </nav>
         <div className="border-t border-slate-800 p-4 text-[11px] text-emerald-100/60">Fuel History · Live Google Sheet</div>
       </aside>
 
-      <div className="min-w-0 flex-1 lg:ml-64 bg-gradient-to-br from-[#dbeafe] via-[#eaf4ff] to-[#bfdbfe] text-slate-900">
+      <div className="min-w-0 flex-1 bg-gradient-to-br from-[#dbeafe] via-[#eaf4ff] to-[#bfdbfe] text-slate-900">
         <header className="sticky top-0 z-30 border-b border-emerald-100 bg-white/95 shadow-sm backdrop-blur">
           <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-4 sm:px-6">
             <div>
-              <div className="flex items-center gap-2 lg:hidden"><button onClick={onBack} className="rounded-lg bg-slate-800 px-3 py-2 text-xs font-bold text-white">← Home</button><Fuel className="h-5 w-5 text-emerald-600"/></div>
+              <div className="flex items-center gap-2"><button type="button" aria-label="Open Fuel Management menu" aria-expanded={fuelMenuOpen} onClick={()=>setFuelMenuOpen(true)} className="rounded-lg bg-emerald-800 px-4 py-2 text-sm font-black text-white">☰ Menu</button><button onClick={onBack} className="rounded-lg border px-3 py-2 text-sm font-bold text-emerald-800">Home</button></div>
               <h2 className="mt-1 text-xl font-black text-slate-950">{tab==="summary"?"Overall Fuel Summary":tab==="dispersion"?"Dispersion Summary":tab==="yoy"?"YoY & Worst Sites":tab==="monthlyQuery"?"Monthly Fuel Query":tab==="deviation"?"Fuel Deviation":tab==="tprime"?"T-Prime Fuel Penalty":tab==="yesterday"?"Yesterday Fuel & Consumption":tab==="weather"?"Weather & Rain Alerts":tab==="dg"?"DG Auto / Manual":tab==="alarmUpload"?"DG Running & Power Alarm Upload":tab==="powerDuration"?"Power Duration · DG EASS Status":tab==="siteQuery"?"Site Query · DG Fuel Balance":tab==="fuelAvailability"?"Current Fuel Availability":tab==="reconciliation"?"Fuel Reconciliation & Accountability":`${currentMonthLabel} Fuel Summary`}</h2>
               <p className="text-xs text-slate-500">Fuel History · {previousYear} vs {currentYear} · comparable through {comparableMonths[comparableMonths.length-1]}</p>
             </div>
@@ -1848,9 +1850,7 @@ function FuelDashboardLegacy({ data, deviationData, tPrimeData, sheet1Data, mont
               <select value={gridFilter} onChange={e=>setGridFilter(e.target.value)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-bold"><option value="__all">All Grids</option>{grids.map(g=><option key={g}>{g}</option>)}</select>
             </div>}
           </div>
-          <div className="flex gap-2 overflow-x-auto border-t border-slate-100 px-4 py-2 lg:hidden sm:px-6">
-            {[["summary","Summary"],["yoy","YoY / Worst Sites"],["currentMonth",currentMonthLabel],["monthlyQuery","Monthly Fuel Query"],["deviation","Deviation"],["tprime","T-Prime Penalty"],["yesterday","Yesterday Fuel"],["weather","Weather & Rain Alerts"],["dg","DG Auto / Manual"]].map(([id,label])=><button key={id} onClick={()=>setTab(id as FuelSubTab)} className={`whitespace-nowrap rounded-lg px-3 py-2 text-xs font-black ${tab===id?"bg-emerald-600 text-white":"bg-slate-100 text-slate-700"}`}>{label}</button>)}
-          </div>
+
         </header>
 
         <main id="fuel-active-tab-content" className="space-y-5 p-4 sm:p-6 fuel-dashboard-main">
