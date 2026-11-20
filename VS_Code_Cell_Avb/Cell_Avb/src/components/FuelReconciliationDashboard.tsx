@@ -7,7 +7,7 @@ const verified=(s:string)=>s==="OK"||s==="POSITIVE_NOK"||s==="NEGATIVE_NOK";
 function exportCsv(rows:Record<string,unknown>[],name:string){if(!rows.length)return;const keys=Object.keys(rows[0]);const csv=[keys.join(","),...rows.map(r=>keys.map(k=>'"'+String(r[k]??"").replace(/"/g,'""')+'"').join(","))].join("\n");const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"}));a.download=name+".csv";a.click();URL.revokeObjectURL(a.href);}
 export default function FuelReconciliationDashboard(){
  useEffect(()=>{const timer=window.setInterval(()=>{if(document.visibilityState==="visible")setRefreshKey(v=>v+1)},60000);const onVisible=()=>{if(document.visibilityState==="visible")setRefreshKey(v=>v+1)};document.addEventListener("visibilitychange",onVisible);return()=>{window.clearInterval(timer);document.removeEventListener("visibilitychange",onVisible)}},[]);
- const [page,setPage]=useState<"overall"|"normal"|"positive"|"negative"|"dgcp"|"nodg">("overall");
+ const [page,setPage]=useState<"overall"|"normal"|"positive"|"negative"|"dgcp"|"nodg">("positive");
  const [owners,setOwners]=useState<Record<string,{co:string;gtl:string;zone:string}>>({});
  const [dgCpRows,setDgCpRows]=useState<ExceptionRec[]>([]),[noDgRows,setNoDgRows]=useState<ExceptionRec[]>([]),[exceptionError,setExceptionError]=useState("");
  const [records,setRecords]=useState<Rec[]>([]),[loading,setLoading]=useState(true),[error,setError]=useState(""),[refreshKey,setRefreshKey]=useState(0),[lastUpdated,setLastUpdated]=useState("");
