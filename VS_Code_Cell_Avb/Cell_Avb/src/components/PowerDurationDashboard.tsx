@@ -15,7 +15,7 @@ export default function PowerDurationDashboard(){
  const page:PowerRow[]=await api("select=*&statistics_date=gte."+month+"-01&statistics_date=lt."+nextMonth(month)+"-01&order=statistics_date.desc,site_id.asc&limit=1000&offset="+offset);
  all.push(...page);if(page.length<1000)break;
  }const contexts:ContextRow[]=[];for(let offset=0;offset<50000;offset+=1000){const page:ContextRow[]=await api("context:select=*&statistics_date=gte."+month+"-01&statistics_date=lt."+nextMonth(month)+"-01&order=statistics_date.desc,site_id.asc&limit=1000&offset="+offset);contexts.push(...page);if(page.length<1000)break}
- if(active){setContextRows(contexts);setMonthRows(all);setFromDate(previous=>previous.startsWith(month)?previous:(month+"-01"));setToDate(previous=>previous.startsWith(month)?previous:(nextMonth(month)+"-01"===month+"-01"?month+"-28":new Date(new Date(month+"-01T00:00:00").getFullYear(),new Date(month+"-01T00:00:00").getMonth()+1,0).toISOString().slice(0,10)));}}
+ if(active){setContextRows(contexts);setMonthRows(all);setFromDate(previous=>previous.startsWith(month)?previous:(month+"-01"));setToDate(previous=>previous.startsWith(month)?previous:(new Date(Number(month.slice(0,4)),Number(month.slice(5,7)),0).toISOString().slice(0,10)));}}
  catch(e){if(active)setError(String(e))}finally{if(active)setBusy(false)}})();return()=>{active=false}},[api,month,refresh]);
  useEffect(()=>{setRows(monthRows.filter(r=>(!fromDate||r.statistics_date>=fromDate)&&(!toDate||r.statistics_date<=toDate)))},[monthRows,fromDate,toDate]);
  const grids=useMemo(()=>Array.from(new Set(monthRows.filter(r=>region==="All"||r.sub_region===region).map(r=>r.grid))).sort(),[monthRows,region]);
