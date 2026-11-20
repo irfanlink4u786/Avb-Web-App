@@ -7,6 +7,7 @@ const verified=(s:string)=>s==="OK"||s==="POSITIVE_NOK"||s==="NEGATIVE_NOK";
 function exportCsv(rows:Record<string,unknown>[],name:string){if(!rows.length)return;const keys=Object.keys(rows[0]);const csv=[keys.join(","),...rows.map(r=>keys.map(k=>'"'+String(r[k]??"").replace(/"/g,'""')+'"').join(","))].join("\n");const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"}));a.download=name+".csv";a.click();URL.revokeObjectURL(a.href);}
 export default function FuelReconciliationDashboard(){
  useEffect(()=>{const timer=window.setInterval(()=>{if(document.visibilityState==="visible")setRefreshKey(v=>v+1)},60000);const onVisible=()=>{if(document.visibilityState==="visible")setRefreshKey(v=>v+1)};document.addEventListener("visibilitychange",onVisible);return()=>{window.clearInterval(timer);document.removeEventListener("visibilitychange",onVisible)}},[]);
+ const [page,setPage]=useState<"overall"|"normal"|"positive"|"negative"|"dgcp"|"nodg">("overall");
  const [owners,setOwners]=useState<Record<string,{co:string;gtl:string;zone:string}>>({});
  const [dgCpRows,setDgCpRows]=useState<ExceptionRec[]>([]),[noDgRows,setNoDgRows]=useState<ExceptionRec[]>([]),[exceptionError,setExceptionError]=useState("");
  const [records,setRecords]=useState<Rec[]>([]),[loading,setLoading]=useState(true),[error,setError]=useState(""),[refreshKey,setRefreshKey]=useState(0),[lastUpdated,setLastUpdated]=useState("");
@@ -22,7 +23,7 @@ export default function FuelReconciliationDashboard(){
  const months=useMemo(()=>[...new Set(records.map(r=>r.fuel_date.slice(0,7)))].sort().reverse(),[records]);
  const [summaryBy,setSummaryBy]=useState<"grid"|"co_name"|"month">("grid");
  const [topEvidence,setTopEvidence]=useState("");
- const [page,setPage]=useState<"overall"|"normal"|"positive"|"negative"|"dgcp"|"nodg">("overall");
+
  const exceptionRows=useMemo(()=>{const data=page==="dgcp"?dgCpRows:noDgRows;return data.filter(r=>(region==="All"||r.sub_region===region)&&(grid==="All"||r.grid===grid)&&(co==="All"||String(r.co_name||"Unmapped")===co)&&(month==="All"||r.fuel_date.slice(0,7)===month)&&(!search.trim()||r.site_id.includes(search.trim()))).sort((a,b)=>page==="dgcp"?Number(b.excess_dg_hours||0)-Number(a.excess_dg_hours||0):b.fuel_date.localeCompare(a.fuel_date))},[page,dgCpRows,noDgRows,region,grid,co,month,search]);
  const pageRows=useMemo(()=>filtered.filter(r=>page==="overall"||r.status===(page==="normal"?"OK":page==="positive"?"POSITIVE_NOK":"NEGATIVE_NOK")),[filtered,page]);
  const grouped=useMemo(()=>{const map=new Map<string,{name:string;rows:Rec[];sites:Set<string>}>();for(const r of pageRows){const name=summaryBy==="month"?r.fuel_date.slice(0,7):summaryBy==="grid"?r.grid:String(r.co_name||"Unmapped");let group=map.get(name);if(!group){group={name,rows:[],sites:new Set()};map.set(name,group)}group.rows.push(r);group.sites.add(r.site_id)}return [...map.values()].sort((a,b)=>a.name.localeCompare(b.name))},[pageRows,summaryBy]);
