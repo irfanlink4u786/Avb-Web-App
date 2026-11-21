@@ -28,6 +28,34 @@ function kind(title:string):"DG"|"CPF"|"RIF"|null {
   return null;
 }
 export default function DGAlarmImporter(){
+ const [fuelBusy,setFuelBusy]=useState(false),[fuelStatus,setFuelStatus]=useState("Upload November 2026 Fuel History to replace existing November records.");
+ async function uploadFuelHistory(file:File){
+  setFuelBusy(true);setFuelStatus("Validating November fuel data...");
+  try{
+   const env=(import.meta as any).env||{},base=String(env.VITE_SUPABASE_URL||"").replace(/\\/$/,""),key=String(env.VITE_SUPABASE_PUBLISHABLE_KEY||env.VITE_SUPABASE_ANON_KEY||"");
+   const raw=sessionStorage.getItem("cell_avb_supabase_session"),session=raw?JSON.parse(raw):null;
+   if(!base||!key||!session?.access_token)throw Error("Sign in with a Central administrator account.");
+   const wb=XLSX.read(await file.arrayBuffer(),{type:"array",cellDates:true});
+   const sheet=wb.Sheets[wb.SheetNames.find(n=>/fuel history/i.test(n))||wb.SheetNames[0]];
+   const matrix=XLSX.utils.sheet_to_json<any[]>(sheet,{header:1,defval:"",raw:true});
+   const norm=(v:any)=>String(v??"").toLowerCase().replace(/[^a-z0-9]/g,"");
+   const hidx=matrix.findIndex(row=>row.some(v=>norm(v)==="siteidname")&&row.some(v=>norm(v)==="fuelquantityfilled"));
+   if(hidx<0)throw Error("Required Fuel History headers not found.");
+   const h=matrix[hidx].map(norm),idx=["siteidname","grid","month","refuelingtime","beforefillingfuelquantity","fuelquantityfilled","year","month","subregion"].map((v,i)=>i===7?h.lastIndexOf(v):h.indexOf(v));
+   if(idx.some(i=>i<0))throw Error("Fuel History must contain all 9 standard columns.");
+   const date=(v:any):string=>{if(v instanceof Date)return [v.getFullYear(),String(v.getMonth()+1).padStart(2,"0"),String(v.getDate()).padStart(2,"0")].join("-");if(typeof v==="number"){const d=XLSX.SSF.parse_date_code(v);return d?[d.y,String(d.m).padStart(2,"0"),String(d.d).padStart(2,"0")].join("-"):"";}const d=new Date(String(v??""));return isNaN(d.getTime())?"":[d.getFullYear(),String(d.getMonth()+1).padStart(2,"0"),String(d.getDate()).padStart(2,"0")].join("-");};
+   const rows=matrix.slice(hidx+1).filter(row=>row.some(v=>String(v??"").trim()!=="")).map(row=>idx.map(i=>row[i])).map(row=>[String(row[0]??"").trim(),String(row[1]??"").trim().toUpperCase(),"Nov-26",date(row[3]),String(row[4]??"").trim(),String(row[5]??"").trim(),"2026","November",String(row[8]??"").trim()]);
+   if(!rows.length)throw Error("No fuel records found.");
+   const invalid=rows.findIndex(row=>!/^\\d{3,7}$/.test(row[0])||!/^C[16]\\d{3}$/.test(row[1])||!/^2026-11-\\d{2}$/.test(row[3])||!/^\\d+(\\.\\d+)?$/.test(row[4])||!/^\\d+(\\.\\d+)?$/.test(row[5]));
+   if(invalid>=0)throw Error("Invalid November 2026 fuel data at Excel row "+(hidx+invalid+2));
+   if(!window.confirm("Replace all old November 2026 Fuel History records with "+rows.length+" records from "+file.name+"? Other months remain unchanged.")){setFuelStatus("Cancelled. Existing data unchanged.");return;}
+   const response=await fetch(base+"/rest/v1/rpc/replace_nov_2026_fuel_history",{method:"POST",headers:{apikey:key,Authorization:"Bearer "+session.access_token,"Content-Type":"application/json"},body:JSON.stringify({p_rows:rows,p_filename:file.name})});
+   if(!response.ok)throw Error("Upload failed: "+(await response.text()).slice(0,400));
+   const result=await response.json();setFuelStatus("Uploaded "+result.inserted+" November records; replaced "+result.replaced+" old November records. Other months unchanged.");
+   window.dispatchEvent(new Event("cell-avb-fuel-history-updated"));
+  }catch(e){setFuelStatus(e instanceof Error?e.message:String(e));}finally{setFuelBusy(false);}
+ }
+
  const [severityBusy,setSeverityBusy]=useState(false);
  const [severityStatus,setSeverityStatus]=useState("Upload the current fuel-specific severity master (Excel or CSV). Non-DG sites are accepted.");
  async function uploadSeverity(file:File){
@@ -312,6 +340,7 @@ export default function DGAlarmImporter(){
   <span className="text-sm font-semibold text-emerald-900">Uploads unlocked · Excel and CSV accepted</span>
   <button type="button" onClick={()=>setUploadUnlocked(false)} className="rounded-lg border border-emerald-700 px-3 py-1.5 text-sm font-semibold text-emerald-900">Lock Uploads</button>
  </div>
+<section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><h3 className="text-lg font-bold text-emerald-950">Fuel History Upload · November 2026</h3><p className="mt-1 text-sm text-slate-600">Upload Fuel.xlsx format (Excel or CSV). Replaces November 2026 fuel tickets in Supabase after confirmation. Central administrator authorization required.</p><label className="mt-4 inline-flex cursor-pointer rounded-xl bg-emerald-700 px-6 py-3 font-bold text-white"><span>{fuelBusy?"Uploading…":"Upload November Fuel Data"}</span><input className="sr-only" type="file" accept=".xlsx,.xls,.csv" disabled={fuelBusy} onChange={e=>{const f=e.target.files?.[0];if(f)void uploadFuelHistory(f);e.target.value="";}}/></label><p className="mt-3 text-sm text-slate-700" role="status">{fuelStatus}</p></section>
 <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
   <h3 className="text-lg font-bold text-emerald-950">FM Alarm Query — CP, RIF and DG Alarms History</h3>
   <div className="mt-3 flex flex-wrap items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3">
