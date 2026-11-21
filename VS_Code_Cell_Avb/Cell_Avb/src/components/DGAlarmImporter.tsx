@@ -45,11 +45,13 @@ export default function DGAlarmImporter(){
    if(idx.some(i=>i<0))throw Error("Fuel History must contain all 9 standard columns.");
    const date=(v:any):string=>{if(v instanceof Date)return [v.getFullYear(),String(v.getMonth()+1).padStart(2,"0"),String(v.getDate()).padStart(2,"0")].join("-");if(typeof v==="number"){const d=XLSX.SSF.parse_date_code(v);return d?[d.y,String(d.m).padStart(2,"0"),String(d.d).padStart(2,"0")].join("-"):"";}const d=new Date(String(v??""));return isNaN(d.getTime())?"":[d.getFullYear(),String(d.getMonth()+1).padStart(2,"0"),String(d.getDate()).padStart(2,"0")].join("-");};
    const rows=matrix.slice(hidx+1).filter(row=>row.some(v=>String(v??"").trim()!=="")).map(row=>idx.map(i=>row[i])).map(row=>[String(row[0]??"").trim(),String(row[1]??"").trim().toUpperCase(),"Nov-26",date(row[3]),String(row[4]??"").trim(),String(row[5]??"").trim(),"2026","November",String(row[8]??"").trim()]);
-   if(!rows.length)throw Error("No fuel records found.");
-   const invalid=rows.findIndex(row=>!/^\d{3,7}$/.test(row[0])||!/^C[16]\d{3}$/.test(row[1])||!/^2026-11-\d{2}$/.test(row[3])||!/^\d+(\.\d+)?$/.test(row[4])||!/^\d+(\.\d+)?$/.test(row[5]));
-   if(invalid>=0)throw Error("Invalid November 2026 fuel data at Excel row "+(hidx+invalid+2));
-   if(!window.confirm("Replace all old November 2026 Fuel History records with "+rows.length+" records from "+file.name+"? Other months remain unchanged.")){setFuelStatus("Cancelled. Existing data unchanged.");return;}
-   const response=await fetch(base+"/rest/v1/rpc/replace_nov_2026_fuel_history",{method:"POST",headers:{apikey:key,Authorization:"Bearer "+session.access_token,"Content-Type":"application/json"},body:JSON.stringify({p_rows:rows,p_filename:file.name})});
+   const mobileExcluded=rows.filter(row=>/mobile\\s*dg\\s*van/i.test(row[0])).length;
+   const fixedRows=rows.filter(row=>!/mobile\\s*dg\\s*van/i.test(row[0]));
+   if(!fixedRows.length)throw Error("No fixed-site fuel records found; mobile DG vans are excluded.");
+   const invalid=fixedRows.findIndex(row=>!/^\d{3,7}$/.test(row[0])||!/^C[16]\d{3}$/.test(row[1])||!/^2026-11-\d{2}$/.test(row[3])||!/^\d+(\.\d+)?$/.test(row[4])||!/^\d+(\.\d+)?$/.test(row[5]));
+   if(invalid>=0)throw Error("Invalid fixed-site November 2026 fuel data. Check Site ID, grid, date and quantities in the source file.");
+   if(!window.confirm("Replace all old November 2026 Fuel History records with "+fixedRows.length+" fixed-site records (excluding "+mobileExcluded+" mobile DG van records) from "+file.name+"? Other months remain unchanged.")){setFuelStatus("Cancelled. Existing data unchanged.");return;}
+   const response=await fetch(base+"/rest/v1/rpc/replace_nov_2026_fuel_history",{method:"POST",headers:{apikey:key,Authorization:"Bearer "+session.access_token,"Content-Type":"application/json"},body:JSON.stringify({p_rows:fixedRows,p_filename:file.name})});
    if(!response.ok)throw Error("Upload failed: "+(await response.text()).slice(0,400));
    const result=await response.json();setFuelStatus("Uploaded "+result.inserted+" November records; replaced "+result.replaced+" old November records. Other months unchanged.");
    window.dispatchEvent(new Event("cell-avb-fuel-history-updated"));
