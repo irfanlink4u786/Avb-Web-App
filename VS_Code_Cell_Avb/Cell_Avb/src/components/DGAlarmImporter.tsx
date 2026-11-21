@@ -32,7 +32,7 @@ export default function DGAlarmImporter(){
  async function uploadFuelHistory(file:File){
   setFuelBusy(true);setFuelStatus("Validating November fuel data...");
   try{
-   const env=(import.meta as any).env||{},base=String(env.VITE_SUPABASE_URL||"").replace(/\\/$/,""),key=String(env.VITE_SUPABASE_PUBLISHABLE_KEY||env.VITE_SUPABASE_ANON_KEY||"");
+   const env=(import.meta as any).env||{},base=String(env.VITE_SUPABASE_URL||"").replace(/\/$/,""),key=String(env.VITE_SUPABASE_PUBLISHABLE_KEY||env.VITE_SUPABASE_ANON_KEY||"");
    const raw=sessionStorage.getItem("cell_avb_supabase_session"),session=raw?JSON.parse(raw):null;
    if(!base||!key||!session?.access_token)throw Error("Sign in with a Central administrator account.");
    const wb=XLSX.read(await file.arrayBuffer(),{type:"array",cellDates:true});
@@ -46,7 +46,7 @@ export default function DGAlarmImporter(){
    const date=(v:any):string=>{if(v instanceof Date)return [v.getFullYear(),String(v.getMonth()+1).padStart(2,"0"),String(v.getDate()).padStart(2,"0")].join("-");if(typeof v==="number"){const d=XLSX.SSF.parse_date_code(v);return d?[d.y,String(d.m).padStart(2,"0"),String(d.d).padStart(2,"0")].join("-"):"";}const d=new Date(String(v??""));return isNaN(d.getTime())?"":[d.getFullYear(),String(d.getMonth()+1).padStart(2,"0"),String(d.getDate()).padStart(2,"0")].join("-");};
    const rows=matrix.slice(hidx+1).filter(row=>row.some(v=>String(v??"").trim()!=="")).map(row=>idx.map(i=>row[i])).map(row=>[String(row[0]??"").trim(),String(row[1]??"").trim().toUpperCase(),"Nov-26",date(row[3]),String(row[4]??"").trim(),String(row[5]??"").trim(),"2026","November",String(row[8]??"").trim()]);
    if(!rows.length)throw Error("No fuel records found.");
-   const invalid=rows.findIndex(row=>!/^\\d{3,7}$/.test(row[0])||!/^C[16]\\d{3}$/.test(row[1])||!/^2026-11-\\d{2}$/.test(row[3])||!/^\\d+(\\.\\d+)?$/.test(row[4])||!/^\\d+(\\.\\d+)?$/.test(row[5]));
+   const invalid=rows.findIndex(row=>!/^\d{3,7}$/.test(row[0])||!/^C[16]\d{3}$/.test(row[1])||!/^2026-11-\d{2}$/.test(row[3])||!/^\d+(\.\d+)?$/.test(row[4])||!/^\d+(\.\d+)?$/.test(row[5]));
    if(invalid>=0)throw Error("Invalid November 2026 fuel data at Excel row "+(hidx+invalid+2));
    if(!window.confirm("Replace all old November 2026 Fuel History records with "+rows.length+" records from "+file.name+"? Other months remain unchanged.")){setFuelStatus("Cancelled. Existing data unchanged.");return;}
    const response=await fetch(base+"/rest/v1/rpc/replace_nov_2026_fuel_history",{method:"POST",headers:{apikey:key,Authorization:"Bearer "+session.access_token,"Content-Type":"application/json"},body:JSON.stringify({p_rows:rows,p_filename:file.name})});
