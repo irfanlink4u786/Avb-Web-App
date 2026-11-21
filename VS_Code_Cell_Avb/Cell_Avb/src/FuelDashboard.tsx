@@ -1825,7 +1825,7 @@ function FuelDashboardLegacy({ data, deviationData, tPrimeData, sheet1Data, mont
             ["dg","DG Auto / Manual",FileSpreadsheet],
             ["reconciliation","Fuel Reconciliation",AlertTriangle],
             ["monthlyQuery","Monthly Fuel Query",Search],
-            ["alarmUpload","DG Alarm Upload",FileSpreadsheet],
+            ["alarmUpload","Data Upload",FileSpreadsheet],
             ["powerDuration","Power Duration · EASS",FileSpreadsheet],
             ["tprime","T-Prime Penalty",AlertTriangle],
             ["yesterday","Yesterday Fuel & Consumption",CalendarDays],
@@ -1840,7 +1840,7 @@ function FuelDashboardLegacy({ data, deviationData, tPrimeData, sheet1Data, mont
           <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-4 sm:px-6">
             <div>
               <div className="flex items-center gap-2"><button type="button" aria-label="Open Fuel Management menu" aria-expanded={fuelMenuOpen} onClick={()=>setFuelMenuOpen(true)} className="rounded-lg bg-emerald-800 px-4 py-2 text-sm font-black text-white">☰ Menu</button><button onClick={onBack} className="rounded-lg border px-3 py-2 text-sm font-bold text-emerald-800">Home</button></div>
-              <h2 className="mt-1 text-xl font-black text-slate-950">{tab==="summary"?"Overall Fuel Summary":tab==="dispersion"?"Dispersion Summary":tab==="yoy"?"YoY & Worst Sites":tab==="monthlyQuery"?"Monthly Fuel Query":tab==="deviation"?"Fuel Deviation":tab==="tprime"?"T-Prime Fuel Penalty":tab==="yesterday"?"Yesterday Fuel & Consumption":tab==="weather"?"Weather & Rain Alerts":tab==="dg"?"DG Auto / Manual":tab==="alarmUpload"?"DG Running & Power Alarm Upload":tab==="powerDuration"?"Power Duration · DG EASS Status":tab==="siteQuery"?"Site Query · DG Fuel Balance":tab==="fuelAvailability"?"Current Fuel Availability":tab==="reconciliation"?"Fuel Reconciliation & Accountability":`${currentMonthLabel} Fuel Summary`}</h2>
+              <h2 className="mt-1 text-xl font-black text-slate-950">{tab==="summary"?"Overall Fuel Summary":tab==="dispersion"?"Dispersion Summary":tab==="yoy"?"YoY & Worst Sites":tab==="monthlyQuery"?"Monthly Fuel Query":tab==="deviation"?"Fuel Deviation":tab==="tprime"?"T-Prime Fuel Penalty":tab==="yesterday"?"Yesterday Fuel & Consumption":tab==="weather"?"Weather & Rain Alerts":tab==="dg"?"DG Auto / Manual":tab==="alarmUpload"?"Data Upload":tab==="powerDuration"?"Power Duration · DG EASS Status":tab==="siteQuery"?"Site Query · DG Fuel Balance":tab==="fuelAvailability"?"Current Fuel Availability":tab==="reconciliation"?"Fuel Reconciliation & Accountability":`${currentMonthLabel} Fuel Summary`}</h2>
               <p className="text-xs text-slate-500">Fuel History · {previousYear} vs {currentYear} · comparable through {comparableMonths[comparableMonths.length-1]}</p>
             </div>
             <button type="button" onClick={exportActiveTab} disabled={tab==="weather"||tab==="dg"||tab==="alarmUpload"||tab==="powerDuration"||tab==="siteQuery"||tab==="fuelAvailability"||tab==="reconciliation"} className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-black text-white hover:bg-emerald-800 flex items-center gap-2"><FileSpreadsheet className="h-4 w-4"/> Export This Tab</button>
