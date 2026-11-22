@@ -1523,7 +1523,7 @@ async function fetchNovemberCellAvb(): Promise<SheetPayload> {
 // Month dashboard navigation
 const NAV_ITEMS = [
   { id: "overall", label: "Overall Summary", icon: LayoutDashboard },
-  { id: "ssl-upgrade", label: "Planned SSL Upgrade · CA", icon: Crown },
+  { id: "ssl-upgrade", label: "SSL Upgrade CA", icon: Crown },
   { id: "ca-below-95", label: "CA Below 95%", icon: TrendingDown },
   { id: "ca-95-to-98", label: "CA 95% to Below 98%", icon: Activity },
   { id: "ca-98-plus", label: "CA 98% and Above", icon: TrendingUp },
