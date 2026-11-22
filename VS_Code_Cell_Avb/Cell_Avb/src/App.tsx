@@ -1,5 +1,6 @@
 import "./overall-summary-readability.css";
 import "./enterprise-polish.css";
+const SSLUpgradeMonitor = React.lazy(() => import("./SSLUpgradeMonitor"));
 const FuelDashboard = React.lazy(() => import("./FuelDashboard"));
 const CellAvbPowerModules = React.lazy(() => import("./CellAvbPowerModules"));
 import React, { useState, useEffect, useMemo, Fragment, useRef } from "react";
@@ -1522,6 +1523,7 @@ async function fetchNovemberCellAvb(): Promise<SheetPayload> {
 // Month dashboard navigation
 const NAV_ITEMS = [
   { id: "overall", label: "Overall Summary", icon: LayoutDashboard },
+  { id: "ssl-upgrade", label: "Planned SSL Upgrade · CA", icon: Crown },
   { id: "ca-below-95", label: "CA Below 95%", icon: TrendingDown },
   { id: "ca-95-to-98", label: "CA 95% to Below 98%", icon: Activity },
   { id: "ca-98-plus", label: "CA 98% and Above", icon: TrendingUp },
@@ -8443,6 +8445,7 @@ export default function App() {
           <CellAvbBanner lastUpdatedDate={monthLastUpdated} dataDate={cellAvbLatestDataDate} />
           <ErrorBoundary key={activeTab + selectedMonth}>
             <div key={activeTab + selectedMonth} className="space-y-6">
+                {activeTab === "ssl-upgrade" && <React.Suspense fallback={<div className="p-5">Loading SSL Upgrade monitoring…</div>}><SSLUpgradeMonitor /></React.Suspense>}
                 {activeTab === "overall" && (overallReady
                   ? <div className="overall-vibrant"><OverallSummaryWithExport sites={sites} rawData={monthData} lastUpdatedDate={monthLastUpdated} selectedMonth={selectedMonth ?? "october"} /></div>
                   : <div className="rounded-xl bg-white p-6 text-slate-700 min-h-[240px]" role="status">
