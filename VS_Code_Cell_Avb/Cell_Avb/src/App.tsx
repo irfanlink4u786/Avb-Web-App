@@ -1,5 +1,6 @@
 import "./overall-summary-readability.css";
 import "./enterprise-polish.css";
+const CrucialBelowBase = React.lazy(() => import("./CrucialBelowBase"));
 const SSLUpgradeMonitor = React.lazy(() => import("./SSLUpgradeMonitor"));
 const FuelDashboard = React.lazy(() => import("./FuelDashboard"));
 const CellAvbPowerModules = React.lazy(() => import("./CellAvbPowerModules"));
@@ -1542,7 +1543,7 @@ const NAV_ITEMS = [
 
 type Month = "july" | "august" | "september" | "october" | "november";
 type AppState = "loading" | "dashboard" | "error";
-type ViewMode = "home" | "month" | "prepost" | "fuel" | "electricity" | "battery" | "rms" | "wsd-recent";
+type ViewMode = "crucial" | "home" | "month" | "prepost" | "fuel" | "electricity" | "battery" | "rms" | "wsd-recent";
 type PrePostSubView = "analysis" | "query";
 
 // ============================================================
@@ -8228,6 +8229,7 @@ export default function App() {
             <motion.button variants={{ hidden: { opacity: 0, y: 30 }, show: { opacity: 1, y: 0 } }} whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.98 }} onClick={() => loadMonthData("november", "platinum-plus")} className="group relative w-full min-h-[142px] px-6 py-7 rounded-2xl bg-gradient-to-br from-violet-600/30 to-indigo-700/20 border border-violet-400/60 hover:border-violet-300 shadow-xl transition-all">
               <div className="relative text-center"><Crown className="mx-auto mb-2 h-7 w-7 text-violet-300" /><span className="block text-xl sm:text-2xl font-extrabold text-white">Platinum+</span><span className="text-violet-100 text-sm">November 2026 · C-1 & C-6</span></div>
             </motion.button>
+            <motion.button whileHover={{ scale: 1.03 }} onClick={() => setViewMode("crucial")} className="group relative w-full min-h-[142px] px-6 py-7 rounded-2xl bg-gradient-to-br from-red-600/30 to-rose-700/20 border border-red-400/60 shadow-xl"><AlertTriangle className="mx-auto mb-2 h-7 w-7 text-red-300"/><span className="block text-xl font-extrabold text-white">Crucial Below Base</span><span className="text-red-100 text-sm">7 consecutive days · C1 & C6</span></motion.button>
             <motion.button variants={{ hidden: { opacity: 0, y: 30 }, show: { opacity: 1, y: 0 } }} whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.98 }} onClick={() => setViewMode("battery")} className="group relative w-full min-h-[142px] px-6 py-7 rounded-2xl bg-gradient-to-br from-amber-600/30 to-yellow-700/20 border border-amber-400/60 hover:border-amber-300 shadow-xl transition-all">
               <div className="relative text-center"><Battery className="mx-auto mb-2 h-7 w-7 text-amber-300" /><span className="block text-xl sm:text-2xl font-extrabold text-white">Battery Backup</span><span className="text-amber-100 text-sm">C-1 & C-6 · EASS / WSD / WOSD</span></div>
             </motion.button>
@@ -8254,6 +8256,7 @@ export default function App() {
   }
 
   // Standalone Power Resilience modules: outside the monthly Cell AVB navigation.
+  if (viewMode === "crucial") return <React.Suspense fallback={<p>Loading Crucial Below Base…</p>}><CrucialBelowBase onBack={() => setViewMode("home")} /></React.Suspense>;
   if (viewMode === "battery" || viewMode === "rms" || viewMode === "wsd-recent") {
     return <div className="min-h-screen bg-slate-50">
       <header className="sticky top-0 z-30 flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-5 py-4 shadow-sm">
