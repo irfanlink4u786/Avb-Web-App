@@ -1557,6 +1557,29 @@ function FuelDashboardLegacy({ data, deviationData, tPrimeData, sheet1Data, mont
     });
     return Array.from(unique.values());
   }, [deviationData, view, gridFilter, monthCO, monthGTL, monthLead, ownership, currentFuelSeverity]);
+  const [monthPanel,setMonthPanel]=useState<"summary"|"zero">("summary");
+  const [zeroRevenue,setZeroRevenue]=useState<string[]>([]);
+  const zeroMonthNow=new Date();
+  const zeroMonthYear=zeroMonthNow.getFullYear();
+  const zeroMonthName=FUEL_MONTH_ORDER[zeroMonthNow.getMonth()];
+  const zeroMonthRows=useMemo(()=>{
+    const totals=new Map<string,number>();
+    const latest=new Map<string,typeof rows[number]>();
+    for(const r of rows){
+      const id=normalizeSiteKey(r.siteId);
+      if(r.year===zeroMonthYear&&fuelMonthLabel(r.month)===zeroMonthName) totals.set(id,(totals.get(id)||0)+r.filledQty);
+      const old=latest.get(id);
+      if(r.filledQty>0&&r.date&&r.date.getTime()<=Date.now()&&(!old?.date||r.date>old.date))latest.set(id,r);
+    }
+    const unique=new Map<string,FuelDeviationSite>();
+    for(const site of dgInventory)if(fuelRegion(site.grid)!=="Other")unique.set(normalizeSiteKey(site.siteId),site);
+    return [...unique.entries()].filter(([id])=>(totals.get(id)||0)===0).map(([id,site])=>{
+      const last=latest.get(id),o=ownership.get(id);
+      return {"Site ID":site.siteId,"Revenue Category":site.revenue||"Unassigned","Sub-region":fuelRegion(site.grid),Grid:site.grid,CO:o?.co||site.owner,GTL:o?.gtl||site.gtl,"Zone Lead":liveZoneLeads.get(id)||o?.lead||site.lead,"Last Fueling Date":last?.date?.toLocaleDateString("en-GB")||"","Last Fuel Filled (L)":last?.filledQty??"","Days Since Last Fueling":last?.date?Math.floor((Date.now()-last.date.getTime())/86400000):"","Current Month Fuel (L)":0};
+    });
+  },[rows,dgInventory,ownership,liveZoneLeads,zeroMonthYear,zeroMonthName]);
+  const zeroRevenueOptions=[...new Set(zeroMonthRows.map(r=>r["Revenue Category"]))].sort();
+  const zeroFiltered=zeroMonthRows.filter(r=>!zeroRevenue.length||zeroRevenue.includes(r["Revenue Category"]));
   const dgCategory = (raw: string) => {
     const v = raw.toLowerCase().replace(/\s+/g, " ").trim();
     if (v.includes("ptn")) return "PTN Node";
@@ -2001,7 +2024,14 @@ function FuelDashboardLegacy({ data, deviationData, tPrimeData, sheet1Data, mont
           {[["2026 YTD Highest Fuel",worstYtd,"current"],[`Last Two Months · ${lastTwoMonths.join(" + ")}`,worstLastTwo,"lastTwo"],["Persistent High Fuel · Top-20 overlap",persistent,"current"]].map(([title,list,metric]:any)=><div key={title} className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden"><div className="border-b border-slate-200 p-4 font-black">{title}</div><div className="overflow-x-auto"><table className={tableClass}><thead className="bg-emerald-900 text-white"><tr>{["#","Site ID","Grid",`${previousYear} L`,`${currentYear} L`,"YoY Increase/(Reduction)",`Last 2M L`].map(h=><th key={h} className={th}>{h}</th>)}</tr></thead><tbody>{(list as any[]).filter(x=>!siteSearch.trim()||`${x.siteId} ${x.grid}`.toLowerCase().includes(siteSearch.toLowerCase())).map((x,i)=><tr key={`${title}-${x.siteId}`} className="border-b border-slate-200 even:bg-slate-50"><td className={td}>{i+1}</td><td className={td+" font-black text-blue-700"}>{x.siteId}</td><td className={td}>{x.grid}</td><td className={td}>{Math.round(x.previous).toLocaleString()}</td><td className={td+" font-black"}>{Math.round(x.current).toLocaleString()}</td><td className={`${td} font-black ${x.variance>0?"text-red-600":"text-emerald-700"}`}>{x.variance>0?"+":""}{Math.round(x.variance).toLocaleString()}</td><td className={td+" font-black"}>{Math.round(x.lastTwo).toLocaleString()}</td></tr>)}</tbody></table></div></div>)}
         </>}
 
-        {tab==="currentMonth" && <section className="rounded-xl border border-emerald-200 bg-white p-4 shadow-sm">
+        {tab==="currentMonth" && <div className="flex flex-wrap gap-2">{(["summary","zero"] as const).map(p=><button key={p} onClick={()=>setMonthPanel(p)} className={`rounded-lg px-4 py-2 font-bold ${monthPanel===p?"bg-emerald-800 text-white":"bg-white border border-emerald-200 text-emerald-900"}`}>{p==="summary"?"Current Month Summary":"Zero Fuel Filled"}</button>)}</div>}
+        {tab==="currentMonth" && monthPanel==="zero" && <section className="rounded-xl border border-emerald-200 bg-white p-4 shadow-sm space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3"><h3 className="text-xl font-black text-emerald-950">Zero Fuel Filled · {zeroMonthName}-{zeroMonthYear}</h3><ExportButtonComponent data={rows.length?zeroFiltered:[]} filename={`Zero_Fuel_${zeroMonthYear}_${zeroMonthName}`} label="Export Excel" format="excel" variant="success"/></div>
+          <div className="grid grid-cols-3 gap-3">{[["Total Zero Fuel DGs",zeroFiltered.length],["C1 Sites",zeroFiltered.filter(r=>r["Sub-region"]==="C-1").length],["C6 Sites",zeroFiltered.filter(r=>r["Sub-region"]==="C-6").length]].map(([label,value])=><div key={label} className="rounded-lg border p-3"><div className="text-xs font-bold text-slate-600">{label}</div><div className="text-2xl font-black text-amber-800">{rows.length?value:"—"}</div></div>)}</div>
+          <div className="flex flex-wrap gap-3 items-center"><span className="font-bold">Revenue Category:</span>{zeroRevenueOptions.map(c=><label key={c} className="flex items-center gap-1"><input type="checkbox" checked={zeroRevenue.includes(c)} onChange={e=>setZeroRevenue(old=>e.target.checked?[...old,c]:old.filter(x=>x!==c))}/>{c}</label>)}<button onClick={()=>setZeroRevenue([])} className="text-emerald-800 font-bold">All categories</button></div>
+          {!rows.length||!deviationData?.rows?.length?<p className="text-amber-800">Fuel history or DG inventory unavailable. Zero fuel cannot be verified.</p>:<div className="overflow-x-auto"><table className={tableClass}><thead className="bg-emerald-900 text-white"><tr>{Object.keys(zeroMonthRows[0]||{"Site ID":"","Revenue Category":"","Sub-region":"",Grid:"",CO:"",GTL:"","Zone Lead":"","Last Fueling Date":"","Last Fuel Filled (L)":"","Days Since Last Fueling":"","Current Month Fuel (L)":0}).map(h=><th key={h} className={th}>{h}</th>)}</tr></thead><tbody>{zeroFiltered.map(r=><tr key={r["Site ID"]} className="border-b even:bg-slate-50">{Object.entries(r).map(([k,v])=><td key={k} className={td}>{v===""?"—":v}</td>)}</tr>)}</tbody></table>{!zeroFiltered.length&&<p className="p-3">No matching zero-fuel DG sites.</p>}</div>}
+        </section>}
+        {tab==="currentMonth" && monthPanel==="summary" && <section className="rounded-xl border border-emerald-200 bg-white p-4 shadow-sm">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-3"><div><h3 className="font-black text-[#075B39]">{selectedFuelMonth ? "Historical Month" : "Current Month"} · Ownership Filters</h3><p className="text-xs text-slate-500">Select November for current fueling or October for the closed month.</p></div><select aria-label="Fuel reporting month" value={currentMonthName} onChange={e=>{setSelectedFuelMonth(e.target.value);setSelectedFuelDay(null);setMonthDrillGrid(null);setCategoryDrillGrid(null);}} className="rounded-lg border border-emerald-300 bg-white px-3 py-2 text-sm font-bold text-emerald-900">{FUEL_MONTH_ORDER.slice(0,availableFuelMonthIndex+1).reverse().map(m=><option key={m} value={m}>{m}-{String(currentYear).slice(-2)}{m===FUEL_MONTH_ORDER[calendarMonthIndex]?" · Current":""}</option>)}</select></div><div className="mb-3"><h3 className="font-black text-[#075B39]">Ownership Filters</h3><p className="text-xs text-slate-500">Filter fuel filling, rankings, DG category and daily consumption by Cluster Owner, MS GTL or Zone Lead. Mapping: Cell AVB Sheet1 (Cluster Owner / MS GTL / CMPAK GTL as Zone Lead).</p></div>
           <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
             <select aria-label="Cluster Owner" value={monthCOOptions.includes(monthCO)?monthCO:"__all"} onChange={e=>{setMonthCO(e.target.value);setMonthGTL("__all");setMonthLead("__all");}} className="rounded-lg border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold"><option value="__all">All Cluster Owners</option>{monthCOOptions.map(x=><option key={x} value={x}>{x}</option>)}</select>
@@ -2011,7 +2041,7 @@ function FuelDashboardLegacy({ data, deviationData, tPrimeData, sheet1Data, mont
           </div>
           <p className="mt-2 text-xs text-slate-600">{!sheet1Data?.rows?.length ? "⚠ Sheet1 ownership unavailable — check Google Sheet loading. " : `Ownership matched: ${new Set(monthOwnerRows.filter(x=>x.o.co!=="Unassigned").map(x=>normalizeSiteKey(x.r.siteId))).size} of ${new Set(monthOwnerRows.map(x=>normalizeSiteKey(x.r.siteId))).size} fueled sites. `}{new Set(currentMonthRows.filter(r=>r.filledQty>0).map(r=>r.siteId.trim().toLowerCase())).size} fueled sites · {Math.round(currentMonthRows.reduce((n,r)=>n+r.filledQty,0)).toLocaleString()} L filled in selected ownership</p>
         </section>}
-        {tab==="currentMonth" && <section className="space-y-4">
+        {tab==="currentMonth" && monthPanel==="summary" && <section className="space-y-4">
           <div className="rounded-xl border border-emerald-200 bg-white p-4 shadow-sm">
             <div className="mb-3"><h3 className="text-lg font-black text-[#075B39]">{currentMonthLabel} · Fuel Performance KPIs</h3><p className="text-xs text-slate-500">Live summary based on selected region, grid and ownership filters</p></div>
             <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">
@@ -2043,7 +2073,7 @@ function FuelDashboardLegacy({ data, deviationData, tPrimeData, sheet1Data, mont
             {currentMonthDaySummary.length ? <div className="h-[340px] w-full"><ResponsiveContainer width="100%" height="100%"><ComposedChart data={[...currentMonthDaySummary].sort((a,b)=>b.day-a.day)} margin={{top:45,right:30,left:8,bottom:15}}><defs><linearGradient id="fuelGoldGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#FFD76A"/><stop offset="100%" stopColor="#B87908"/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0"/><XAxis dataKey="date" angle={-35} textAnchor="end" height={65} tick={{fontSize:11}}/><YAxis yAxisId="litres" tick={{fontSize:11}}/><YAxis yAxisId="sites" orientation="right" tick={{fontSize:11}} allowDecimals={false}/><Tooltip formatter={(value:any,name:any)=>[Number(value).toLocaleString(),name]}/><Legend/><Bar yAxisId="litres" dataKey="fuel" name="Fuel (L)" onClick={(point:any) => { const day = Number(point?.payload?.day ?? point?.day); if (Number.isFinite(day) && day > 0) setSelectedFuelDay(day); }} cursor="pointer" fill="url(#fuelGoldGradient)" radius={[4,4,0,0]} maxBarSize={44}><LabelList dataKey="fuel" position="insideTop" offset={7} formatter={(v:any)=>Number(v).toLocaleString()} fill="#4A2B00" fontSize={14} fontWeight={900} stroke="#FFE9A0" strokeWidth={2} paintOrder="stroke"/></Bar><Line yAxisId="sites" type="monotone" dataKey="sites" name="Unique Sites" stroke="#B7791F" strokeWidth={3} dot={{r:4,fill:"#F6C453",stroke:"#996515",strokeWidth:2}} activeDot={{r:6}}><LabelList dataKey="sites" position="top" offset={18} fill="#8B4513" fontSize={15} fontWeight={900} stroke="#FFFFFF" strokeWidth={4} paintOrder="stroke"/></Line></ComposedChart></ResponsiveContainer></div> : <p className="rounded-lg bg-amber-50 p-4 text-sm text-amber-900">No dated fuel entries found. {currentMonthUnknownDateRows.length} records have unrecognized timestamps.</p>}
           </div>
         </section>}
-        {tab==="currentMonth" && <section className="mb-5 rounded-xl border border-emerald-200 bg-white p-5 shadow-sm">
+        {tab==="currentMonth" && monthPanel==="summary" && <section className="mb-5 rounded-xl border border-emerald-200 bg-white p-5 shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div><h3 className="text-lg font-extrabold text-emerald-950">Site Query · Complete Fueling History</h3>
               <p className="text-xs text-slate-600">Search any Site ID · all available months and years · latest refueling first</p></div>
@@ -2069,11 +2099,11 @@ function FuelDashboardLegacy({ data, deviationData, tPrimeData, sheet1Data, mont
             <p className="mt-2 text-xs text-slate-500">Estimated consumption = preceding ticket's total after fill − current ticket's before fuel. Consumed per day = estimated consumption ÷ elapsed days between refueling tickets. For consecutive dates (15 vs 14 Oct), 73 L consumption = 73 L/day. Missing or unparseable dates may affect chronological order.</p>
           </>}
         </section>}
-        {tab==="currentMonth" && <section className="mb-5 rounded-xl border border-emerald-200 bg-white p-5 shadow-sm">
+        {tab==="currentMonth" && monthPanel==="summary" && <section className="mb-5 rounded-xl border border-emerald-200 bg-white p-5 shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="text-lg font-black text-emerald-950">{currentMonthLabel} · Highest Fuel Filled Sites</h3><p className="text-xs text-slate-600">Ranked by total fuel delivered this month, highest first · unique sites · follows region and grid filters</p></div><div className="flex flex-wrap gap-2"><select aria-label="Top fueled sites count" value={topFuelLimit} onChange={e=>setTopFuelLimit(Number(e.target.value))} className="rounded-lg border border-emerald-200 bg-white px-3 py-2 text-sm font-bold">{[10,20,50,100].map(n=><option key={n} value={n}>Top {n}</option>)}<option value={999999}>All Sites</option></select><ExportButtonComponent data={topFuelExport} filename={`Fuel_${currentMonthLabel}_Highest_Sites`} label="Export All Ranked Sites" format="excel" variant="success"/></div></div>
           <div className="mt-3 max-h-[520px] overflow-auto rounded-lg border border-slate-200"><table className="w-full min-w-[760px] border-collapse text-sm"><thead className="sticky top-0 bg-[#075B39] text-white"><tr>{["Rank","Site ID","Grid","Total Fuel Filled (L)","Fill Events","Latest Fuel Date","Share of Month"].map(h=><th key={h} className="px-3 py-3 text-center">{h}</th>)}</tr></thead><tbody>{topCurrentMonthSites.slice(0,topFuelLimit).map((r,i)=><tr key={`${r.grid}-${r.siteId}`} className="border-b border-slate-200 even:bg-emerald-50/40"><td className="px-3 py-2 text-center font-bold">{i+1}</td><td className="px-3 py-2 text-center font-black text-emerald-900">{r.siteId}</td><td className="px-3 py-2 text-center">{r.grid}</td><td className="px-3 py-2 text-center font-black text-red-700">{r.total.toLocaleString()}</td><td className="px-3 py-2 text-center">{r.fills}</td><td className="px-3 py-2 text-center">{r.latest?.toLocaleDateString("en-GB")||"—"}</td><td className="px-3 py-2 text-center">{currentMonthTotal?(r.total/currentMonthTotal*100).toFixed(1):"0.0"}%</td></tr>)}</tbody></table>{!topCurrentMonthSites.length&&<p className="p-4 text-sm text-slate-600">No positive fueling records for this month and selection.</p>}</div>
         </section>}
-        {tab==="currentMonth" && <>
+        {tab==="currentMonth" && monthPanel==="summary" && <>
           {currentMonthName === "Oct" && <>
 
             <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
