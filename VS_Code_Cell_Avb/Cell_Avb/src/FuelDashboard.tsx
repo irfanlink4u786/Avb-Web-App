@@ -273,7 +273,59 @@ function YesterdayFuelPage({rows, deviationData}:{rows:FuelRow[]; deviationData:
   </div>;
 }
 
-function MonthlyFuelQueryPage({ payload, ownership, fuelRows }: { payload: SheetPayload | null; ownership: SheetPayload | null; fuelRows: FuelRow[] }) {
+type DailyFuelEvent={source_row:number;site_id:string;grid:string;fuel_date:string;refueling_time:string;before_qty:number|null;filled_qty:number|null};
+function DailyFuelHistory({site,grid,region}:{site:string;grid:string;region:FuelView}){
+  const [from,setFrom]=useState("2025-01-01");
+  const [to,setTo]=useState(new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Karachi",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date()));
+  const [events,setEvents]=useState<DailyFuelEvent[]>([]);
+  const [loading,setLoading]=useState(true);
+  const [error,setError]=useState("");
+  const [page,setPage]=useState(0);
+  useEffect(()=>{
+    let active=true;
+    setLoading(true);setError("");setEvents([]);setPage(0);
+    const load=async()=>{
+      try{
+        if(!from||!to||from>to)throw Error("Select a valid date range.");
+        const env=(import.meta as any).env||{};
+        const base=String(env.VITE_SUPABASE_URL||"").replace(/\/$/,"");
+        const key=String(env.VITE_SUPABASE_PUBLISHABLE_KEY||env.VITE_SUPABASE_ANON_KEY||"");
+        if(!base||!key)throw Error("Supabase configuration unavailable");
+        const result:DailyFuelEvent[]=[];
+        for(let offset=0;;offset+=1000){
+          const p=new URLSearchParams({select:"source_row,site_id,grid,fuel_date,refueling_time,before_qty,filled_qty",order:"fuel_date.desc,source_row.asc",limit:"1000",offset:String(offset)});
+          p.append("fuel_date","gte."+from);p.append("fuel_date","lte."+to);
+          if(site.trim())p.set("site_id","eq."+site.trim());
+          if(grid!=="__all")p.set("grid","eq."+grid);
+          const response=await fuelAuthenticatedFetch(base,key,base+"/rest/v1/v_fuel_events?"+p);
+          if(!response.ok)throw Error("Fuel history HTTP "+response.status);
+          const batch:DailyFuelEvent[]=await response.json();
+          if(!active)return;
+          result.push(...batch);
+          if(batch.length<1000)break;
+        }
+        if(active)setEvents(result);
+      }catch(e){if(active)setError(e instanceof Error?e.message:String(e));}
+      finally{if(active)setLoading(false);}
+    };
+    const timer=window.setTimeout(()=>void load(),300);
+    return()=>{active=false;window.clearTimeout(timer);};
+  },[from,to,site,grid]);
+  const filtered=events.filter(r=>region==="overall"||fuelRegion(r.grid)===region);
+  const exported=filtered.map(r=>({"Site ID":r.site_id,Grid:r.grid,"Refueling Date":r.fuel_date,"Refueling Time":r.refueling_time,"Before Fuel (L)":r.before_qty??"","Fuel Filled (L)":r.filled_qty??"","After Fuel (L)":r.before_qty==null||r.filled_qty==null?"":Number(r.before_qty)+Number(r.filled_qty)}));
+  const headers=["Site ID","Grid","Refueling Date","Refueling Time","Before Fuel (L)","Fuel Filled (L)","After Fuel (L)"];
+  const pageSize=100;
+  return <section className="space-y-4 rounded-xl border border-emerald-200 bg-white p-4">
+    <div className="flex flex-wrap items-end gap-3"><label className="text-sm font-bold">From Date<input type="date" className="block rounded border p-2" value={from} onChange={e=>setFrom(e.target.value)}/></label><label className="text-sm font-bold">To Date<input type="date" className="block rounded border p-2" value={to} onChange={e=>setTo(e.target.value)}/></label><ExportButtonComponent data={loading||error?[]:exported} filename={`Daily_Fuel_${from}_${to}`} label="Export Excel" format="excel" variant="success"/></div>
+    {loading?<p>Loading dated fuel records…</p>:error?<p className="text-red-700">{error}</p>:<>
+      <div className="grid grid-cols-3 gap-3">{[["Fueled Sites",new Set(filtered.filter(r=>Number(r.filled_qty)>0).map(r=>r.site_id)).size],["Fuel Filled (L)",filtered.reduce((n,r)=>n+Number(r.filled_qty||0),0).toLocaleString()],["Fueling Records",filtered.length]].map(([label,value])=><div key={label} className="rounded-lg border p-3"><div className="text-xs font-bold">{label}</div><div className="text-2xl font-black text-emerald-900">{value}</div></div>)}</div>
+      <div className="max-h-[650px] overflow-auto"><table className="w-full min-w-[850px] text-sm"><thead className="sticky top-0 bg-emerald-900 text-white"><tr>{headers.map(h=><th key={h} className="p-3">{h}</th>)}</tr></thead><tbody>{exported.slice(page*pageSize,(page+1)*pageSize).map((r,i)=><tr key={i} className="border-b even:bg-emerald-50">{Object.values(r).map((v,j)=><td key={j} className="p-2 text-center">{v===""?"—":v}</td>)}</tr>)}</tbody></table></div>
+      <div className="flex items-center justify-between"><button disabled={!page} onClick={()=>setPage(p=>p-1)} className="rounded border px-3 py-2 disabled:opacity-40">Previous</button><span>{exported.length? page*pageSize+1:0}–{Math.min((page+1)*pageSize,exported.length)} of {exported.length}</span><button disabled={(page+1)*pageSize>=exported.length} onClick={()=>setPage(p=>p+1)} className="rounded border px-3 py-2 disabled:opacity-40">Next</button></div>
+    </>}
+  </section>;
+}
+function MonthlyFuelQueryPage({ payload, ownership, fuelRows, region }: { payload: SheetPayload | null; ownership: SheetPayload | null; fuelRows: FuelRow[]; region:FuelView }) {
+  const [historyMode,setHistoryMode]=useState<"monthly"|"daily">("monthly");
   const [site, setSite] = useState("");
   const [grid, setGrid] = useState("__all");
   const [year, setYear] = useState("__all");
@@ -335,22 +387,22 @@ function MonthlyFuelQueryPage({ payload, ownership, fuelRows }: { payload: Sheet
     });
     return result;
   },[payload,gridBySite]);
-  const grids = [...new Set(records.map(r=>r.grid).filter(Boolean))].sort();
+  const grids = [...new Set([...records.map(r=>r.grid),...fuelRows.map(r=>r.grid)].filter(Boolean))].sort();
   const years = [...new Set(records.map(r=>r.year))].sort((a,b)=>b-a);
   const filtered = records.filter(r => (!site.trim() || r.siteId.toLowerCase().includes(site.trim().toLowerCase())) && (grid==="__all" || r.grid===grid) && (year==="__all" || String(r.year)===year) && (month==="__all" || r.month===month));
   const summary = [...filtered].sort((a,b)=>Number(a.siteId)-Number(b.siteId) || a.year-b.year || FUEL_MONTH_ORDER.indexOf(a.month)-FUEL_MONTH_ORDER.indexOf(b.month));
   const exported = summary.map(r=>({"Site ID":r.siteId,"Grid":r.grid,"Year":r.year,"Month":r.month,"Fuel Filled (L)":r.filled}));
   return <div className="space-y-4">
     <section className="rounded-xl border border-emerald-200 bg-white p-5 shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-xl font-black text-emerald-950">Monthly Fuel Query</h2><p className="text-xs text-slate-600">Source: Monthly Fuel History · site-wise monthly refueling totals (2025 & 2026)</p></div><ExportButtonComponent data={exported} filename="Monthly_Fuel_Query" label="Export Results" format="excel" variant="success"/></div>
-      <div className="mt-4 grid gap-3 sm:grid-cols-4">
+      <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-xl font-black text-emerald-950">Fuel History Query</h2><p className="text-xs text-slate-600">Source: Monthly Fuel History · site-wise monthly refueling totals (2025 & 2026)</p></div>{historyMode==="monthly"&&<ExportButtonComponent data={exported} filename="Monthly_Fuel_Query" label="Export Results" format="excel" variant="success"/>}</div>
+      <div className="mt-3 flex gap-2">{(["monthly","daily"] as const).map(m=><button key={m} onClick={()=>setHistoryMode(m)} className={`rounded-lg px-4 py-2 font-bold ${historyMode===m?"bg-emerald-800 text-white":"border text-emerald-900"}`}>{m==="monthly"?"Monthly View":"Day-wise View"}</button>)}</div><div className="mt-4 grid gap-3 sm:grid-cols-4">
         <input className="rounded-lg border p-2" placeholder="Search Site ID" value={site} onChange={e=>setSite(e.target.value)}/>
         <select className="rounded-lg border p-2" value={grid} onChange={e=>setGrid(e.target.value)}><option value="__all">All Grids</option>{grids.map(g=><option key={g} value={g}>{g}</option>)}</select>
-        <select className="rounded-lg border p-2" value={year} onChange={e=>setYear(e.target.value)}><option value="__all">All Years</option>{years.map(y=><option key={y} value={y}>{y}</option>)}</select>
-        <select className="rounded-lg border p-2" value={month} onChange={e=>setMonth(e.target.value)}><option value="__all">All Months</option>{FUEL_MONTH_ORDER.map(m=><option key={m} value={m}>{m}</option>)}</select>
+        <select disabled={historyMode==="daily"} className="rounded-lg border p-2" value={year} onChange={e=>setYear(e.target.value)}><option value="__all">All Years</option>{years.map(y=><option key={y} value={y}>{y}</option>)}</select>
+        <select disabled={historyMode==="daily"} className="rounded-lg border p-2" value={month} onChange={e=>setMonth(e.target.value)}><option value="__all">All Months</option>{FUEL_MONTH_ORDER.map(m=><option key={m} value={m}>{m}</option>)}</select>
       </div>
     </section>
-    {!payload ? <div className="rounded-xl border border-amber-300 bg-amber-50 p-5 text-amber-900">Monthly Fuel History is not loaded. Check the Google Sheets connection in App.tsx.</div> : <>
+    {historyMode==="daily"?<DailyFuelHistory site={site} grid={grid} region={region}/>:!payload ? <div className="rounded-xl border border-amber-300 bg-amber-50 p-5 text-amber-900">Monthly Fuel History is not loaded. Check the Google Sheets connection in App.tsx.</div> : <>
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3">{[["Fueled Sites",new Set(filtered.filter(r=>r.filled>0).map(r=>r.siteId)).size],["Fuel Filled (L)",filtered.reduce((n,r)=>n+r.filled,0).toLocaleString()],["Monthly Records",filtered.length]].map(([label,value])=><div key={String(label)} className="rounded-xl border border-emerald-200 bg-white p-4"><p className="text-xs font-bold text-slate-600">{label}</p><p className="mt-2 text-2xl font-black text-emerald-900">{value}</p></div>)}</div>
       <div className="max-h-[650px] overflow-auto rounded-xl border border-emerald-200 bg-white"><table className="w-full min-w-[750px] text-sm"><thead className="sticky top-0 bg-[#075B39] text-white"><tr>{["Site ID","Grid","Year","Month","Fuel Filled (L)"].map(h=><th key={h} className="px-3 py-3 text-center">{h}</th>)}</tr></thead><tbody>{summary.map(r=><tr key={`${r.siteId}-${r.year}-${r.month}`} className="border-b even:bg-emerald-50/40"><td className="px-3 py-2 text-center font-bold">{r.siteId}</td><td className="px-3 py-2 text-center">{r.grid||"-"}</td><td className="px-3 py-2 text-center">{r.year}</td><td className="px-3 py-2 text-center">{r.month}</td><td className="px-3 py-2 text-center font-bold">{r.filled.toLocaleString()}</td></tr>)}</tbody></table>{!summary.length&&<p className="p-5 text-sm text-slate-600">No monthly fuel records match the filters. Check that the sheet headers use Jan-25, Feb-25, etc.</p>}</div>
     </>}
@@ -1902,7 +1954,7 @@ function FuelDashboardLegacy({ data, deviationData, tPrimeData, sheet1Data, mont
         {tab==="siteQuery" && <FuelSiteQuery key={fuelSeverityRevision}/>}
         {tab==="fuelAvailability" && <CurrentFuelAvailability key={fuelSeverityRevision}/>}
         {tab==="reconciliation" && <FuelReconciliationDashboard key={fuelSeverityRevision}/>}
-        {tab==="monthlyQuery" && <MonthlyFuelQueryPage key={fuelSeverityRevision} payload={monthlyFuelData} ownership={sheet1Data} fuelRows={rows} />}
+        {tab==="monthlyQuery" && <MonthlyFuelQueryPage key={fuelSeverityRevision} payload={monthlyFuelData} ownership={sheet1Data} fuelRows={rows} region={view} />}
         {tab==="deviation" && <FuelDeviationPage key={fuelSeverityRevision} payload={deviationData} region={view} onRegionChange={setView} />}
         {tab==="yesterday" && <YesterdayFuelPage key={fuelSeverityRevision} rows={rows} deviationData={deviationData} />}
         {tab==="tprime" && <TPrimePenaltyPage key={fuelSeverityRevision} fuelRows={rows} primeData={tPrimeData} deviationData={deviationData} />}
