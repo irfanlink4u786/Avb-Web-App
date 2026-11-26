@@ -7749,7 +7749,51 @@ async function saveAvbCaches(entries: Array<{ name: string; payload: SheetPayloa
   });
 }
 
+
+// Shared presentation-only heatmap for rendered KPI tiles and numeric summary columns.
+function usePortalHeatmap(){
+ useEffect(()=>{
+  const palette={good:["#dcfce7","#166534"],warn:["#fef3c7","#92400e"],bad:["#fee2e2","#991b1b"],missing:["#f1f5f9","#64748b"],info:["#dbeafe","#1e40af"]};
+  const parse=(s:string)=>{const t=s.trim().replace(/,/g,"");return /^[-+]?\d+(\.\d+)?\s*%?$/.test(t)?Number(t.replace("%","")):null;};
+  const tone=(label:string,n:number|null):keyof typeof palette=>{
+   if(n===null)return "missing";
+   if(/\b(?:ca|cell avb|cell availability)\b/i.test(label)&&!/count|sites|days|below|change|delta|improv|loss|drop/i.test(label))return n>=98?"good":n>=95?"warn":"bad";
+   if(/backup.*(?:min|minutes)|(?:min|minutes).*backup/i.test(label)&&!/sites|count/i.test(label))return n>=120?"good":"bad";
+   if(/\b(?:nok|faulty|critical|below base|unresolved|missing phase|smr shortage|eass not reporting)\b/i.test(label)&&!/total sites|revenue/i.test(label))return n===0?"good":"bad";
+   return "info";
+  };
+  const paint=(el:HTMLElement,label:string,n:number|null,max?:number)=>{
+   const t=tone(label,n);const [bg,fg]=palette[t];
+   el.style.setProperty("--portal-heat-bg",t==="info"&&max&&n!==null&&n>=0?`hsl(205 78% ${96-23*Math.min(1,n/max)}%)`:bg);
+   el.style.setProperty("--portal-heat-fg",fg);el.dataset.portalHeat="1";
+  };
+  const run=()=>{
+   document.querySelectorAll<HTMLTableElement>("table").forEach(table=>{
+    const head=table.tHead;if(!head||head.rows.length!==1)return;
+    const headers=Array.from(head.rows[0].cells);if(headers.some(h=>h.colSpan!==1))return;
+    const rows=Array.from(table.tBodies).flatMap(b=>Array.from(b.rows)).filter(r=>r.cells.length===headers.length&&Array.from(r.cells).every(c=>c.colSpan===1));
+    headers.forEach((h,i)=>{const label=h.textContent||"";if(!/\b(ca|avb|availability|backup|uplift|dispersion|balance|fuel|sites|count|nok|alarms|variance|score|saving|units|phase|shortage|pending|resolved|recovered|total|share)\b/i.test(label)||/site id|site name|date|time|ticket|grid|rank|serial|remarks/i.test(label))return;
+     const vals=rows.map(r=>parse(r.cells[i].textContent||""));const max=vals.reduce<number>((m,v)=>Math.max(m,v??0),1);
+     rows.forEach((r,j)=>{const c=r.cells[i],v=vals[j];if(c.style.backgroundColor||c.querySelector("button,input,select,a")||/bg-(red|green|emerald|amber|orange|rose|yellow)-/.test(c.className))return;if(v!==null||/^(—|–|N\/A)$/i.test((c.textContent||"").trim()))paint(c,label,v,max);});
+    });
+   });
+   document.querySelectorAll<HTMLElement>('[class*="rounded"]').forEach(card=>{
+    if(card.tagName!=="DIV"&&card.tagName!=="BUTTON")return;
+    if(card.querySelector("table,input,select,canvas")||card.style.backgroundColor)return;
+    const values=Array.from(card.querySelectorAll<HTMLElement>('[class*="text-2xl"],[class*="text-3xl"],[class*="text-4xl"]')).filter(v=>!v.querySelector('[class*="text-2xl"],[class*="text-3xl"],[class*="text-4xl"]'));
+    if(values.length!==1)return;const value=values[0];const label=(card.textContent||"").replace(value.textContent||"","").trim();if(!label||label.length>90||! /ca\b|avb|availability|backup|fuel|uplift|dispersion|balance|sites|alarms|nok|variance|score|saving|units|phase|shortage|pending|resolved|recovered|total/i.test(label))return;
+    if(card.parentElement?.closest('[data-portal-heat="1"]'))return;
+    const n=parse(value.textContent||"");if(n===null&&!/^(—|–|N\/A)$/i.test((value.textContent||"").trim()))return;
+    paint(card,label,n);
+   });
+  };
+  let frame=0;const schedule=()=>{cancelAnimationFrame(frame);frame=requestAnimationFrame(run);};
+  const style=document.createElement("style");style.textContent='[data-portal-heat="1"]{background:var(--portal-heat-bg)!important;color:var(--portal-heat-fg)!important;border-color:#cbd5e1!important} td[data-portal-heat="1"]{font-weight:600} [data-portal-heat="1"] :is([class*="text-2xl"],[class*="text-3xl"],[class*="text-4xl"]){color:var(--portal-heat-fg)!important;-webkit-text-fill-color:var(--portal-heat-fg)!important}';document.head.appendChild(style);
+  const observer=new MutationObserver(schedule);observer.observe(document.body,{childList:true,subtree:true,characterData:true});schedule();return()=>{observer.disconnect();cancelAnimationFrame(frame);style.remove();};
+ },[]);
+}
 export default function App() {
+  usePortalHeatmap();
   const [syncing, setSyncing] = useState(false);
   const [syncNotice, setSyncNotice] = useState("");
   const [lastSync, setLastSync] = useState("");
