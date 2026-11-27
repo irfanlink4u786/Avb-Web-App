@@ -10,17 +10,21 @@ export default function DGMonthlyInstanceCheck(){
  const endpoint=base+"/rest/v1/rpc/cell_avb_dg_start_mode_month";
  const token=await fuelAccessToken(base,key);
  const batch=1000;
- const fetchPage=async(offset:number):Promise<Event[]>=>{
-  const send=async(t:string)=>fetch(endpoint+"?limit="+batch+"&offset="+offset,{method:"POST",headers:{"Content-Type":"application/json",apikey:key,Authorization:"Bearer "+t},body:JSON.stringify({p_month:month})});
-  let res=await send(token);if(res.status===401)res=await send(await fuelAccessToken(base,key,true));
-  if(!res.ok)throw Error("DG mode analysis HTTP "+res.status+": "+(await res.text()).slice(0,200));
-  return res.json();
- };
  const all:Event[]=[];
- for(let offset=0;offset<50000;offset+=batch*4){
-  const parts=await Promise.all([0,1,2,3].map(i=>fetchPage(offset+i*batch)));
-  for(const part of parts)all.push(...part);
-  if(parts.some(part=>part.length<batch))break;
+ for(let offset=0;offset<50000;offset+=batch){
+  if(!active)return;
+  let res:Response|undefined;
+  for(let attempt=0;attempt<3;attempt++){
+   const t=attempt===0?token:await fuelAccessToken(base,key,attempt===1&&res?.status===401);
+   res=await fetch(endpoint+"?order=site_id.asc,dg_start.asc&limit="+batch+"&offset="+offset,{method:"POST",headers:{"Content-Type":"application/json",apikey:key,Authorization:"Bearer "+t},body:JSON.stringify({p_month:month})});
+   if(res.ok)break;
+   if(![401,429,500,502,503,504].includes(res.status)||attempt===2)throw Error("DG mode analysis HTTP "+res.status+": "+(await res.text()).slice(0,200));
+   await new Promise(resolve=>setTimeout(resolve,500*(attempt+1)));
+   if(!active)return;
+  }
+  if(!res?.ok)throw Error("DG mode analysis unavailable");
+  const part:Event[]=await res.json();all.push(...part);
+  if(part.length<batch)break;
  }
  if(active)setRows(all);
  }catch(e){if(active)setError(String(e))}finally{if(active)setLoading(false)}})();return()=>{active=false}},[month]);
@@ -29,7 +33,7 @@ export default function DGMonthlyInstanceCheck(){
  const scoped=useMemo(()=>rows.filter(r=>(employee==="ALL"||String(r[employeeField as keyof Event]||"")===employee)&&(gridFilter==="ALL"||r.grid===gridFilter)&&(viewMode==="dg_auto"?appliedCategories.includes(category(r.hub_category)):(categoryFilter==="ALL"||category(r.hub_category)===categoryFilter))),[rows,employee,employeeField,gridFilter,categoryFilter,viewMode,appliedCategories]);
  type Daily={site_id:string;day:string;cp_minutes:number;dg_overlap_minutes:number;dg_runtime_coverage:number;cp_incidents:number;auto_incidents:number;manual_incidents:number;daily_mode:"AUTO"|"MANUAL"};
  const [daily,setDaily]=useState<Daily[]>([]),[dailyError,setDailyError]=useState("");
- useEffect(()=>{let active=true;setDaily([]);setDailyError("");(async()=>{try{const env=(import.meta as any).env||{},base=String(env.VITE_SUPABASE_URL||"").replace(new RegExp("/$"),""),key=String(env.VITE_SUPABASE_PUBLISHABLE_KEY||env.VITE_SUPABASE_ANON_KEY||"");const token=await fuelAccessToken(base,key);const all:Daily[]=[];for(let offset=0;offset<40000;offset+=1000){const res=await fetch(base+"/rest/v1/rpc/cell_avb_dg_cp_daily_mode?limit=1000&offset="+offset,{method:"POST",headers:{"Content-Type":"application/json",apikey:key,Authorization:"Bearer "+token},body:JSON.stringify({p_month:month})});if(!res.ok)throw Error("Daily DG analysis HTTP "+res.status);const part:Daily[]=await res.json();all.push(...part);if(part.length<1000)break;}if(active)setDaily(all)}catch(e){if(active)setDailyError(String(e))}})();return()=>{active=false}},[month]);
+ useEffect(()=>{let active=true;setDaily([]);setDailyError("");(async()=>{try{const env=(import.meta as any).env||{},base=String(env.VITE_SUPABASE_URL||"").replace(new RegExp("/$"),""),key=String(env.VITE_SUPABASE_PUBLISHABLE_KEY||env.VITE_SUPABASE_ANON_KEY||"");const token=await fuelAccessToken(base,key);const all:Daily[]=[];for(let offset=0;offset<40000;offset+=1000){const res=await fetch(base+"/rest/v1/rpc/cell_avb_dg_cp_daily_mode?order=site_id.asc,day.asc&limit=1000&offset="+offset,{method:"POST",headers:{"Content-Type":"application/json",apikey:key,Authorization:"Bearer "+token},body:JSON.stringify({p_month:month})});if(!res.ok)throw Error("Daily DG analysis HTTP "+res.status);const part:Daily[]=await res.json();all.push(...part);if(part.length<1000)break;}if(active)setDaily(all)}catch(e){if(active)setDailyError(String(e))}})();return()=>{active=false}},[month]);
  const dailyScoped=useMemo(()=>{const ids=new Set(scoped.map(r=>r.site_id));return daily.filter(r=>ids.has(r.site_id))},[daily,scoped]);
  const dailyTotals=useMemo(()=>dailyScoped.reduce((a,r)=>({auto:a.auto+(r.daily_mode==="AUTO"?1:0),manual:a.manual+(r.daily_mode==="MANUAL"?1:0),instancesAuto:a.instancesAuto+Number(r.auto_incidents),instancesManual:a.instancesManual+Number(r.manual_incidents)}),{auto:0,manual:0,instancesAuto:0,instancesManual:0}),[dailyScoped]);
  type SiteSummary={site_id:string;grid:string;cluster_owner:string;ms_gtl:string;zone_lead:string;hub_category:string;required_mode:string;total:number;auto:number;approx:number;manual:number;ok:number;nok:number;unverified:number;result:string;site_mode:string;timing_mode:string};
