@@ -39,7 +39,7 @@ export default function DGAlarmImporter(){
    setLatestFuelDate(d?new Date(d.slice(0,10)+"T00:00:00Z").toLocaleDateString("en-GB",{day:"2-digit",month:"short",timeZone:"UTC"}).replace(" ","-"):"No records");
   }catch{setLatestFuelDate("Unable to load");}
  }
- useEffect(()=>{if(uploadUnlocked)void refreshLatestFuelDate();},[uploadUnlocked]);
+
  const [fuelBusy,setFuelBusy]=useState(false),[fuelStatus,setFuelStatus]=useState("Upload November 2026 Fuel History to replace existing November records.");
  async function uploadFuelHistory(file:File){
   setFuelBusy(true);setFuelStatus("Validating November fuel data...");
@@ -171,6 +171,7 @@ export default function DGAlarmImporter(){
   }catch(e){setEassStatus("Upload stopped: "+String(e));}finally{setEassBusy(false);}
  }
  const [uploadUnlocked,setUploadUnlocked]=useState(false);
+ useEffect(()=>{if(uploadUnlocked)void refreshLatestFuelDate();},[uploadUnlocked]);
  const [uploadPin,setUploadPin]=useState("");
  const [uploadPinError,setUploadPinError]=useState("");
  const unlockUploads=(e:React.FormEvent<HTMLFormElement>)=>{
