@@ -28,6 +28,18 @@ function kind(title:string):"DG"|"CPF"|"RIF"|null {
   return null;
 }
 export default function DGAlarmImporter(){
+ const [latestFuelDate,setLatestFuelDate]=useState("Checking…");
+ async function refreshLatestFuelDate(){
+  try{
+   const env=(import.meta as any).env||{},base=String(env.VITE_SUPABASE_URL||"").replace(/\/$/,""),key=String(env.VITE_SUPABASE_PUBLISHABLE_KEY||env.VITE_SUPABASE_ANON_KEY||"");
+   const session=JSON.parse(sessionStorage.getItem("cell_avb_supabase_session")||"null");
+   const res=await fetch(base+"/rest/v1/v_fuel_events?select=fuel_date&fuel_date=not.is.null&order=fuel_date.desc&limit=1",{headers:{apikey:key,Authorization:"Bearer "+(session?.access_token||key)}});
+   if(!res.ok)throw Error("HTTP "+res.status);
+   const rows=await res.json();const d=rows[0]?.fuel_date;
+   setLatestFuelDate(d?new Date(d.slice(0,10)+"T00:00:00Z").toLocaleDateString("en-GB",{day:"2-digit",month:"short",timeZone:"UTC"}).replace(" ","-"):"No records");
+  }catch{setLatestFuelDate("Unable to load");}
+ }
+ useEffect(()=>{if(uploadUnlocked)void refreshLatestFuelDate();},[uploadUnlocked]);
  const [fuelBusy,setFuelBusy]=useState(false),[fuelStatus,setFuelStatus]=useState("Upload November 2026 Fuel History to replace existing November records.");
  async function uploadFuelHistory(file:File){
   setFuelBusy(true);setFuelStatus("Validating November fuel data...");
@@ -52,6 +64,7 @@ export default function DGAlarmImporter(){
    const response=await fetch(base+"/rest/v1/rpc/replace_nov_2026_fuel_history",{method:"POST",headers:{apikey:key,Authorization:"Bearer "+session.access_token,"Content-Type":"application/json"},body:JSON.stringify({p_rows:rows,p_filename:file.name})});
    if(!response.ok)throw Error("Upload failed: "+(await response.text()).slice(0,400));
    const result=await response.json();setFuelStatus("Uploaded "+result.inserted+" November records; replaced "+result.replaced+" old November records. Other months unchanged.");
+   void refreshLatestFuelDate();
    window.dispatchEvent(new Event("cell-avb-fuel-history-updated"));
   }catch(e){setFuelStatus(e instanceof Error?e.message:String(e));}finally{setFuelBusy(false);}
  }
@@ -340,7 +353,7 @@ export default function DGAlarmImporter(){
   <span className="text-sm font-semibold text-emerald-900">Uploads unlocked · Excel and CSV accepted</span>
   <button type="button" onClick={()=>setUploadUnlocked(false)} className="rounded-lg border border-emerald-700 px-3 py-1.5 text-sm font-semibold text-emerald-900">Lock Uploads</button>
  </div>
-<section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><h3 className="text-lg font-bold text-emerald-950">Fuel History Upload · November 2026</h3><p className="mt-1 text-sm text-slate-600">Upload Fuel.xlsx format (Excel or CSV), including Mobile DG Vans. Replaces November 2026 fuel tickets in Supabase after confirmation. Central administrator authorization required.</p><label className="mt-4 inline-flex cursor-pointer rounded-xl bg-emerald-700 px-6 py-3 font-bold text-white"><span>{fuelBusy?"Uploading…":"Upload November Fuel Data"}</span><input className="sr-only" type="file" accept=".xlsx,.xls,.csv" disabled={fuelBusy} onChange={e=>{const f=e.target.files?.[0];if(f)void uploadFuelHistory(f);e.target.value="";}}/></label><p className="mt-3 text-sm text-slate-700" role="status">{fuelStatus}</p></section>
+<section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><h3 className="text-lg font-bold text-emerald-950">Fuel History Upload · November 2026</h3><div className="mt-3 flex items-center justify-between rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3"><div><p className="text-xs font-bold uppercase text-emerald-800">Last Refueling Entry · Supabase</p><p className="text-2xl font-black text-emerald-950">{latestFuelDate}</p></div><button type="button" onClick={()=>void refreshLatestFuelDate()} className="rounded-lg border border-emerald-600 bg-white px-3 py-2 text-xs font-bold text-emerald-800">Refresh Date</button></div><p className="mt-1 text-sm text-slate-600">Upload Fuel.xlsx format (Excel or CSV), including Mobile DG Vans. Replaces November 2026 fuel tickets in Supabase after confirmation. Central administrator authorization required.</p><label className="mt-4 inline-flex cursor-pointer rounded-xl bg-emerald-700 px-6 py-3 font-bold text-white"><span>{fuelBusy?"Uploading…":"Upload November Fuel Data"}</span><input className="sr-only" type="file" accept=".xlsx,.xls,.csv" disabled={fuelBusy} onChange={e=>{const f=e.target.files?.[0];if(f)void uploadFuelHistory(f);e.target.value="";}}/></label><p className="mt-3 text-sm text-slate-700" role="status">{fuelStatus}</p></section>
 <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
   <h3 className="text-lg font-bold text-emerald-950">FM Alarm Query — CP, RIF and DG Alarms History</h3>
   <div className="mt-3 flex flex-wrap items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3">
