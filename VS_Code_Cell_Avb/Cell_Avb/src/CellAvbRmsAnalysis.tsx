@@ -74,7 +74,7 @@ const categoryColumns:Record<Tab,string[]>={
  soh:['Sub-Region','Grid','SiteClassification','BB Type','Li-ion capacity','RMS Vendor','SOH <60','EOL Li-ion','ZTE 50AH','Huawei 50AH'],
  all:[]
 };
-const pretty=(v:unknown)=>missing(v)?'—':txt(v);
+const pretty=(v:unknown)=>missing(v)?'—':/^[+-]?\d+\.\d+$/.test(txt(v))&&Number.isFinite(Number(v))?Number(v).toFixed(2):txt(v);
 const styleButton:React.CSSProperties={...button,fontSize:12,whiteSpace:'nowrap'};
 export default function RmsMasterAnalysis({client}:{client:SupabaseClient}){
  const [sites,setSites]=useState<Site[]>([]),[loading,setLoading]=useState(true),[error,setError]=useState('');
